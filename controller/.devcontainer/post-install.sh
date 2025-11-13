@@ -15,8 +15,11 @@ mv kubectl /usr/local/bin/kubectl
 
 docker network create -d=bridge --subnet=172.19.0.0/24 kind | true
 
+go install github.com/go-task/task/v3/cmd/task@latest
+
 kind version
 kubebuilder version
 docker --version
 go version
 kubectl version --client
+task --version
