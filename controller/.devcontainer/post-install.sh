@@ -1,9 +1,8 @@
 #!/bin/bash
 set -x
 
-curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
-chmod +x ./kind
-mv ./kind /usr/local/bin/kind
+curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+sudo chmod +x /usr/local/bin/kind
 
 curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/linux/amd64
 chmod +x kubebuilder
@@ -14,7 +13,7 @@ curl -LO "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
 chmod +x kubectl
 mv kubectl /usr/local/bin/kubectl
 
-docker network create -d=bridge --subnet=172.19.0.0/24 kind
+docker network create -d=bridge --subnet=172.19.0.0/24 kind | true
 
 kind version
 kubebuilder version
