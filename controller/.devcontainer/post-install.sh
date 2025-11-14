@@ -11,6 +11,9 @@ echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud
 apt-get update
 apt-get install -y google-cloud-sdk
 
+# download additional tools for gke auth
+sudo apt-get install google-cloud-cli-gke-gcloud-auth-plugin
+
 curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
 chmod +x /usr/local/bin/kind
 
@@ -27,11 +30,12 @@ docker network create -d=bridge --subnet=192.168.1.0/24 kind | true
 
 go install github.com/go-task/task/v3/cmd/task@latest
 
+python3 --version
+gcloud --version
+gke-gcloud-auth-plugin --version
 kind version
 kubebuilder version
 docker --version
 go version
 kubectl version --client
 task --version
-python3 --version
-gcloud --version

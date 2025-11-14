@@ -1,7 +1,8 @@
 version: "3"
 
 env:
-  CLUSTER_NAME: kubernetes-training-cluster
+  CLUSTER_NAME: quorum-based-manifests-governance
+  GCP_PROJECT_ID: qu-b-man-go
   GCP_REGION: europe-west10
   GCP_ZONE: europe-west10-a
   # Set default gum style options
@@ -53,7 +54,7 @@ tasks:
   gcp:06-create-cluster:
     desc: "Create GKE cluster"
     vars:
-      GCP_PROJECT_ID: psychic-kite-453820-g6
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
     cmds:
       - |
         gcloud container clusters create ${CLUSTER_NAME} \
@@ -64,6 +65,13 @@ tasks:
           --num-nodes 2 \
           --gateway-api=standard \
           --workload-pool={{.GCP_PROJECT_ID}}.svc.id.goog
+
+  gcp:07-setup-auth:
+    desc: "Set up GKE authentication"
+    cmds:
+      - |
+        gcloud container clusters get-credentials ${CLUSTER_NAME} \
+        --location=${GCP_ZONE}
 
   gcp:07-create-all:
     cmds:

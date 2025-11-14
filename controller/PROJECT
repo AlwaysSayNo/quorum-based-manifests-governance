@@ -8,4 +8,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: controller
 repo: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: ManifestRequestTemplate
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  version: v1alpha1
 version: "3"
