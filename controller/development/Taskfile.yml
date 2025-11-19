@@ -1,0 +1,21 @@
+version: "3"
+
+env:
+  REPO_URL: https://github.com/AlwaysSayNo/quorum-based-manifests-governance-test.git
+  REPO_NAME: quorum-based-manifests-governance-test
+
+tasks:
+
+  init:00:
+    cmds:
+      - ls
+
+  init:01-init-repo:
+    cmds:
+      - bash init/git-test-setup.sh ${REPO_URL} ${REPO_NAME}
+    desc: "Initialize the test Git repository with necessary manifests"
+
+  init:02-create-argo-application:
+    cmds:
+      - sed -i'' -e "s|#{REPO_URL}#|${REPO_URL}|g" ${REPO_NAME}/app-manifests/app.yaml
+    desc: "Create Argo CD Application resource to deploy the test app from the Git repository"
