@@ -73,7 +73,7 @@ tasks:
         gcloud container clusters get-credentials ${CLUSTER_NAME} \
         --location=${GCP_ZONE}
 
-  gcp:07-create-all:
+  gcp:08-create-all:
     cmds:
       - task: gcp:02-enable-apis
       - task: gcp:03-set-region-and-zone
@@ -82,17 +82,17 @@ tasks:
       - task: gcp:06-create-cluster
     desc: Create the GCP network, subnet, firewall rules, and cluster in sequence
 
-  gcp:09-clean-up:
+  gcp:09-connect-to-cluster:
+    cmds:
+      - gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${GCP_ZONE}
+    desc: "Connect to the GKE cluster"
+
+  gcp:10-clean-up:
     cmds:
       - gcloud container clusters delete ${CLUSTER_NAME} --zone ${GCP_ZONE} --quiet
       - gcloud compute networks subnets delete subnet-1 --region=${GCP_REGION} --quiet
       - gcloud compute networks delete ${CLUSTER_NAME} --quiet
     desc: Delete the GCP network, subnet, firewall rules, and cluster in reverse sequence
-
-  gcp:08-connect-to-cluster:
-    cmds:
-      - gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${GCP_ZONE}
-    desc: "Connect to the GKE cluster"
   
   other:install-gke-auth-plugin:
     cmds:

@@ -20,37 +20,36 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // TODO: maybe have TrackedFolder, MsrFolder, SignaturesFolder, ApprovalFolder optional and specify later defaults?
 type GitRepository struct {
 	// URL to the git repository
 	URL string `json:"url,omitempty"`
 
-	// Folder within the repo to monitor for infrastructure changes.
-	TrackedFolder string `json:"trackedFolder,omitempty"`
+	// Branch to monitor for infrastructure changes.
+	Branch string `json:"branch,omitempty"`
 
-	// Folder where ManifestSigningRequests will be stored.
-	MsrFolder string `json:"msrFolder,omitempty"`
-
-	// Folder where governor signatures will be pushed.
-	SignaturesFolder string `json:"signaturesFolder,omitempty"`
-
-	// Folder for the final approval artifact.
-	ApprovalFolder string `json:"approvalFolder,omitempty"`
-
+	// Folders RegExp within the repo to monitor for infrastructure changes.
+	TrackedFolders []string `json:"trackedFolder,omitempty"`
 }
 
+
+type MSR struct {
+
+	Name string `json:"name,omitempty"`
+	
+	Namespace string `json:"namespace,omitempty"`
+
+	// Folder within the git repository where MSRs are stored.
+	Folder string `json:"folder,omitempty"`
+
+}
 type SlackChannel struct {
 
 	// Slack user group ID to notify (e.g., S01234567)
 	UserGroupID string `json:"userGroupID,omitempty"`
-
 }
 
 type NotificationChannel struct {
-
 	Slack *SlackChannel `json:"slack,omitempty"`
 
 	// Other notification channels can be added in the future
@@ -68,58 +67,55 @@ type Governor struct {
 
 	// Notification channel to inform the governor about pending approvals.
 	NotificationChannel NotificationChannel `json:"notificationChannel"`
-
 }
 
-// ApprovalRule defines nested rules for approvals required.
-// Each rule is a node. Each node can be:
-// - intermediate node. Contains Require field with child rules:
-//   - AtLeast: number of child rules that must be satisfied
-//   - All: if true, all child rules must be satisfied
-//
-// - leaf node. Doesn't contain Require field, but contains Signer field:
-//   - Signer: the signer (governor) whose approval is required
+/*
+ApprovalRule defines nested rules for approvals required.
+Each rule is a node. Each node can be:
+- intermediate node. Contains Require field with child rules:
+  - AtLeast: number of child rules that must be satisfied
+  - All: if true, all child rules must be satisfied
+
+- leaf node. Doesn't contain Require field, but contains Signer field:
+  - Signer: the signer (governor) whose approval is required
+*/
 type ApprovalRule struct {
 
 	// Specifies the minimum number of child rules that must be satisfied.
-	AtLeast int `json:"atLeast,omitempty"`
+	AtLeast 		int `json:"atLeast,omitempty"`
 
 	// If true, all child rules must be satisfied.
-	All bool `json:"all,omitempty"`
+	All 			bool `json:"all,omitempty"`
 
 	// List of child rules.
-	Require []ApprovalRule `json:"require,omitempty"`
+	Require 		[]ApprovalRule `json:"require,omitempty"`
 
 	// Signer can be either PublicKey or Alias of the governor. If alias is used, it should start with `$` to distinguish it from PublicKey.
-	Signer string `json:"signer,omitempty"`
-
+	Signer 			string `json:"signer,omitempty"`
 }
 
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
 type ManifestRequestTemplateSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	// publicKey is used to sign MCA.
 	PublicKey string `json:"publicKey,omitempty"`
+	// TODO: make PublicKeyRef in future to reference to a secret
 
 	// gitRepository specifies the git repository configuration for this ManifestRequestTemplate
 	GitRepository GitRepository `json:"gitRepository"`
 
+	MSR MSR `json:"msr,omitempty"`
+
+	Governors []Governor `json:"governors,omitempty"`
+	//TODO: make GovernorsRef in future to reference to a governor manifest
+
 	// The policy rules for approvals.
-	Rules ApprovalRule `json:"rules"`
-	
+	Require ApprovalRule `json:"require"`
+
 }
 
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
 type ManifestRequestTemplateStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
 	// conditions represent the current state of the ManifestRequestTemplate resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
@@ -134,6 +130,12 @@ type ManifestRequestTemplateStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
+
+	LastManifestSigningRequest string `json:"lastManifestSigningRequest,omitempty"`
+
+	LastAcceptedManifestSigningRequest string `json:"lastAcceptedManifestSigningRequest,omitempty"`
 }
 
 // +kubebuilder:object:root=true

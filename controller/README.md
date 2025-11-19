@@ -20,6 +20,11 @@ TODO remove:
 
 TODO:
 - in the end, change the version of API to be v1 (remove alpha1)
+- I need an application, that will created and managed by my controller. This application should listen to ArgoCD events and:
+    - create MSR -> start reconciliation logic for 
+    - create 
+
+
 
 ## Getting Started
 

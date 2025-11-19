@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,9 +48,23 @@ type ManifestRequestTemplateReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	log.Info("Reconciling ManifestRequestTemplate")
+
+	// Fetch the ManifestRequestTemplate instance
+	mrt := &governancev1alpha1.ManifestRequestTemplate{}
+	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
+		if errors.IsNotFound(err) {
+			// Object doesn't exist. Ignore.
+			log.Info("ManifestRequestTemplate resource not found.")
+			return ctrl.Result{}, nil
+		}
+		
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get ManifestRequestTemplate")
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
