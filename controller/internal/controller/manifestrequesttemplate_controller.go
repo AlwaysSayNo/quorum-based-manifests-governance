@@ -60,7 +60,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 			log.Info("ManifestRequestTemplate resource not found.")
 			return ctrl.Result{}, nil
 		}
-		
+
 		// Error reading the object - requeue the request.
 		log.Error(err, "Failed to get ManifestRequestTemplate")
 		return ctrl.Result{}, err

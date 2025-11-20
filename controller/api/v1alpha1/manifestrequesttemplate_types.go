@@ -20,36 +20,66 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TODO: maybe have TrackedFolder, MsrFolder, SignaturesFolder, ApprovalFolder optional and specify later defaults?
-type GitRepository struct {
-	// URL to the git repository
-	URL string `json:"url,omitempty"`
+type ArgoCDApplication struct {
+	// Name of the ArgoCD Application.
+	// It should contain information about the git repository, branch and path where manifests are stored.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Name string `json:"name,omitempty"`
 
-	// Branch to monitor for infrastructure changes.
-	Branch string `json:"branch,omitempty"`
-
-	// Folders RegExp within the repo to monitor for infrastructure changes.
-	TrackedFolders []string `json:"trackedFolder,omitempty"`
+	// Namespace where the ArgoCD Application is located.
+	// Default is "argocd".
+	// +kubebuilder:validation:MinLength=0
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
+type Location struct {
+	// Folder where MSR, MCA and Signatures will be stored.
+	// Default: root of the repo.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Folder string `json:"folder,omitempty"`
+}
 
 type MSR struct {
-
+	// Name of the MSR resource.
+	// Default is "msr".
+	// +kubebuilder:validation:MinLength=1
+	// +optional
 	Name string `json:"name,omitempty"`
-	
+
+	// Namespace where the MSR resource will be created.
+	// Default is the same namespace as the MRT.
+	// +kubebuilder:validation:MinLength=0
+	// +optional
 	Namespace string `json:"namespace,omitempty"`
-
-	// Folder within the git repository where MSRs are stored.
-	Folder string `json:"folder,omitempty"`
-
 }
-type SlackChannel struct {
 
-	// Slack user group ID to notify (e.g., S01234567)
-	UserGroupID string `json:"userGroupID,omitempty"`
+type MCA struct {
+	// Name of the MCA resource.
+	// Default is "mca".
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Namespace where the MCA resource will be created.
+	// Default is the same namespace as the MRT.
+	// +kubebuilder:validation:MinLength=0
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+type SlackChannel struct {
+	// Slack channel ID to notify (e.g., S01234567)
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	ChannelID string `json:"channelID,omitempty"`
 }
 
 type NotificationChannel struct {
+
+	// +optional
 	Slack *SlackChannel `json:"slack,omitempty"`
 
 	// Other notification channels can be added in the future
@@ -58,15 +88,29 @@ type NotificationChannel struct {
 }
 
 type Governor struct {
-
 	// Alias for governor (for easier identification)
+	// +kubebuilder:validation:MinLength=1
+	// +required
 	Alias string `json:"alias,omitempty"`
 
 	// PublicKey of the governor used to verify signatures.
+	// +kubebuilder:validation:MinLength=1
+	// +required
 	PublicKey string `json:"publicKey,omitempty"`
 
 	// Notification channel to inform the governor about pending approvals.
+	// +optional
 	NotificationChannel NotificationChannel `json:"notificationChannel"`
+}
+
+type GovernorList struct {
+	// General list of notification channels to inform governors about pending approvals.
+	// +optional
+	NotificationChannels []NotificationChannel `json:"notificationChannels,omitempty"`
+
+	// List of governors.
+	// +required
+	Members []Governor `json:"members,omitempty"`
 }
 
 /*
@@ -80,38 +124,62 @@ Each rule is a node. Each node can be:
   - Signer: the signer (governor) whose approval is required
 */
 type ApprovalRule struct {
-
 	// Specifies the minimum number of child rules that must be satisfied.
-	AtLeast 		int `json:"atLeast,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	AtLeast int `json:"atLeast,omitempty"`
 
 	// If true, all child rules must be satisfied.
-	All 			bool `json:"all,omitempty"`
+	// +optional
+	All bool `json:"all,omitempty"`
 
 	// List of child rules.
-	Require 		[]ApprovalRule `json:"require,omitempty"`
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
+	Require []ApprovalRule `json:"require,omitempty"`
 
 	// Signer can be either PublicKey or Alias of the governor. If alias is used, it should start with `$` to distinguish it from PublicKey.
-	Signer 			string `json:"signer,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Signer string `json:"signer,omitempty"`
 }
 
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
 type ManifestRequestTemplateSpec struct {
 
 	// publicKey is used to sign MCA.
+	// +kubebuilder:validation:MinLength=1
+	// +required
 	PublicKey string `json:"publicKey,omitempty"`
 	// TODO: make PublicKeyRef in future to reference to a secret
 
-	// gitRepository specifies the git repository configuration for this ManifestRequestTemplate
-	GitRepository GitRepository `json:"gitRepository"`
+	// ArgoCDApplicationName is the name of the ArgoCD Application.
+	// It should contain information about the git repository, branch and path where manifests are stored.
+	// +required
+	ArgoCDApplication ArgoCDApplication `json:"argoCDApplication,omitempty"`
 
+	// Location contains information about where to store MSR, MCA and signatures.
+	// +optional
+	Location Location `json:"location,omitempty"`
+
+	// MSR contains information about MSR metadata.
+	// +optional
 	MSR MSR `json:"msr,omitempty"`
 
+	// MCA contains information about MCA metadata.
+	// +optional
+	MCA MCA `json:"mca,omitempty"`
+
+	// Required until GovernorsRef is implemented.
+	// +required
 	Governors []Governor `json:"governors,omitempty"`
-	//TODO: make GovernorsRef in future to reference to a governor manifest
+	// TODO: make GovernorsRef in future to reference to a governor manifest
 
 	// The policy rules for approvals.
+	// Required until ApprovalRuleRef is implemented.
+	// +required
 	Require ApprovalRule `json:"require"`
-
 }
 
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
@@ -131,11 +199,14 @@ type ManifestRequestTemplateStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// LastObservedCommitHash is the last observed commit hash from the git repository
 	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
 
-	LastManifestSigningRequest string `json:"lastManifestSigningRequest,omitempty"`
+	// LastMSR is the name of the last created MSR resource
+	LastMSR string `json:"lastMSR,omitempty"`
 
-	LastAcceptedManifestSigningRequest string `json:"lastAcceptedManifestSigningRequest,omitempty"`
+	// LastAcceptedMSR is the name of the last accepted MSR resource
+	LastAcceptedMSR string `json:"lastAcceptedMSR,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -147,7 +218,7 @@ type ManifestRequestTemplate struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec defines the desired state of ManifestRequestTemplate
 	// +required
@@ -155,7 +226,7 @@ type ManifestRequestTemplate struct {
 
 	// status defines the observed state of ManifestRequestTemplate
 	// +optional
-	Status ManifestRequestTemplateStatus `json:"status,omitempty,omitzero"`
+	Status ManifestRequestTemplateStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
