@@ -12,9 +12,13 @@ elif [ -z "$repo_name" ]; then
     exit 1
 fi
 
-# clone repo to development folder
+# Move to the development directory
 cd $(dirname "$0")
 cd ..
+mkdir -p repos
+cd repos
+
+# clone repo to development folder
 git clone $repo_url 
 cd $repo_name
 
@@ -29,11 +33,12 @@ metadata:
 data:
   version: v1" > app-manifests/config.yaml
 
+# Create Argo CD Application manifest
 echo "apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: test-app
-  namespace: argocd
+  namespace: argocd:test-app
 spec:
   project: default
   source:
@@ -49,9 +54,10 @@ spec:
       prune: true
       selfHeal: true" > app-manifests/app.yaml
 
+# Replace placeholder with actual repo URL
 sed -i'' -e "s|#{REPO_URL}#|$repo_url|g" app-manifests/app.yaml
 
-# Push init commit
+# Initial commit and push
 git add .
 git commit -m "Initial commit"
 git push origin main
