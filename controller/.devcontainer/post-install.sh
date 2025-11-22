@@ -33,7 +33,7 @@ mv kubectl /usr/local/bin/kubectl
 # create docker network for kind clusters to use
 docker network create -d=bridge --subnet=192.168.1.0/24 kind | true
 
-# install go
+# install go-task
 go install github.com/go-task/task/v3/cmd/task@latest
 
 # install argocd cli

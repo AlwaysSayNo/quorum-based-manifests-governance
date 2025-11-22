@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	argocdv1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 )
@@ -75,43 +75,20 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	logger.Info("Reconciling ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
 
-	// Fetch the ManifestRequestTemplate instance
-	mrt := &governancev1alpha1.ManifestRequestTemplate{}
-	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
-		if errors.IsNotFound(err) {
-			// Object doesn't exist. Ignore.
-			logger.Info("ManifestRequestTemplate resource not found.")
-			return ctrl.Result{}, nil
-		}
-
-		// Error reading the object - requeue the request.
-		logger.Error(err, "Failed to get ManifestRequestTemplate")
-		return ctrl.Result{}, err
+	// Fetch the MRT instance
+	mrt, res, err := r.getMRT(ctx, req, logger)
+	if res != nil {
+		return *res, err
 	}
 
-	// Fetch the ArgoCD Application referenced by the MRT
-	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
-	if appNamespace == "" {
-		appNamespace = DefaultArgoCDNamespace
-	}
-
-	app := &argocdv1alpha1.Application{}
-	appKey := types.NamespacedName{
-		Name:      mrt.Spec.ArgoCDApplication.Name,
-		Namespace: appNamespace,
-	}
-
-	if err := r.Get(ctx, appKey, app); err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("ArgoCD Application not found", "name", appKey.Name, "namespace", appKey.Namespace)
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to get ArgoCD Application", "name", appKey.Name, "namespace", appKey.Namespace)
-		return ctrl.Result{}, err
+	// Fetch ArgoCD Application for this MRT
+	app, res, err := r.getArgoApplication(ctx, mrt, logger)
+	if res != nil {
+		return *res, err
 	}
 
 	// Get the current commit hash from the Application status
-	currentCommitHash := r.getCommitHashFromApp(app)
+	currentCommitHash := r.getCommitHashFromApp(app, logger)
 	if currentCommitHash == "" {
 		// TODO: Handle case where commit hash is not found
 		logger.Info("No commit hash found in Application status yet")
@@ -121,18 +98,6 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Check if we've already seen this commit hash
 	if currentCommitHash == mrt.Status.LastObservedCommitHash {
 		logger.Info("Already processed this commit hash", "hash", currentCommitHash)
-
-		// Check if we need to resume sync (if MCA exists)
-		// TODO: we need to monitor, if MCA was created and then update the last observed hash.
-		// Maybe do with Watches instead of Requeueing?
-		if r.hasManifestChangeApproval(ctx, mrt, logger) {
-			if err := r.resumeArgoApplication(ctx, app, logger); err != nil {
-				logger.Error(err, "Failed to resume ArgoCD Application sync")
-				return ctrl.Result{}, err
-			}
-			logger.Info("Resumed ArgoCD Application sync due to ManifestChangeApproval")
-		}
-
 		return ctrl.Result{}, nil
 	}
 
@@ -162,6 +127,49 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Maybe do with Watches instead of Requeueing?
 	logger.Info("Requeuing to check for ManifestChangeApproval", "requeueAfter", "10s")
 	return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) getMRT(ctx context.Context, req ctrl.Request, logger logr.Logger) (*governancev1alpha1.ManifestRequestTemplate, *ctrl.Result, error) {
+	// Fetch the ManifestRequestTemplate instance
+	mrt := &governancev1alpha1.ManifestRequestTemplate{}
+	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
+		if errors.IsNotFound(err) {
+			// Object doesn't exist. Ignore.
+			logger.Info("ManifestRequestTemplate resource not found.")
+			return nil, &ctrl.Result{}, nil
+		}
+
+		// Error reading the object - requeue the request.
+		logger.Error(err, "Failed to get ManifestRequestTemplate")
+		return nil, &ctrl.Result{}, err
+	}
+
+	return mrt, nil, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) getArgoApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger logr.Logger) (*argocdv1alpha1.Application, *ctrl.Result, error) {
+	// Fetch the ArgoCD Application referenced by the MRT
+	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
+	if appNamespace == "" {
+		appNamespace = DefaultArgoCDNamespace
+	}
+
+	app := &argocdv1alpha1.Application{}
+	appKey := types.NamespacedName{
+		Name:      mrt.Spec.ArgoCDApplication.Name,
+		Namespace: appNamespace,
+	}
+
+	if err := r.Get(ctx, appKey, app); err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("ArgoCD Application not found", "name", appKey.Name, "namespace", appKey.Namespace)
+			return nil, &ctrl.Result{}, nil
+		}
+		logger.Error(err, "Failed to get ArgoCD Application", "name", appKey.Name, "namespace", appKey.Namespace)
+		return nil, &ctrl.Result{}, err
+	}
+
+	return app, nil, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -214,29 +222,33 @@ func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Co
 
 // getCommitHashFromApp extracts the current commit hash from the ArgoCD Application status.
 // ArgoCD Application stores the current commit hash in status.operationState or status.sync.revision
-func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1alpha1.Application) string {
+func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1alpha1.Application, logger logr.Logger) string {
 	if app == nil {
 		return ""
 	}
 
 	// Try to get the commit SHA from status.operationState.syncResult.revision
+	logger.Info("Current operationState", "operationState", app.Status.OperationState)
 	if app.Status.OperationState != nil && app.Status.OperationState.SyncResult != nil {
+		logger.Info("Found commit hash in status.operationState.syncResult.revision", "revision", app.Status.OperationState.SyncResult.Revision)
 		return app.Status.OperationState.SyncResult.Revision
 	}
 
 	// Fallback: try status.sync.revision
 	if app.Status.Sync.Revision != "" {
+		logger.Info("Found commit hash in status.sync.revision", "revision", app.Status.Sync.Revision)
 		return app.Status.Sync.Revision
 	}
 
-	// TODO: what does this mean?
-	// Fallback: try status.operationState.finishedAt + resources hash as a fallback unique identifier
+	// TODO: what to do then
 	return ""
 }
 
 // pauseArgoApplication pauses the automatic sync of an ArgoCD Application.
 // This prevents ArgoCD from automatically syncing new commits to the cluster.
 func (r *ManifestRequestTemplateReconciler) pauseArgoApplication(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
+	// app.Spec.SyncPolicy.Enabled = false
+
 	// Check if already paused
 	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.Automated != nil {
 		if !app.Spec.SyncPolicy.Automated.Prune {
@@ -292,31 +304,4 @@ func (r *ManifestRequestTemplateReconciler) resumeArgoApplication(ctx context.Co
 	}
 
 	return nil
-}
-
-// hasManifestChangeApproval checks if a ManifestChangeApproval (MCA) exists for the MRT.
-// This indicates that the changes have been approved and can be synced.
-func (r *ManifestRequestTemplateReconciler) hasManifestChangeApproval(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger logr.Logger) bool {
-	// TODO: Implement this function based on your ManifestChangeApproval resource
-	// For now, this is a placeholder that returns false
-	// You should:
-	// 1. Define the ManifestChangeApproval CRD
-	// 2. Query for MCA resources related to this MRT
-	// 3. Return true if any approved MCA exists for the current LastObservedCommitHash
-	//
-	// Example implementation:
-	// mcaList := &governancev1alpha1.ManifestChangeApprovalList{}
-	// if err := r.List(ctx, mcaList, client.InNamespace(mrt.Namespace)); err != nil {
-	//     logger.Error(err, "Failed to list ManifestChangeApprovals")
-	//     return false
-	// }
-	//
-	// for _, mca := range mcaList.Items {
-	//     if mca.Spec.MRTRef.Name == mrt.Name && mca.Status.Approved {
-	//         return true
-	//     }
-	// }
-
-	logger.Info("TODO: Implement ManifestChangeApproval check")
-	return false
 }
