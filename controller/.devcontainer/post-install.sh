@@ -13,7 +13,7 @@ apt-get update
 apt-get install -y google-cloud-sdk
 
 # download additional tools for gke auth
-sudo apt-get install google-cloud-cli-gke-gcloud-auth-plugin
+apt-get install google-cloud-cli-gke-gcloud-auth-plugin
 
 # install kind
 curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
