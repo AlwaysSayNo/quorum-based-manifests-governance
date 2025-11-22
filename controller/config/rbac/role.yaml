@@ -5,6 +5,24 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - governance.nazar.grynko.com
+  resources:
+  - manifestchangeapprovals
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - governance.nazar.grynko.com
   resources:
   - manifestrequesttemplates
