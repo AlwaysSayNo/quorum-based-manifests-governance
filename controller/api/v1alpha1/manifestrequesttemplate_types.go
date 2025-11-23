@@ -98,9 +98,6 @@ type Governor struct {
 	// +required
 	PublicKey string `json:"publicKey,omitempty"`
 
-	// Notification channel to inform the governor about pending approvals.
-	// +optional
-	NotificationChannel NotificationChannel `json:"notificationChannel"`
 }
 
 type GovernorList struct {
@@ -173,7 +170,7 @@ type ManifestRequestTemplateSpec struct {
 
 	// Required until GovernorsRef is implemented.
 	// +required
-	Governors []Governor `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty"`
 	// TODO: make GovernorsRef in future to reference to a governor manifest
 
 	// The policy rules for approvals.

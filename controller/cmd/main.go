@@ -37,6 +37,7 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
+	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -49,6 +50,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(governancev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(argocdv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

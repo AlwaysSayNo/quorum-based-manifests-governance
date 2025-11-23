@@ -18,12 +18,10 @@ package controller
 
 import (
 	"context"
-	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,20 +36,30 @@ import (
 
 const (
 	DefaultArgoCDNamespace = "argocd"
-	DefaultRequeueDelay    = 10 * time.Second
 )
-
-// ArgoCD Application GroupVersionKind
-var argocdApplicationGVK = schema.GroupVersionKind{
-	Group:   "argoproj.io",
-	Version: "v1alpha1",
-	Kind:    "Application",
-}
 
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+func Pointer[T any](d T) *T {
+	return &d
+}
+
+// SetupWithManager sets up the controller with the Manager.
+// This controller watches both ManifestRequestTemplate resources and ArgoCD Application resources.
+// When an Application changes, it triggers reconciliation of the associated MRT.
+func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&governancev1alpha1.ManifestRequestTemplate{}).
+		Watches(
+			&argocdv1alpha1.Application{}, //&internal.Kind{Type: &argocdv1alpha1.Application{}}
+			handler.EnqueueRequestsFromMapFunc(r.findMRTForApplication),
+		).
+		Named("manifestrequesttemplate").
+		Complete(r)
 }
 
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=get;list;watch;create;update;patch;delete
@@ -121,12 +129,14 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	// Step 3: Create MSR (Manifest Signing Request) - TODO: implement your MSR creation logic here
 	logger.Info("TODO: Create Manifest Signing Request for new commit")
+	r.startMSR(ctx, app, logger)
 
 	// Step 4: Requeue after a delay to check for ManifestChangeApproval
 	// TODO: we don't need to check for MCA. We can just wait indefinitely until MCA is created and update last observed hash then.
 	// Maybe do with Watches instead of Requeueing?
-	logger.Info("Requeuing to check for ManifestChangeApproval", "requeueAfter", "10s")
-	return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
+	// logger.Info("Requeuing to check for ManifestChangeApproval", "requeueAfter", "10s")
+	// return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *ManifestRequestTemplateReconciler) getMRT(ctx context.Context, req ctrl.Request, logger logr.Logger) (*governancev1alpha1.ManifestRequestTemplate, *ctrl.Result, error) {
@@ -172,20 +182,6 @@ func (r *ManifestRequestTemplateReconciler) getArgoApplication(ctx context.Conte
 	return app, nil, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-// This controller watches both ManifestRequestTemplate resources and ArgoCD Application resources.
-// When an Application changes, it triggers reconciliation of the associated MRT.
-func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&governancev1alpha1.ManifestRequestTemplate{}).
-		Watches(
-			&argocdv1alpha1.Application{},
-			handler.EnqueueRequestsFromMapFunc(r.findMRTForApplication),
-		).
-		Named("manifestrequesttemplate").
-		Complete(r)
-}
-
 // findMRTForApplication maps an ArgoCD Application to the MRT that references it.
 // When an Application changes, this function determines which MRT should be reconciled.
 func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -227,6 +223,12 @@ func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1al
 		return ""
 	}
 
+	// Fallback: try status.sync.revision
+	if app.Status.Sync.Revision != "" {
+		logger.Info("Found commit hash in status.sync.revision", "revision", app.Status.Sync.Revision)
+		return app.Status.Sync.Revision
+	}
+
 	// Try to get the commit SHA from status.operationState.syncResult.revision
 	logger.Info("Current operationState", "operationState", app.Status.OperationState)
 	if app.Status.OperationState != nil && app.Status.OperationState.SyncResult != nil {
@@ -234,45 +236,61 @@ func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1al
 		return app.Status.OperationState.SyncResult.Revision
 	}
 
-	// Fallback: try status.sync.revision
-	if app.Status.Sync.Revision != "" {
-		logger.Info("Found commit hash in status.sync.revision", "revision", app.Status.Sync.Revision)
-		return app.Status.Sync.Revision
-	}
-
-	// TODO: what to do then
 	return ""
 }
 
 // pauseArgoApplication pauses the automatic sync of an ArgoCD Application.
 // This prevents ArgoCD from automatically syncing new commits to the cluster.
 func (r *ManifestRequestTemplateReconciler) pauseArgoApplication(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
-	// app.Spec.SyncPolicy.Enabled = false
-
 	// Check if already paused
-	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.Automated != nil {
-		if !app.Spec.SyncPolicy.Automated.Prune {
+	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.Automated != nil && app.Spec.SyncPolicy.Automated.Enabled != nil {
+		if !*app.Spec.SyncPolicy.Automated.Enabled {
+			logger.Info("ArgoCD Application sync is already paused")
 			// Already paused
 			return nil
 		}
+	} else {
+		logger.Info("ArgoCD Application sync policy not set, initializing to pause sync")
+		// Set SyncPolicy to pause automated sync
+		if app.Spec.SyncPolicy == nil {
+			app.Spec.SyncPolicy = &argocdv1alpha1.SyncPolicy{}
+		}
+
+		if app.Spec.SyncPolicy.Automated == nil {
+			app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{}
+		}
+
+		automated := app.Spec.SyncPolicy.Automated
+
+		app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{
+			Prune:      automated.Prune,
+			SelfHeal:   automated.SelfHeal,
+			AllowEmpty: automated.AllowEmpty,
+		}
 	}
 
-	// Set SyncPolicy to pause automated sync
-	if app.Spec.SyncPolicy == nil {
-		app.Spec.SyncPolicy = &argocdv1alpha1.SyncPolicy{}
-	}
-
-	app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{
-		Prune:      false,
-		SelfHeal:   false,
-		AllowEmpty: false,
-	}
+	*app.Spec.SyncPolicy.Automated.Enabled = false
 
 	if err := r.Update(ctx, app); err != nil {
 		logger.Error(err, "Failed to update Application with pause sync policy")
 		return err
 	}
 
+	return nil
+}
+
+func (r *ManifestRequestTemplateReconciler) startMSR(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
+	if app.Status.Resources == nil && (app.Status.OperationState == nil || app.Status.OperationState.SyncResult == nil) {
+		logger.Info("No resources or operation state available in Application status")
+		return nil
+	}
+
+	if app.Status.Resources != nil {
+		logger.Info("Objects to sync from resources", "objects", app.Status.Resources)
+		return nil
+	}
+
+	logger.Info("Objects to sync from operationState.syncResult", "objects", app.Status.OperationState.SyncResult.Resources)
 	return nil
 }
 

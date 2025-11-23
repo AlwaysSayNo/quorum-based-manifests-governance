@@ -43,3 +43,20 @@ tasks:
     desc: "Simulates a developer pushing a change to the shared GitHub repo"
     cmds:
       - (cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} && bash ../../commit-dummy.sh)
+
+  dev:create-mrt:
+    desc: "Create a ManifestRequestTemplate in the cluster"
+    cmds:
+      - (cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} && bash ../../create-dummy-mrt.sh)
+
+  dev:commit-all:
+    desc: "Commit all changes in the local repo and push to GitHub"
+    cmds:
+      - | 
+        (
+        cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} &&
+        git pull origin main &&
+        git add . &&
+        git commit -m "Dev commit all changes" &&
+        git push origin main
+        )

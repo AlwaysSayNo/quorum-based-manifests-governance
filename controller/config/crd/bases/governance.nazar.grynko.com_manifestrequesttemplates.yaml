@@ -62,15 +62,28 @@ spec:
                 type: object
               governors:
                 description: Required until GovernorsRef is implemented.
-                items:
-                  properties:
-                    alias:
-                      description: Alias for governor (for easier identification)
-                      minLength: 1
-                      type: string
-                    notificationChannel:
-                      description: Notification channel to inform the governor about
-                        pending approvals.
+                properties:
+                  members:
+                    description: List of governors.
+                    items:
+                      properties:
+                        alias:
+                          description: Alias for governor (for easier identification)
+                          minLength: 1
+                          type: string
+                        publicKey:
+                          description: PublicKey of the governor used to verify signatures.
+                          minLength: 1
+                          type: string
+                      required:
+                      - alias
+                      - publicKey
+                      type: object
+                    type: array
+                  notificationChannels:
+                    description: General list of notification channels to inform governors
+                      about pending approvals.
+                    items:
                       properties:
                         slack:
                           properties:
@@ -82,15 +95,10 @@ spec:
                           - channelID
                           type: object
                       type: object
-                    publicKey:
-                      description: PublicKey of the governor used to verify signatures.
-                      minLength: 1
-                      type: string
-                  required:
-                  - alias
-                  - publicKey
-                  type: object
-                type: array
+                    type: array
+                required:
+                - members
+                type: object
               location:
                 description: Location contains information about where to store MSR,
                   MCA and signatures.
