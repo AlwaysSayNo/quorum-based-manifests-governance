@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the controller itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- manifestchangeapproval_admin_role.yaml
+- manifestchangeapproval_editor_role.yaml
+- manifestchangeapproval_viewer_role.yaml
 - manifestrequesttemplate_admin_role.yaml
 - manifestrequesttemplate_editor_role.yaml
 - manifestrequesttemplate_viewer_role.yaml

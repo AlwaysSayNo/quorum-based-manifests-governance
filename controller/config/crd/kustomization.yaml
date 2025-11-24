@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/governance.nazar.grynko.com_manifestrequesttemplates.yaml
+- bases/governance.nazar.grynko.com_manifestchangeapprovals.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
