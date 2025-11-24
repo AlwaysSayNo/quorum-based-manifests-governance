@@ -29,4 +29,7 @@ resources:
   kind: ManifestChangeApproval
   path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
   version: v1alpha1
+  webhooks:
+    validation: true
+    webhookVersion: v1
 version: "3"
