@@ -5,21 +5,19 @@ if [[ -n $(git status --porcelain) ]]; then
     exit 1
 fi
 
-
 # Pull changes to avoid conflicts
 git pull origin main
 
-
-# Make a dummy change to the config.yaml to simulate a developer change
+# Make a dummy change to create MRT
 echo "apiVersion: governance.nazar.grynko.com/v1alpha1
 kind: ManifestRequestTemplate
 
 metadata:
   name: mrt-sample
   namespace: test-app
-  version: 1
 
 spec:
+  version: 1
   publicKey: |
     -----
 
@@ -28,7 +26,7 @@ spec:
     namespace: argocd
 
   location:
-    folder: "manifest-signing-requests"
+    folder: manifest-signing-requests
 
   msr:
     name: msr-sample

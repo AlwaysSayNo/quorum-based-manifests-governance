@@ -55,7 +55,7 @@ func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) e
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&governancev1alpha1.ManifestRequestTemplate{}).
 		Watches(
-			&argocdv1alpha1.Application{}, //&internal.Kind{Type: &argocdv1alpha1.Application{}}
+			&argocdv1alpha1.Application{},
 			handler.EnqueueRequestsFromMapFunc(r.findMRTForApplication),
 		).
 		Named("manifestrequesttemplate").
@@ -127,7 +127,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	}
 	logger.Info("Updated MRT status with new commit hash", "hash", currentCommitHash)
 
-	// Step 3: Create MSR (Manifest Signing Request) - TODO: implement your MSR creation logic here
+	// Step 3: Create MSR (Manifest Signing Request) - TODO: implement MSR creation logic here
 	logger.Info("TODO: Create Manifest Signing Request for new commit")
 	r.startMSR(ctx, app, logger)
 
@@ -202,7 +202,7 @@ func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Co
 			if appNamespace == "" {
 				appNamespace = DefaultArgoCDNamespace
 			}
-			if appNamespace == obj.GetNamespace() {
+			if appNamespace == obj.GetNamespace() { // TODO: only one application for one MRT should exist. Otherwise => fail
 				requests = append(requests, reconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Name:      mrt.Name,

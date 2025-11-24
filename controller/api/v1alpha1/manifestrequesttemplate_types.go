@@ -97,7 +97,6 @@ type Governor struct {
 	// +kubebuilder:validation:MinLength=1
 	// +required
 	PublicKey string `json:"publicKey,omitempty"`
-
 }
 
 type GovernorList struct {
@@ -144,6 +143,12 @@ type ApprovalRule struct {
 
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
 type ManifestRequestTemplateSpec struct {
+
+	// Version is the current version of the ManifestRequestTemplate.
+	// Each new MRT must have a version higher than the previous one.
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Version int `json:"version"`
 
 	// publicKey is used to sign MCA.
 	// +kubebuilder:validation:MinLength=1
