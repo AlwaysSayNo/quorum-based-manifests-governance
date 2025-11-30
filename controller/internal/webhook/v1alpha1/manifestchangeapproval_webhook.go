@@ -18,33 +18,19 @@ package v1alpha1
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // nolint:unused
 // log is for logging in this package.
 var manifestchangeapprovallog = logf.Log.WithName("manifestchangeapproval-resource")
 
-// SetupManifestChangeApprovalWebhookWithManager registers the webhook for ManifestChangeApproval in the manager.
-func SetupManifestChangeApprovalWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).For(&governancev1alpha1.ManifestChangeApproval{}).
-		WithValidator(&ManifestChangeApprovalCustomValidator{}).
-		Complete()
-}
-
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
-// +kubebuilder:webhook:path=/validate-governance-nazar-grynko-com-v1alpha1-manifestchangeapproval,mutating=false,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=create;update,versions=v1alpha1,name=vmanifestchangeapproval-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-all,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-governance.kb.io,admissionReviewVersions=v1
 
 // ManifestChangeApprovalCustomValidator struct is responsible for validating the ManifestChangeApproval resource
 // when it is created, updated, or deleted.
@@ -52,46 +38,31 @@ func SetupManifestChangeApprovalWebhookWithManager(mgr ctrl.Manager) error {
 // NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
 // as this struct is used only for temporary operations and does not need to be deeply copied.
 type ManifestChangeApprovalCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
+	Client  client.Client
+	Decoder *admission.Decoder
 }
 
-var _ webhook.CustomValidator = &ManifestChangeApprovalCustomValidator{}
+// Constants for policy
+const argoCDServiceAccountName = "argocd-application-controller"
+const argoCDNamespace = "argocd"
+const argoCDUsername = "system:serviceaccount:" + argoCDNamespace + ":" + argoCDServiceAccountName
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ManifestChangeApproval.
-func (v *ManifestChangeApprovalCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	manifestchangeapproval, ok := obj.(*governancev1alpha1.ManifestChangeApproval)
-	if !ok {
-		return nil, fmt.Errorf("expected a ManifestChangeApproval object but got %T", obj)
+// Handle is the core function that gets called for every admission request.
+func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
+	logger := logf.FromContext(ctx).WithValues("user", req.UserInfo.Username)
+	logger.Info("Handling request in generic webhook")
+
+	if strings.HasPrefix(req.UserInfo.Username, "system:serviceaccount:") {
+		logger.Info("Request from a ServiceAccount", "username", req.UserInfo.Username)
+		return admission.Allowed("Allowed SA for now")
 	}
-	manifestchangeapprovallog.Info("Validation for ManifestChangeApproval upon creation", "name", manifestchangeapproval.GetName())
 
-	// TODO(user): fill in your validation logic upon object creation.
-
-	return nil, nil
+	logger.Info("Request form a non-ServiceAccount user", "username", req.UserInfo.Username)
+	return admission.Allowed("Allowed non-SA for now")
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ManifestChangeApproval.
-func (v *ManifestChangeApprovalCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	manifestchangeapproval, ok := newObj.(*governancev1alpha1.ManifestChangeApproval)
-	if !ok {
-		return nil, fmt.Errorf("expected a ManifestChangeApproval object for the newObj but got %T", newObj)
-	}
-	manifestchangeapprovallog.Info("Validation for ManifestChangeApproval upon update", "name", manifestchangeapproval.GetName())
-
-	// TODO(user): fill in your validation logic upon object update.
-
-	return nil, nil
-}
-
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ManifestChangeApproval.
-func (v *ManifestChangeApprovalCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	manifestchangeapproval, ok := obj.(*governancev1alpha1.ManifestChangeApproval)
-	if !ok {
-		return nil, fmt.Errorf("expected a ManifestChangeApproval object but got %T", obj)
-	}
-	manifestchangeapprovallog.Info("Validation for ManifestChangeApproval upon deletion", "name", manifestchangeapproval.GetName())
-
-	// TODO(user): fill in your validation logic upon object deletion.
-
-	return nil, nil
+// InjectDecoder injects the decoder.
+func (v *ManifestChangeApprovalCustomValidator) InjectDecoder(d *admission.Decoder) error {
+	v.Decoder = d
+	return nil
 }

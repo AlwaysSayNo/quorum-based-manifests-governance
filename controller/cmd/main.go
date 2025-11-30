@@ -40,6 +40,7 @@ import (
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
 	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/webhook/v1alpha1"
+	admissionwh "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -189,13 +190,24 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)
 	}
+
+	// manual webhook setup
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookv1alpha1.SetupManifestChangeApprovalWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ManifestChangeApproval")
+		hookServer := webhook.NewServer(webhook.Options{})
+
+		// Register generic handler with the path we defined in the marker.
+		hookServer.Register("/validate-all", &admissionwh.Webhook{
+			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{Client: mgr.GetClient()},
+		})
+
+		// Add the server to the manager, which will start it.
+		if err := mgr.Add(hookServer); err != nil {
+			setupLog.Error(err, "unable to add webhook server to manager")
 			os.Exit(1)
 		}
 	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

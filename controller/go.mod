@@ -13,6 +13,7 @@ require (
 require (
 	github.com/argoproj/argo-cd/v3 v3.2.0
 	github.com/onsi/gomega v1.38.2
+	k8s.io/api v0.34.2
 )
 
 require (
@@ -164,7 +165,6 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.34.2 // indirect
 	k8s.io/apiextensions-apiserver v0.34.1 // indirect
 	k8s.io/apiserver v0.34.1 // indirect
 	k8s.io/cli-runtime v0.34.0 // indirect
