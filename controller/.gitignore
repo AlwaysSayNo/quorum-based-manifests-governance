@@ -27,3 +27,5 @@ go.work
 *~
 
 /development/repos/**
+/config/local/certs/**
+**/*delete*

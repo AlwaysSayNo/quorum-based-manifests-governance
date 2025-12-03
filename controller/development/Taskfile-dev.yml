@@ -60,3 +60,23 @@ tasks:
         git commit -m "Dev commit all changes" &&
         git push origin main
         )
+  
+  dev:describe-webhook:
+    desc: "Describe the governance webhook in the clsuter"
+    cmds: 
+      - kubectl describe validatingwebhookconfiguration local-controller-validating-webhook-configuration
+
+  dev:run-proxy-ngrok:
+    desc: "Run ngrok to expose local controller webhook server"
+    cmds:
+      - ngrok http https://localhost:9443
+
+  dev:argocd-forward-ports:
+    desc: "Forward ArgoCD server ports to localhost"
+    cmds:
+      - kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+  dev:argocd-get-password:
+    desc: "Get the ArgoCD initial admin password"
+    cmds:
+      - kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d | xargs echo

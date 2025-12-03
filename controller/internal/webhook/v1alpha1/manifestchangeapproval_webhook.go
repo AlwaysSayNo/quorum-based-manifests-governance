@@ -30,7 +30,7 @@ import (
 // log is for logging in this package.
 var manifestchangeapprovallog = logf.Log.WithName("manifestchangeapproval-resource")
 
-// +kubebuilder:webhook:path=/validate-all,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-governance.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-all,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
 
 // ManifestChangeApprovalCustomValidator struct is responsible for validating the ManifestChangeApproval resource
 // when it is created, updated, or deleted.

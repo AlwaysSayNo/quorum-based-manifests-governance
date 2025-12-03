@@ -12,7 +12,7 @@ webhooks:
       namespace: system
       path: /validate-all
   failurePolicy: Fail
-  name: mca-governance.kb.io
+  name: mca-webhook.governance.nazar.grynko.com
   rules:
   - apiGroups:
     - '*'
@@ -25,3 +25,4 @@ webhooks:
     resources:
     - '*'
   sideEffects: None
+  timeoutSeconds: 30

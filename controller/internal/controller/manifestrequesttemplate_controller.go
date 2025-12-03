@@ -113,10 +113,10 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	logger.Info("Detected new commit", "oldHash", mrt.Status.LastObservedCommitHash, "newHash", currentCommitHash)
 
 	// Step 1: Pause ArgoCD sync to prevent automatic synchronization
-	if err := r.pauseArgoApplication(ctx, app, logger); err != nil {
-		logger.Error(err, "Failed to pause ArgoCD Application sync")
-		return ctrl.Result{}, err
-	}
+	// if err := r.pauseArgoApplication(ctx, app, logger); err != nil {
+	// 	logger.Error(err, "Failed to pause ArgoCD Application sync")
+	// 	return ctrl.Result{}, err
+	// }
 	logger.Info("Paused ArgoCD Application sync")
 
 	// Step 2: Update MRT status with the new commit hash
