@@ -198,7 +198,10 @@ func main() {
 
 		// Register generic handler with the path we defined in the marker.
 		hookServer.Register("/validate-all", &admissionwh.Webhook{
-			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{Client: mgr.GetClient()},
+			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{
+				Client:  mgr.GetClient(),
+				Decoder: admissionwh.NewDecoder(mgr.GetScheme()),
+			},
 		})
 
 		// Add the server to the manager, which will start it.

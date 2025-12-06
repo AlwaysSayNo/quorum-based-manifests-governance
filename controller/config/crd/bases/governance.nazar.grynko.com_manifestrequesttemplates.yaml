@@ -185,6 +185,11 @@ spec:
           status:
             description: status defines the observed state of ManifestRequestTemplate
             properties:
+              commitsQueue:
+                description: CommitsQueue is the list of commit SHAs waiting for processing.
+                items:
+                  type: string
+                type: array
               conditions:
                 description: |-
                   conditions represent the current state of the ManifestRequestTemplate resource.
@@ -265,6 +270,8 @@ spec:
                 description: LastObservedCommitHash is the last observed commit hash
                   from the git repository
                 type: string
+            required:
+            - commitsQueue
             type: object
         required:
         - spec

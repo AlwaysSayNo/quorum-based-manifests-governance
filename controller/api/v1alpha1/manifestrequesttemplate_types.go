@@ -201,6 +201,11 @@ type ManifestRequestTemplateStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// RevisionsQueue is the list of commit SHAs waiting for processing.
+	// TODO:
+	// +required
+	RevisionsQueue []string `json:"revisionsQueue,omitempty"`
+
 	// LastObservedCommitHash is the last observed commit hash from the git repository
 	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
 

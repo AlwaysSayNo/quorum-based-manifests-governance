@@ -48,11 +48,24 @@ spec:
           status:
             description: status defines the observed state of ManifestChangeApproval
             properties:
+              approvalHistory:
+                description: History of approvals
+                items:
+                  properties:
+                    commitSHA:
+                      description: CommitSHA is the SHA of the approved commit
+                      type: string
+                    time:
+                      description: Time is the time when the approval was made
+                      format: date-time
+                      type: string
+                  required:
+                  - commitSHA
+                  - time
+                  type: object
+                type: array
               conditions:
                 description: |-
-                  conditions represent the current state of the ManifestChangeApproval resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
                   Standard condition types include:
                   - "Available": the resource is fully functional
                   - "Progressing": the resource is being created or updated
@@ -117,6 +130,9 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastApprovedCommitSHA:
+                description: Last approved commit SHA
+                type: string
             type: object
         required:
         - spec

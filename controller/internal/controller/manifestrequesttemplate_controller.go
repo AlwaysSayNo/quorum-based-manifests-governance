@@ -84,19 +84,19 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	logger.Info("Reconciling ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
 
 	// Fetch the MRT instance
-	mrt, res, err := r.getMRT(ctx, req, logger)
+	mrt, res, err := r.getMRTForRequest(ctx, req, &logger)
 	if res != nil {
 		return *res, err
 	}
 
 	// Fetch ArgoCD Application for this MRT
-	app, res, err := r.getArgoApplication(ctx, mrt, logger)
+	app, res, err := r.getApplication(ctx, mrt, &logger)
 	if res != nil {
 		return *res, err
 	}
 
 	// Get the current commit hash from the Application status
-	currentCommitHash := r.getCommitHashFromApp(app, logger)
+	currentCommitHash := r.getCommitHashFromApp(app, &logger)
 	if currentCommitHash == "" {
 		// TODO: Handle case where commit hash is not found
 		logger.Info("No commit hash found in Application status yet")
@@ -139,7 +139,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{}, nil
 }
 
-func (r *ManifestRequestTemplateReconciler) getMRT(ctx context.Context, req ctrl.Request, logger logr.Logger) (*governancev1alpha1.ManifestRequestTemplate, *ctrl.Result, error) {
+func (r *ManifestRequestTemplateReconciler) getMRTForRequest(ctx context.Context, req ctrl.Request, logger *logr.Logger) (*governancev1alpha1.ManifestRequestTemplate, *ctrl.Result, error) {
 	// Fetch the ManifestRequestTemplate instance
 	mrt := &governancev1alpha1.ManifestRequestTemplate{}
 	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
@@ -157,8 +157,9 @@ func (r *ManifestRequestTemplateReconciler) getMRT(ctx context.Context, req ctrl
 	return mrt, nil, nil
 }
 
-func (r *ManifestRequestTemplateReconciler) getArgoApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger logr.Logger) (*argocdv1alpha1.Application, *ctrl.Result, error) {
-	// Fetch the ArgoCD Application referenced by the MRT
+// getApplication fetches the ArgoCD Application resource referenced by the ManifestRequestTemplate
+func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*argocdv1alpha1.Application, *ctrl.Result, error) {
+	// TODO: create a defaulting webhook to set these values, in order to avoid validating it every time.
 	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
 	if appNamespace == "" {
 		appNamespace = DefaultArgoCDNamespace
@@ -171,6 +172,8 @@ func (r *ManifestRequestTemplateReconciler) getArgoApplication(ctx context.Conte
 	}
 
 	if err := r.Get(ctx, appKey, app); err != nil {
+		// TODO: create validating webhook, that ensures, that MRT corresponds to an existing Application
+		// TODO: In validating webhook we can also set mapping for Application to MRT (in case of non default Application namespace)
 		if errors.IsNotFound(err) {
 			logger.Info("ArgoCD Application not found", "name", appKey.Name, "namespace", appKey.Namespace)
 			return nil, &ctrl.Result{}, nil
@@ -187,30 +190,34 @@ func (r *ManifestRequestTemplateReconciler) getArgoApplication(ctx context.Conte
 func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Context, obj client.Object) []reconcile.Request {
 	logger := log.FromContext(ctx)
 
-	// Find all MRTs in all namespaces
+	// Fetch list of all MRTs
 	mrtList := &governancev1alpha1.ManifestRequestTemplateList{}
 	if err := r.List(ctx, mrtList); err != nil {
-		logger.Error(err, "Failed to list ManifestRequestTemplates")
+		logger.Error(err, "Failed to get ManifestRequestTemplates list")
 		return []reconcile.Request{}
 	}
 
+	// Check if this MRT references the changed Application
 	var requests []reconcile.Request
 	for _, mrt := range mrtList.Items {
-		// Check if this MRT references the changed Application
-		if mrt.Spec.ArgoCDApplication.Name == obj.GetName() {
-			appNamespace := mrt.Spec.ArgoCDApplication.Namespace
-			if appNamespace == "" {
-				appNamespace = DefaultArgoCDNamespace
-			}
-			if appNamespace == obj.GetNamespace() { // TODO: only one application for one MRT should exist. Otherwise => fail
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      mrt.Name,
-						Namespace: mrt.Namespace,
-					},
-				})
-			}
+		// TODO: create a defaulting webhook to set these values, in order to avoid validating it every time.
+		appNamespace := mrt.Spec.ArgoCDApplication.Namespace
+		if appNamespace == "" {
+			appNamespace = DefaultArgoCDNamespace
 		}
+		appName := mrt.Spec.ArgoCDApplication.Name
+
+		// TODO: create validating webhook, that ensures, that only one MRT corresponds to one Application (many-one are not allowed)  
+		if appName != obj.GetName() || appNamespace != obj.GetNamespace() {
+			continue
+		}
+		
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      mrt.Name,
+				Namespace: mrt.Namespace,
+			},
+		})
 	}
 
 	return requests
@@ -218,7 +225,7 @@ func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Co
 
 // getCommitHashFromApp extracts the current commit hash from the ArgoCD Application status.
 // ArgoCD Application stores the current commit hash in status.operationState or status.sync.revision
-func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1alpha1.Application, logger logr.Logger) string {
+func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1alpha1.Application, logger *logr.Logger) string {
 	if app == nil {
 		return ""
 	}

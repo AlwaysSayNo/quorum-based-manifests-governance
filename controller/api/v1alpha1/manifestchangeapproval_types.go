@@ -35,17 +35,25 @@ type ManifestChangeApprovalSpec struct {
 	Foo *string `json:"foo,omitempty"`
 }
 
+type ManifestChangeApprovalHistoryRecord struct {
+	// CommitSHA is the SHA of the approved commit
+	CommitSHA string `json:"commitSHA"`
+
+	// Time is the time when the approval was created
+	Time metav1.Time `json:"time"`
+}
+
 // ManifestChangeApprovalStatus defines the observed state of ManifestChangeApproval.
 type ManifestChangeApprovalStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// Last approved commit SHA
+	// +optional
+	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
 
-	// conditions represent the current state of the ManifestChangeApproval resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
+	// History of approvals
+	// +optional
+	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
+
 	// Standard condition types include:
 	// - "Available": the resource is fully functional
 	// - "Progressing": the resource is being created or updated
