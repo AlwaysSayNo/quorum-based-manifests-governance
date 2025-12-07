@@ -37,10 +37,11 @@ import (
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
+	admissionwh "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
 	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/webhook/v1alpha1"
-	admissionwh "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -211,6 +212,13 @@ func main() {
 		}
 	}
 
+	if err := (&controller.ManifestSigningRequestReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

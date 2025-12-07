@@ -18,6 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -25,9 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
@@ -38,10 +40,31 @@ const (
 	DefaultArgoCDNamespace = "argocd"
 )
 
+type GitRepository interface {
+	// HasRevision return true, if revision commit is the part of git repository.
+	HasRevision(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, commit string) (bool, error)
+
+	// GetLatestRevision return the last observed revision for the repository.
+	GetLatestRevision(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (string, error)
+
+	// GetChangedFiles returns a list of files that changed between two commits.
+	// TODO: change type from FileChange. Because it bounds it straight to the governance module
+	GetChangedFiles(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error)
+
+	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
+	PushMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
+}
+
+type Notifier interface {
+	NotifyGovernors(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest) error
+}
+
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme     *runtime.Scheme
+	repository GitRepository
+	notifier   Notifier
 }
 
 func Pointer[T any](d T) *T {
@@ -54,10 +77,6 @@ func Pointer[T any](d T) *T {
 func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&governancev1alpha1.ManifestRequestTemplate{}).
-		Watches(
-			&argocdv1alpha1.Application{},
-			handler.EnqueueRequestsFromMapFunc(r.findMRTForApplication),
-		).
 		Named("manifestrequesttemplate").
 		Complete(r)
 }
@@ -68,16 +87,6 @@ func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) e
 // +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// This function:
-// 1. Detects changes in the ArgoCD Application (new commits)
-// 2. Pauses ArgoCD synchronization
-// 3. Tracks commit hashes to avoid duplicate processing
-// 4. Waits for ManifestChangeApproval before resuming sync
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -89,54 +98,69 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 		return *res, err
 	}
 
-	// Fetch ArgoCD Application for this MRT
-	app, res, err := r.getApplication(ctx, mrt, &logger)
-	if res != nil {
-		return *res, err
+	// TODO: remove nil branch, after defaulting webhook
+	if len(mrt.Status.RevisionsQueue) > 0 {
+		return r.handleNewRevisionCommit(ctx, req, mrt, &logger)
 	}
 
-	// Get the current commit hash from the Application status
-	currentCommitHash := r.getCommitHashFromApp(app, &logger)
-	if currentCommitHash == "" {
-		// TODO: Handle case where commit hash is not found
-		logger.Info("No commit hash found in Application status yet")
-		return ctrl.Result{}, nil
-	}
-
-	// Check if we've already seen this commit hash
-	if currentCommitHash == mrt.Status.LastObservedCommitHash {
-		logger.Info("Already processed this commit hash", "hash", currentCommitHash)
-		return ctrl.Result{}, nil
-	}
-
-	// New commit detected!
-	logger.Info("Detected new commit", "oldHash", mrt.Status.LastObservedCommitHash, "newHash", currentCommitHash)
-
-	// Step 1: Pause ArgoCD sync to prevent automatic synchronization
-	// if err := r.pauseArgoApplication(ctx, app, logger); err != nil {
-	// 	logger.Error(err, "Failed to pause ArgoCD Application sync")
-	// 	return ctrl.Result{}, err
-	// }
-	logger.Info("Paused ArgoCD Application sync")
-
-	// Step 2: Update MRT status with the new commit hash
-	mrt.Status.LastObservedCommitHash = currentCommitHash
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		logger.Error(err, "Failed to update ManifestRequestTemplate status")
-		return ctrl.Result{}, err
-	}
-	logger.Info("Updated MRT status with new commit hash", "hash", currentCommitHash)
-
-	// Step 3: Create MSR (Manifest Signing Request) - TODO: implement MSR creation logic here
-	logger.Info("TODO: Create Manifest Signing Request for new commit")
-	r.startMSR(ctx, app, logger)
-
-	// Step 4: Requeue after a delay to check for ManifestChangeApproval
-	// TODO: we don't need to check for MCA. We can just wait indefinitely until MCA is created and update last observed hash then.
-	// Maybe do with Watches instead of Requeueing?
-	// logger.Info("Requeuing to check for ManifestChangeApproval", "requeueAfter", "10s")
-	// return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
 	return ctrl.Result{}, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.Context, req ctrl.Request, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (ctrl.Result, error) {
+	// TODO: remove nil branch, after defaulting webhook
+	if len(mrt.Status.RevisionsQueue) == 0 {
+		return ctrl.Result{}, fmt.Errorf("new revision handle failed, since revision queue is empty")
+	}
+
+	// TODO: in defaulting webhook we should intercept all MRT template CREATE requests and create corresponding default MCA for it, in order to avoid null checking MCA
+	// TODO: validate, if someone tries to delete MCA -- not allowed
+	mca, res, err := r.getMCAForMRT(ctx, mrt, logger)
+	if err != nil {
+		return res, err
+	}
+
+	revision := mrt.Status.RevisionsQueue[0]
+	mcaRevisionIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
+		return rec.CommitSHA == revision
+	})
+	if mcaRevisionIdx == len(mca.Status.ApprovalHistory)-1 {
+		logger.Info("Revision %s corresponds to the latest MCA. Do nothing", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
+	} else if mcaRevisionIdx != -1 {
+		logger.Info("Revision corresponds to a non latest MCA from History. Might be rollback. No support yet. Do nothing", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
+	}
+
+	if revision == mrt.Status.LastObservedCommitHash {
+		logger.Info("Revision corresponds to the latest processed revision. Do nothing", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+		return ctrl.Result{}, nil
+	}
+
+	if hasRevision, err := r.repository.HasRevision(ctx, mrt, revision); err != nil {
+		logger.Error(err, "Failed to check if repository has revision", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+		return ctrl.Result{}, err
+	} else if !hasRevision {
+		return ctrl.Result{}, fmt.Errorf("no commit for revision %s in the repository", revision)
+	}
+
+	latestRevision, err := r.repository.GetLatestRevision(ctx, mrt)
+	if err != nil {
+		logger.Error(err, "Failed to fetch last revision from repository", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+	}
+	if latestRevision != revision {
+		if latestRevision != mrt.Status.LastObservedCommitHash {
+			logger.Info("Detected newer latest revision in repository", "revision", revision, "latestRevision", latestRevision)
+			mrt.Status.RevisionsQueue = append(mrt.Status.RevisionsQueue, latestRevision)
+			return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
+		}
+
+		logger.Info("Revision corresponds to some old revision from repository. Do nothing", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
+	}
+
+	// MSR process start
+	logger.Info("Revision is the latest unprocessed repository revision", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+	return r.startMSRProcess(ctx, req, mrt, mca, logger)
 }
 
 func (r *ManifestRequestTemplateReconciler) getMRTForRequest(ctx context.Context, req ctrl.Request, logger *logr.Logger) (*governancev1alpha1.ManifestRequestTemplate, *ctrl.Result, error) {
@@ -157,8 +181,205 @@ func (r *ManifestRequestTemplateReconciler) getMRTForRequest(ctx context.Context
 	return mrt, nil, nil
 }
 
+func (r *ManifestRequestTemplateReconciler) getMCAForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*governancev1alpha1.ManifestChangeApproval, ctrl.Result, error) {
+	// Fetch list of all MRTs
+	mcaList := &governancev1alpha1.ManifestChangeApprovalList{}
+	if err := r.Client.List(ctx, mcaList); err != nil {
+		logger.Error(err, "Failed to get ManifestChangeApproval list while getting MCA")
+		return nil, ctrl.Result{}, fmt.Errorf("list ManifestChangeApproval: %w", err)
+	}
+
+	// Find MCA for this revision
+	for _, mcaItem := range mcaList.Items {
+		if mcaItem.Name == mrt.Spec.MCA.Name && mcaItem.Namespace == mrt.Spec.MCA.Namespace {
+			return &mcaItem, ctrl.Result{}, nil
+		}
+	}
+
+	// No MCA found
+	return nil, ctrl.Result{}, fmt.Errorf("no MCA for MRT was found. By default, MRT always has at least default MCA")
+}
+
+func (r *ManifestRequestTemplateReconciler) getMSRForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*governancev1alpha1.ManifestSigningRequest, ctrl.Result, error) {
+	// Fetch list of all MSRs
+	msrList := &governancev1alpha1.ManifestSigningRequestList{}
+	if err := r.Client.List(ctx, msrList); err != nil {
+		logger.Error(err, "Failed to get ManifestSigningRequest list while getting MCA")
+		return nil, ctrl.Result{}, fmt.Errorf("list ManifestSigningRequest: %w", err)
+	}
+
+	// Find MSR for this MRT
+	for _, msrItem := range msrList.Items {
+		if msrItem.Name == mrt.Spec.MCA.Name && msrItem.Namespace == mrt.Spec.MCA.Namespace {
+			return &msrItem, ctrl.Result{}, nil
+		}
+	}
+
+	// No MCA found
+	return nil, ctrl.Result{}, fmt.Errorf("no MSR for MRT was found. By default, MRT always has at least default MSR")
+}
+
+func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context, req ctrl.Request, mrt *governancev1alpha1.ManifestRequestTemplate, mca *governancev1alpha1.ManifestChangeApproval, logger *logr.Logger) (ctrl.Result, error) {
+	revision := mrt.Status.RevisionsQueue[0]
+	logger.Info("Start MSR process", "revision", revision, "name", req.Name, "namespace", req.Namespace)
+
+	// Get Changed Files from Git
+	changedFiles, err := r.repository.GetChangedFiles(ctx, mrt, mca.Status.LastApprovedCommitSHA, revision)
+	if err != nil {
+		logger.Error(err, "Failed to get changed files from repository")
+		// This is a temporary error (e.g., network issue), so we should requeue.
+		return ctrl.Result{}, err
+	}
+
+	// Filter all files, that ArgoCD don't accept/monitor + content of governanceFolder
+	// TODO: take SHA from files
+	changedFiles = r.filterNonManifestFiles(changedFiles, mrt)
+	if len(changedFiles) == 0 {
+		mrt.Status.LastObservedCommitHash = revision
+		logger.Info("No manifest file changes detected between commits. Skipping MSR creation.")
+		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
+	}
+
+	// Get and update MSR in cluster
+	msr, resp, err := r.getMSRForMRT(ctx, mrt, logger)
+	if err != nil {
+		logger.Error(err, "Failed to fetch MSR by MRT")
+		return resp, err
+	}
+
+	resp, err = r.updateMSR(ctx, mrt, msr, revision, changedFiles, logger)
+	if err != nil {
+		logger.Error(err, "Failed to construct new MSR object")
+		return resp, err
+	}
+
+	// Create MSR file and push to the Git Repository
+	msrCommit, err := r.repository.PushMSR(ctx, mrt, msr)
+	if err != nil {
+		logger.Error(err, "Failed to push MSR manifest to repository")
+		return ctrl.Result{}, err
+	}
+	logger.Info("Successfully pushed MSR manifest to repository")
+
+	// Point to the new MSR commit and pop revision from the queue
+	mrt.Status.LastObservedCommitHash = msrCommit
+	mrt.Status.RevisionsQueue = mrt.Status.RevisionsQueue[1:]
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		logger.Error(err, "Failed to update MRT status after MSR creation")
+		return ctrl.Result{}, err
+	}
+	logger.Info("Successfully updated MRT status")
+
+	// Notify the Governors
+	if err := r.notifier.NotifyGovernors(ctx, mrt, msr); err != nil {
+		// Non-critical error. Log it.
+		logger.Error(err, "Failed to send notifications to governors")
+	} else {
+		logger.Info("Successfully sent notifications to governors")
+	}
+
+	logger.Info("Finished MSR process successfully")
+	return ctrl.Result{}, nil
+}
+
+// TODO: MRT should be set as the owner of MSR and MCA
+func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest, revision string, changedFiles []governancev1alpha1.FileChange, logger *logr.Logger) (ctrl.Result, error) {
+	application, resp, err := r.getApplication(ctx, mrt, logger)
+	if err != nil {
+		return resp, err
+	}
+
+	mrtSpecCpy := mrt.Spec.DeepCopy()
+
+	newVersion := msr.Spec.Version + 1
+	newGitRepository := governancev1alpha1.GitRepository{
+		URL:  application.Spec.Source.RepoURL,
+		Path: application.Spec.Source.Path,
+	}
+
+	msr.Spec.Version = newVersion
+	msr.Spec.PublicKey = mrtSpecCpy.PublicKey
+	msr.Spec.GitRepository = newGitRepository
+	msr.Spec.Location = mrtSpecCpy.Location
+	msr.Spec.Changes = changedFiles
+	msr.Spec.Governors = mrtSpecCpy.Governors
+	msr.Spec.Require = mrtSpecCpy.Require
+
+	msr.Status.RequestHistory = append(msr.Status.RequestHistory, r.createNewMSRHistoryRecordFromMSR(msr))
+
+	if err := r.Status().Update(ctx, msr); err != nil {
+		logger.Error(err, "Failed to update MSR after new MSR request creation")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) createNewMSRHistoryRecordFromMSR(msr *governancev1alpha1.ManifestSigningRequest) governancev1alpha1.ManifestSigningRequestHistoryRecord {
+	msrSpecCpy := msr.Spec.DeepCopy()
+
+	return governancev1alpha1.ManifestSigningRequestHistoryRecord{
+		Version:   msrSpecCpy.Version,
+		Changes:   msrSpecCpy.Changes,
+		Governors: msrSpecCpy.Governors,
+		Require:   msrSpecCpy.Require,
+		Approves: governancev1alpha1.GovernorList{
+			Members: []governancev1alpha1.Governor{},
+		},
+		Status: governancev1alpha1.InProgress,
+	}
+}
+
+func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
+	files []governancev1alpha1.FileChange,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) []governancev1alpha1.FileChange {
+
+	var filtered []governancev1alpha1.FileChange
+
+	// normalize paths
+	governanceFolder := filepath.Clean(mrt.Spec.Location.Folder)
+
+	for _, file := range files {
+		filePath := filepath.Clean(file.Path)
+
+		// ArgoCD can process .yaml, .yml, and .json files
+		isManifestType := strings.HasSuffix(filePath, ".yaml") ||
+			strings.HasSuffix(filePath, ".yml") ||
+			strings.HasSuffix(filePath, ".json")
+
+		if !isManifestType {
+			continue
+		}
+
+		// Skip files inside of governanceFolder
+		// TODO: we suppose, that MRT is created outside of governanceFolder. Otherwise, it will be skipped.
+		// TODO: on creation check, that MSR is not created inside of governanceFolder. Or improve the logic
+		isGovernanceFile := strings.HasPrefix(filePath, governanceFolder+"/")
+
+		if isGovernanceFile {
+			continue
+		}
+
+		// Add the remaining file (after both checks) to the list
+		filtered = append(filtered, file)
+	}
+
+	return filtered
+}
+
+func (r *ManifestRequestTemplateReconciler) popFromRevisionQueueWithResult(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (ctrl.Result, error) {
+	mrt.Status.RevisionsQueue = mrt.Status.RevisionsQueue[:1]
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		logger.Error(err, "Failed to update ManifestRequestTemplate status")
+		return ctrl.Result{}, fmt.Errorf("update ManifestRequestTemplate status: %w", err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
 // getApplication fetches the ArgoCD Application resource referenced by the ManifestRequestTemplate
-func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*argocdv1alpha1.Application, *ctrl.Result, error) {
+func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*argocdv1alpha1.Application, ctrl.Result, error) {
 	// TODO: create a defaulting webhook to set these values, in order to avoid validating it every time.
 	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
 	if appNamespace == "" {
@@ -176,157 +397,11 @@ func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, 
 		// TODO: In validating webhook we can also set mapping for Application to MRT (in case of non default Application namespace)
 		if errors.IsNotFound(err) {
 			logger.Info("ArgoCD Application not found", "name", appKey.Name, "namespace", appKey.Namespace)
-			return nil, &ctrl.Result{}, nil
+			return nil, ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get ArgoCD Application", "name", appKey.Name, "namespace", appKey.Namespace)
-		return nil, &ctrl.Result{}, err
+		return nil, ctrl.Result{}, err
 	}
 
-	return app, nil, nil
-}
-
-// findMRTForApplication maps an ArgoCD Application to the MRT that references it.
-// When an Application changes, this function determines which MRT should be reconciled.
-func (r *ManifestRequestTemplateReconciler) findMRTForApplication(ctx context.Context, obj client.Object) []reconcile.Request {
-	logger := log.FromContext(ctx)
-
-	// Fetch list of all MRTs
-	mrtList := &governancev1alpha1.ManifestRequestTemplateList{}
-	if err := r.List(ctx, mrtList); err != nil {
-		logger.Error(err, "Failed to get ManifestRequestTemplates list")
-		return []reconcile.Request{}
-	}
-
-	// Check if this MRT references the changed Application
-	var requests []reconcile.Request
-	for _, mrt := range mrtList.Items {
-		// TODO: create a defaulting webhook to set these values, in order to avoid validating it every time.
-		appNamespace := mrt.Spec.ArgoCDApplication.Namespace
-		if appNamespace == "" {
-			appNamespace = DefaultArgoCDNamespace
-		}
-		appName := mrt.Spec.ArgoCDApplication.Name
-
-		// TODO: create validating webhook, that ensures, that only one MRT corresponds to one Application (many-one are not allowed)  
-		if appName != obj.GetName() || appNamespace != obj.GetNamespace() {
-			continue
-		}
-		
-		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      mrt.Name,
-				Namespace: mrt.Namespace,
-			},
-		})
-	}
-
-	return requests
-}
-
-// getCommitHashFromApp extracts the current commit hash from the ArgoCD Application status.
-// ArgoCD Application stores the current commit hash in status.operationState or status.sync.revision
-func (r *ManifestRequestTemplateReconciler) getCommitHashFromApp(app *argocdv1alpha1.Application, logger *logr.Logger) string {
-	if app == nil {
-		return ""
-	}
-
-	// Fallback: try status.sync.revision
-	if app.Status.Sync.Revision != "" {
-		logger.Info("Found commit hash in status.sync.revision", "revision", app.Status.Sync.Revision)
-		return app.Status.Sync.Revision
-	}
-
-	// Try to get the commit SHA from status.operationState.syncResult.revision
-	logger.Info("Current operationState", "operationState", app.Status.OperationState)
-	if app.Status.OperationState != nil && app.Status.OperationState.SyncResult != nil {
-		logger.Info("Found commit hash in status.operationState.syncResult.revision", "revision", app.Status.OperationState.SyncResult.Revision)
-		return app.Status.OperationState.SyncResult.Revision
-	}
-
-	return ""
-}
-
-// pauseArgoApplication pauses the automatic sync of an ArgoCD Application.
-// This prevents ArgoCD from automatically syncing new commits to the cluster.
-func (r *ManifestRequestTemplateReconciler) pauseArgoApplication(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
-	// Check if already paused
-	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.Automated != nil && app.Spec.SyncPolicy.Automated.Enabled != nil {
-		if !*app.Spec.SyncPolicy.Automated.Enabled {
-			logger.Info("ArgoCD Application sync is already paused")
-			// Already paused
-			return nil
-		}
-	} else {
-		logger.Info("ArgoCD Application sync policy not set, initializing to pause sync")
-		// Set SyncPolicy to pause automated sync
-		if app.Spec.SyncPolicy == nil {
-			app.Spec.SyncPolicy = &argocdv1alpha1.SyncPolicy{}
-		}
-
-		if app.Spec.SyncPolicy.Automated == nil {
-			app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{}
-		}
-
-		automated := app.Spec.SyncPolicy.Automated
-
-		app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{
-			Prune:      automated.Prune,
-			SelfHeal:   automated.SelfHeal,
-			AllowEmpty: automated.AllowEmpty,
-		}
-	}
-
-	*app.Spec.SyncPolicy.Automated.Enabled = false
-
-	if err := r.Update(ctx, app); err != nil {
-		logger.Error(err, "Failed to update Application with pause sync policy")
-		return err
-	}
-
-	return nil
-}
-
-func (r *ManifestRequestTemplateReconciler) startMSR(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
-	if app.Status.Resources == nil && (app.Status.OperationState == nil || app.Status.OperationState.SyncResult == nil) {
-		logger.Info("No resources or operation state available in Application status")
-		return nil
-	}
-
-	if app.Status.Resources != nil {
-		logger.Info("Objects to sync from resources", "objects", app.Status.Resources)
-		return nil
-	}
-
-	logger.Info("Objects to sync from operationState.syncResult", "objects", app.Status.OperationState.SyncResult.Resources)
-	return nil
-}
-
-// resumeArgoApplication resumes the automatic sync of an ArgoCD Application.
-// This allows ArgoCD to sync the approved changes to the cluster.
-func (r *ManifestRequestTemplateReconciler) resumeArgoApplication(ctx context.Context, app *argocdv1alpha1.Application, logger logr.Logger) error {
-	// Check if already resumed
-	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.Automated != nil {
-		if app.Spec.SyncPolicy.Automated.Prune {
-			// Already resumed
-			return nil
-		}
-	}
-
-	// Set SyncPolicy to enable automated sync
-	if app.Spec.SyncPolicy == nil {
-		app.Spec.SyncPolicy = &argocdv1alpha1.SyncPolicy{}
-	}
-
-	app.Spec.SyncPolicy.Automated = &argocdv1alpha1.SyncPolicyAutomated{
-		Prune:      true,
-		SelfHeal:   true,
-		AllowEmpty: false,
-	}
-
-	if err := r.Update(ctx, app); err != nil {
-		logger.Error(err, "Failed to update Application with resume sync policy")
-		return err
-	}
-
-	return nil
+	return app, ctrl.Result{}, nil
 }

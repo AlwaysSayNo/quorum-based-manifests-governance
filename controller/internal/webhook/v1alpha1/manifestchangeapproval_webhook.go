@@ -231,6 +231,7 @@ func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(appli
 }
 
 func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, logger *logr.Logger, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
+	// TODO: add defaulting webhook, which would set this value
 	if mrt.Status.RevisionsQueue == nil {
 		mrt.Status.RevisionsQueue = []string{}
 	}

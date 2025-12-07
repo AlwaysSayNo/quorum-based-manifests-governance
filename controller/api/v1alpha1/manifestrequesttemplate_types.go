@@ -166,10 +166,12 @@ type ManifestRequestTemplateSpec struct {
 	Location Location `json:"location,omitempty"`
 
 	// MSR contains information about MSR metadata.
+	// TODO: cannot be changed later
 	// +optional
 	MSR MSR `json:"msr,omitempty"`
 
 	// MCA contains information about MCA metadata.
+	// TODO: cannot be changed later
 	// +optional
 	MCA MCA `json:"mca,omitempty"`
 
@@ -186,6 +188,9 @@ type ManifestRequestTemplateSpec struct {
 
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
 type ManifestRequestTemplateStatus struct {
+
+	// +required
+	RequestHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
 
 	// conditions represent the current state of the ManifestRequestTemplate resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

@@ -51,7 +51,7 @@ type ManifestChangeApprovalStatus struct {
 	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
 
 	// History of approvals
-	// +optional
+	// +required
 	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
 
 	// Standard condition types include:
