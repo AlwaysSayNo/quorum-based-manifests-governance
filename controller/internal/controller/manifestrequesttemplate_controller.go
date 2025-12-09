@@ -40,6 +40,10 @@ const (
 	DefaultArgoCDNamespace = "argocd"
 )
 
+type RepositoryManager interface {
+	GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error)
+}
+
 type GitRepository interface {
 	// HasRevision return true, if revision commit is the part of git repository.
 	HasRevision(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, commit string) (bool, error)
@@ -62,9 +66,9 @@ type Notifier interface {
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	repository GitRepository
-	notifier   Notifier
+	Scheme      *runtime.Scheme
+	repoManager RepositoryManager
+	notifier    Notifier
 }
 
 func Pointer[T any](d T) *T {
@@ -118,6 +122,9 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 	if err != nil {
 		return res, err
 	}
+	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	revision := mrt.Status.RevisionsQueue[0]
 	mcaRevisionIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
@@ -136,14 +143,14 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 		return ctrl.Result{}, nil
 	}
 
-	if hasRevision, err := r.repository.HasRevision(ctx, mrt, revision); err != nil {
+	if hasRevision, err := r.repository(ctx, mrt).HasRevision(ctx, mrt, revision); err != nil {
 		logger.Error(err, "Failed to check if repository has revision", "revision", revision, "name", req.Name, "namespace", req.Namespace)
 		return ctrl.Result{}, err
 	} else if !hasRevision {
 		return ctrl.Result{}, fmt.Errorf("no commit for revision %s in the repository", revision)
 	}
 
-	latestRevision, err := r.repository.GetLatestRevision(ctx, mrt)
+	latestRevision, err := r.repository(ctx, mrt).GetLatestRevision(ctx, mrt)
 	if err != nil {
 		logger.Error(err, "Failed to fetch last revision from repository", "revision", revision, "name", req.Name, "namespace", req.Namespace)
 	}
@@ -224,7 +231,7 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 	logger.Info("Start MSR process", "revision", revision, "name", req.Name, "namespace", req.Namespace)
 
 	// Get Changed Files from Git
-	changedFiles, err := r.repository.GetChangedFiles(ctx, mrt, mca.Status.LastApprovedCommitSHA, revision)
+	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mrt, mca.Status.LastApprovedCommitSHA, revision)
 	if err != nil {
 		logger.Error(err, "Failed to get changed files from repository")
 		// This is a temporary error (e.g., network issue), so we should requeue.
@@ -254,7 +261,7 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 	}
 
 	// Create MSR file and push to the Git Repository
-	msrCommit, err := r.repository.PushMSR(ctx, mrt, msr)
+	msrCommit, err := r.repository(ctx, mrt).PushMSR(ctx, mrt, msr)
 	if err != nil {
 		logger.Error(err, "Failed to push MSR manifest to repository")
 		return ctrl.Result{}, err
@@ -404,4 +411,13 @@ func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, 
 	}
 
 	return app, ctrl.Result{}, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) repositoryWithError(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error) {
+	return r.repoManager.GetProviderForMRT(ctx, mrt)
+}
+
+func (r *ManifestRequestTemplateReconciler) repository(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) GitRepository {
+	repo, _ := r.repoManager.GetProviderForMRT(ctx, mrt)
+	return repo
 }
