@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: manifestrequesttemplates.governance.nazar.grynko.com
+  name: manifestsigningrequests.governance.nazar.grynko.com
 spec:
   group: governance.nazar.grynko.com
   names:
-    kind: ManifestRequestTemplate
-    listKind: ManifestRequestTemplateList
-    plural: manifestrequesttemplates
-    singular: manifestrequesttemplate
+    kind: ManifestSigningRequest
+    listKind: ManifestSigningRequestList
+    plural: manifestsigningrequests
+    singular: manifestsigningrequest
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ManifestRequestTemplate is the Schema for the manifestrequesttemplates
+        description: ManifestSigningRequest is the Schema for the manifestsigningrequests
           API
         properties:
           apiVersion:
@@ -38,27 +38,41 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ManifestRequestTemplate
+            description: spec defines the desired state of ManifestSigningRequest
             properties:
-              argoCDApplication:
-                description: |-
-                  ArgoCDApplicationName is the name of the ArgoCD Application.
-                  It should contain information about the git repository, branch and path where manifests are stored.
+              changes:
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    path:
+                      type: string
+                    sha256:
+                      type: string
+                    status:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - namespace
+                  - path
+                  - sha256
+                  - status
+                  type: object
+                type: array
+              gitRepository:
                 properties:
-                  name:
-                    description: |-
-                      Name of the ArgoCD Application.
-                      It should contain information about the git repository, branch and path where manifests are stored.
-                    minLength: 1
+                  path:
                     type: string
-                  namespace:
-                    description: |-
-                      Namespace where the ArgoCD Application is located.
-                      Default is "argocd".
-                    minLength: 0
+                  url:
                     type: string
                 required:
-                - name
+                - path
+                - url
                 type: object
               governors:
                 description: Required until GovernorsRef is implemented.
@@ -110,45 +124,6 @@ spec:
                     minLength: 1
                     type: string
                 type: object
-              mca:
-                description: MCA contains information about MCA metadata.
-                properties:
-                  name:
-                    description: |-
-                      Name of the MCA resource.
-                      Default is "mca".
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace where the MCA resource will be created.
-                      Default is the same namespace as the MRT.
-                    minLength: 0
-                    type: string
-                type: object
-              msr:
-                description: MSR contains information about MSR metadata.
-                properties:
-                  name:
-                    description: |-
-                      Name of the MSR resource.
-                      Default is "msr".
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace where the MSR resource will be created.
-                      Default is the same namespace as the MRT.
-                    minLength: 0
-                    type: string
-                type: object
-              pgpSecretsRef:
-                properties:
-                  name:
-                    type: string
-                  namespace:
-                    type: string
-                type: object
               publicKey:
                 description: publicKey is used to sign MCA.
                 minLength: 1
@@ -176,47 +151,173 @@ spec:
                     minLength: 1
                     type: string
                 type: object
-              sshSecretsRef:
-                properties:
-                  name:
-                    type: string
-                  namespace:
-                    type: string
-                type: object
               version:
-                description: |-
-                  Version is the current version of the ManifestRequestTemplate.
-                  Each new MRT must have a version higher than the previous one.
                 minimum: 1
                 type: integer
             required:
-            - argoCDApplication
+            - changes
+            - gitRepository
             - governors
+            - location
             - publicKey
             - require
             - version
             type: object
           status:
-            description: status defines the observed state of ManifestRequestTemplate
+            description: status defines the observed state of ManifestSigningRequest
             properties:
               approvalHistory:
                 items:
                   properties:
-                    commitSHA:
-                      description: CommitSHA is the SHA of the approved commit
+                    approves:
+                      properties:
+                        members:
+                          description: List of governors.
+                          items:
+                            properties:
+                              alias:
+                                description: Alias for governor (for easier identification)
+                                minLength: 1
+                                type: string
+                              publicKey:
+                                description: PublicKey of the governor used to verify
+                                  signatures.
+                                minLength: 1
+                                type: string
+                            required:
+                            - alias
+                            - publicKey
+                            type: object
+                          type: array
+                        notificationChannels:
+                          description: General list of notification channels to inform
+                            governors about pending approvals.
+                          items:
+                            properties:
+                              slack:
+                                properties:
+                                  channelID:
+                                    description: Slack channel ID to notify (e.g.,
+                                      S01234567)
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - channelID
+                                type: object
+                            type: object
+                          type: array
+                      required:
+                      - members
+                      type: object
+                    changes:
+                      items:
+                        properties:
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          path:
+                            type: string
+                          sha256:
+                            type: string
+                          status:
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        - namespace
+                        - path
+                        - sha256
+                        - status
+                        type: object
+                      type: array
+                    governors:
+                      properties:
+                        members:
+                          description: List of governors.
+                          items:
+                            properties:
+                              alias:
+                                description: Alias for governor (for easier identification)
+                                minLength: 1
+                                type: string
+                              publicKey:
+                                description: PublicKey of the governor used to verify
+                                  signatures.
+                                minLength: 1
+                                type: string
+                            required:
+                            - alias
+                            - publicKey
+                            type: object
+                          type: array
+                        notificationChannels:
+                          description: General list of notification channels to inform
+                            governors about pending approvals.
+                          items:
+                            properties:
+                              slack:
+                                properties:
+                                  channelID:
+                                    description: Slack channel ID to notify (e.g.,
+                                      S01234567)
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - channelID
+                                type: object
+                            type: object
+                          type: array
+                      required:
+                      - members
+                      type: object
+                    require:
+                      description: |-
+                        ApprovalRule defines nested rules for approvals required.
+                        Each rule is a node. Each node can be:
+                        - intermediate node. Contains Require field with child rules:
+                        - AtLeast: number of child rules that must be satisfied
+                        - All: if true, all child rules must be satisfied
+
+                        - leaf node. Doesn't contain Require field, but contains Signer field:
+                        - Signer: the signer (governor) whose approval is required
+                      properties:
+                        all:
+                          description: If true, all child rules must be satisfied.
+                          type: boolean
+                        atLeast:
+                          description: Specifies the minimum number of child rules
+                            that must be satisfied.
+                          minimum: 1
+                          type: integer
+                        require:
+                          description: List of child rules.
+                          x-kubernetes-preserve-unknown-fields: true
+                        signer:
+                          description: Signer can be either PublicKey or Alias of
+                            the governor. If alias is used, it should start with `$`
+                            to distinguish it from PublicKey.
+                          minLength: 1
+                          type: string
+                      type: object
+                    status:
                       type: string
-                    time:
-                      description: Time is the time when the approval was created
-                      format: date-time
-                      type: string
+                    version:
+                      type: integer
                   required:
-                  - commitSHA
-                  - time
+                  - approves
+                  - changes
+                  - governors
+                  - require
+                  - status
+                  - version
                   type: object
                 type: array
               conditions:
                 description: |-
-                  conditions represent the current state of the ManifestRequestTemplate resource.
+                  conditions represent the current state of the ManifestSigningRequest resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
 
                   Standard condition types include:
@@ -283,26 +384,8 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              lastAcceptedMSR:
-                description: LastAcceptedMSR is the name of the last accepted MSR
-                  resource
-                type: string
-              lastMSR:
-                description: LastMSR is the name of the last created MSR resource
-                type: string
-              lastObservedCommitHash:
-                description: LastObservedCommitHash is the last observed commit hash
-                  from the git repository
-                type: string
-              revisionsQueue:
-                description: RevisionsQueue is the list of commit SHAs waiting for
-                  processing.
-                items:
-                  type: string
-                type: array
             required:
             - approvalHistory
-            - revisionsQueue
             type: object
         required:
         - spec

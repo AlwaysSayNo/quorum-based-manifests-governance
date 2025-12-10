@@ -20,6 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type ManifestRef struct {
+	Name      string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
 type ArgoCDApplication struct {
 	// Name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.
@@ -155,6 +160,8 @@ type ManifestRequestTemplateSpec struct {
 	// +required
 	PublicKey string `json:"publicKey,omitempty"`
 	// TODO: make PublicKeyRef in future to reference to a secret
+	PGPSecretsRef ManifestRef `json:"pgpSecretsRef,omitempty"`
+	SSHSecretsRef ManifestRef `json:"sshSecretsRef,omitempty"`
 
 	// ArgoCDApplicationName is the name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.

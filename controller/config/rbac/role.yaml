@@ -26,6 +26,7 @@ rules:
   - governance.nazar.grynko.com
   resources:
   - manifestrequesttemplates
+  - manifestsigningrequests
   verbs:
   - create
   - delete
@@ -38,12 +39,14 @@ rules:
   - governance.nazar.grynko.com
   resources:
   - manifestrequesttemplates/finalizers
+  - manifestsigningrequests/finalizers
   verbs:
   - update
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
   - manifestrequesttemplates/status
+  - manifestsigningrequests/status
   verbs:
   - get
   - patch

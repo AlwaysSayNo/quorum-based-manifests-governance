@@ -56,7 +56,7 @@ spec:
                       description: CommitSHA is the SHA of the approved commit
                       type: string
                     time:
-                      description: Time is the time when the approval was made
+                      description: Time is the time when the approval was created
                       format: date-time
                       type: string
                   required:
@@ -133,6 +133,8 @@ spec:
               lastApprovedCommitSHA:
                 description: Last approved commit SHA
                 type: string
+            required:
+            - approvalHistory
             type: object
         required:
         - spec

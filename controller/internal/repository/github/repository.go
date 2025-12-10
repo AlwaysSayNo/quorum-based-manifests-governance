@@ -1,5 +1,4 @@
-// in internal/repository/provider_git.go
-package github_test
+package github
 
 import (
 	"bytes"

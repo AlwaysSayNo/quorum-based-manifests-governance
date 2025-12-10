@@ -140,7 +140,7 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 
 	if revision == mrt.Status.LastObservedCommitHash {
 		logger.Info("Revision corresponds to the latest processed revision. Do nothing", "revision", revision, "name", req.Name, "namespace", req.Namespace)
-		return ctrl.Result{}, nil
+		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
 	}
 
 	if hasRevision, err := r.repository(ctx, mrt).HasRevision(ctx, mrt, revision); err != nil {
