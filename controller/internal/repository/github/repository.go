@@ -8,15 +8,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v2"
 	"os"
 	"path/filepath"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-logr/logr"
+	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
@@ -124,21 +125,36 @@ func (p *gitProvider) HasRevision(ctx context.Context, commit string) (bool, err
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Convert string commit into Hash object and check it in the repo
-	hash := plumbing.NewHash(commit)
-	_, err := p.repo.CommitObject(hash)
-	if err == nil {
-		// No error. Commit object was found
-		return true, nil
+	// Get the commit object for the HEAD of the default branch
+	headRef, err := p.repo.Head()
+	if err != nil {
+		return false, fmt.Errorf("could not get HEAD reference: %w", err)
+	}
+	headCommit, err := p.repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return false, fmt.Errorf("could not get HEAD commit object: %w", err)
 	}
 
-	// If error -- check, that object doesn't exist
-	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return false, nil
+	// Get the commit object for the target commit
+	targetHash := plumbing.NewHash(commit)
+	targetCommit, err := p.repo.CommitObject(targetHash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not get target commit object %s: %w", commit, err)
 	}
 
-	// Another error
-	return false, fmt.Errorf("failed to retrieve commit object %s: %w", commit, err)
+	// Check if the target commit is an ancestor of the head commit
+	isAncestor, err := headCommit.IsAncestor(targetCommit)
+	if err != nil {
+		return false, fmt.Errorf("error checking ancestry for commit %s: %w", commit, err)
+	}
+
+	// Check if the target commit is the head commit
+	isTheSame := headCommit.Hash.String() == targetHash.String()
+
+	return isAncestor || isTheSame, nil
 }
 
 // GetLatestRevision takes head of the default branch and returns it's commit hash
@@ -297,29 +313,29 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal MSR to YAML: %w", err)
 	}
-    // Create detached signature from the MSR file
-    signatureBytes, err := createDetachedSignature(msrBytes, gpgEntity)
-    if err != nil {
-        return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
-    }
+	// Create detached signature from the MSR file
+	signatureBytes, err := createDetachedSignature(msrBytes, gpgEntity)
+	if err != nil {
+		return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
+	}
 
 	// Write MSR file into repo folder
 	msrFileName := fmt.Sprintf("%s.yaml", msr.Name)
-    sigFileName := fmt.Sprintf("%s.yaml.sig", msr.Name)
+	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.Name)
 
 	msrFilePath := filepath.Join(p.localPath, msr.Spec.Location.Folder, msrFileName)
-    sigFilePath := filepath.Join(p.localPath, msr.Spec.Location.Folder, sigFileName)
+	sigFilePath := filepath.Join(p.localPath, msr.Spec.Location.Folder, sigFileName)
 
 	msrRepoPath := filepath.Join(msr.Spec.Location.Folder, msrFileName)
-    sigRepoPath := filepath.Join(msr.Spec.Location.Folder, sigFileName)
+	sigRepoPath := filepath.Join(msr.Spec.Location.Folder, sigFileName)
 
 	err = os.WriteFile(msrFilePath, msrBytes, 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write MSR file to worktree: %w", err)
 	}
-    if err := os.WriteFile(sigFilePath, signatureBytes, 0644); err != nil {
-        return "", fmt.Errorf("failed to write signature file: %w", err)
-    }
+	if err := os.WriteFile(sigFilePath, signatureBytes, 0644); err != nil {
+		return "", fmt.Errorf("failed to write signature file: %w", err)
+	}
 
 	// Function to delete MSR file, if error appears
 	deleteFile := func() {
@@ -345,10 +361,10 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		deleteFile()
 		return "", fmt.Errorf("failed to git add MSR file to the staging area: %w", err)
 	}
-    if _, err := worktree.Add(sigRepoPath); err != nil {
-        rollback()
-        return "", fmt.Errorf("failed to git add signature file: %w", err)
-    }
+	if _, err := worktree.Add(sigRepoPath); err != nil {
+		rollback()
+		return "", fmt.Errorf("failed to git add signature file: %w", err)
+	}
 
 	// Commit and push changes
 	commitMsg := fmt.Sprintf("chore(governance): create manifest signing request %s with version %d", msr.Name, msr.Spec.Version)
@@ -386,7 +402,9 @@ func (p *gitProvider) PushSignature(ctx context.Context, msr *governancev1alpha1
 }
 
 func (p *gitProvider) getGpgEntity(ctx context.Context) (*openpgp.Entity, error) {
-	passphrase := []byte(p.pgpSecrets.PgpPassphrase)
+	if p.pgpSecrets.PgpKey == "" {
+		return nil, fmt.Errorf("PGP private key is not configured")
+	}
 
 	entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(p.pgpSecrets.PgpKey))
 	if err != nil {
@@ -394,9 +412,19 @@ func (p *gitProvider) getGpgEntity(ctx context.Context) (*openpgp.Entity, error)
 	}
 	entity := entityList[0]
 
-	err = entity.PrivateKey.Decrypt(passphrase)
-	if err != nil {
-		return nil, err
+	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+		// If a passphrase is required but not provided, fail.
+		if p.pgpSecrets.PgpPassphrase == "" {
+			return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
+		}
+
+		passphrase := []byte(p.pgpSecrets.PgpPassphrase)
+
+		// Attempt to decrypt the private key.
+		err := entity.PrivateKey.Decrypt(passphrase)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
+		}
 	}
 
 	return entity, nil

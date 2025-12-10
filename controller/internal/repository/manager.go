@@ -11,11 +11,22 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	DefaultRepoURL = "https://github.com/AlwaysSayNo/quorum-based-manifests-governance-test.git"
+)
+
+// TODO: get this information from the manifest
+const (
+	PGPSecretName      = "governance-operator-pgp"
+	PGPSecretNamespace = "qubmango-namespace"
+	SSHSecretName      = "governance-operator-git-creds"
+	SSHSecretNamespace = "qubmango-namespace"
 )
 
 type GitRepositoryFactory interface {
@@ -60,7 +71,6 @@ type Manager struct {
 	providers []GitRepositoryFactory
 	// Cache of initialized providersToMRT, keyed by repo URL
 	providersToMRT map[string]GitRepository
-	pgpSecrets     PgpSecrets
 	mu             sync.Mutex
 }
 
@@ -70,7 +80,6 @@ func NewManager(client client.Client, basePath string) *Manager {
 		basePath:       basePath,
 		providers:      []GitRepositoryFactory{},
 		providersToMRT: make(map[string]GitRepository),
-		pgpSecrets:     PgpSecrets{},
 	}
 }
 
@@ -97,8 +106,17 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 	var newProvider GitRepository
 	var err error
 
-	// TODO: Fetch credentials for this repo from a Kubernetes Secret. For now, we'll assume public access (nil auth).
-	provider, err := m.findProvider(repoURL, localPath, nil, m.pgpSecrets)
+	// Sync pgp and ssh secrets
+	pgpSecrets, err := m.syncPGPSecrets(ctx, mrt)
+	if err != nil {
+		return nil, err
+	}
+	sshSecrets, err := m.syncSSHSecrets(ctx, mrt)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := m.findProvider(repoURL, localPath, sshSecrets, pgpSecrets)
 	if err != nil {
 		return nil, err
 	} else if provider == nil {
@@ -119,4 +137,47 @@ func (m *Manager) findProvider(repoURL, localPath string, auth transport.AuthMet
 		return nil, nil
 	}
 	return m.providers[idx].New(repoURL, localPath, auth, pgpSecrets)
+}
+
+// TODO: Must be per MRT
+func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (PgpSecrets, error) {
+	pgpSecret := &corev1.Secret{}
+	err := m.client.Get(ctx, types.NamespacedName{Name: PGPSecretName, Namespace: PGPSecretNamespace}, pgpSecret)
+	if err != nil {
+		return PgpSecrets{}, fmt.Errorf("failed to fetch pgp secret: %w", err)
+	}
+
+	return PgpSecrets{
+		PgpKey:        string(pgpSecret.Data["pgpPrivateKey"]),
+		PgpPassphrase: string(pgpSecret.Data["passphrase"]),
+	}, nil
+}
+
+// TODO: Must be per MRT
+func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*ssh.PublicKeys, error) {
+	gitSecret := &corev1.Secret{}
+	err := m.client.Get(ctx, types.NamespacedName{Name: SSHSecretName, Namespace: SSHSecretNamespace}, gitSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", SSHSecretName, err)
+	}
+
+	privateKeyBytes, ok := gitSecret.Data["privateKey"]
+	if !ok {
+		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", SSHSecretName)
+	}
+
+	passphraseBytes, ok := gitSecret.Data["passphrase"]
+	if !ok {
+		// If the key is passphrase-protected, this will cause the next step to fail.
+		// We can treat it as an empty string and let the crypto library handle the failure.
+		passphraseBytes = []byte("")
+	}
+
+	// Decrypt the private key.
+	publicKeys, err := ssh.NewPublicKeys("git", privateKeyBytes, string(passphraseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public keys from secret: %w", err)
+	}
+
+	return publicKeys, nil
 }
