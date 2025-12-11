@@ -4,6 +4,28 @@
 ## Description
 // TODO(user): An in-depth paragraph about your project and overview of use
 
+## Decisions
+
+Require from the user:
+- to have Argo CD installed in the cluster (which version?) (what setup requirements?) before applying our controllers
+- 3 controllers:
+    - “Manifests change observer” (MCO) - reconciles "Manifest Request Template" (MRT) and creates "Manifest Signing Request" (MSR).
+    - “Signatures observer” (SO) - works with "Manifest Signing Request" (MSR).
+    - “Changes inspector” (CI) - creates "Manifest Change Approval" (MCA).
+
+
+TODO remove:
+- kubebuilder create api --group governance --version v1alpha1 --kind ManifestRequestTemplate
+- kubebuilder create api --group governance --version v1alpha1 --kind ManifestSigningRequest
+
+TODO:
+- in the end, change the version of API to be v1 (remove alpha1)
+- I need an application, that will created and managed by my controller. This application should listen to ArgoCD events and:
+    - create MSR -> start reconciliation logic for 
+    - create 
+
+
+
 ## Getting Started
 
 ### Prerequisites

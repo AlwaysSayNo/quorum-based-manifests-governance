@@ -8,4 +8,37 @@ layout:
 - go.kubebuilder.io/v4
 projectName: controller
 repo: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: ManifestRequestTemplate
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  version: v1alpha1
+  webhooks:
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: ManifestChangeApproval
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  version: v1alpha1
+  webhooks:
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: ManifestSigningRequest
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  version: v1alpha1
 version: "3"

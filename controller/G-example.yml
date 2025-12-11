@@ -1,0 +1,18 @@
+apiVersion: governors.governance/v1alpha1
+kind: Governors
+
+metadata:
+  name: governors-sample
+  namespace: governance
+
+spec:
+  governors:
+    - alias: voter1
+      publicKey: |
+        -----
+      notificationChannel:
+        slack:
+          userGroupID: C12345678
+    - alias: voter2
+      publicKey: |
+        -----

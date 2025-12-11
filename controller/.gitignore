@@ -25,3 +25,8 @@ go.work
 *.swp
 *.swo
 *~
+
+/development/repos/**
+/config/local/certs/**
+**/*delete*
+secrets

@@ -1,0 +1,9 @@
+namePrefix: local-
+
+resources:
+- ../default
+
+# Local development specific
+patches:
+  # Remove the cert-manager annotations
+  - path: webhook_patch.yaml

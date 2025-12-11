@@ -109,8 +109,17 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
+run: manifests generate fmt vet webhook-certs ## Run a controller from your host.
 	go run ./cmd/main.go
+
+# This target will be called by 'run' to ensure certs are ready for local execution.
+.PHONY: webhook-certs
+webhook-certs:
+	# Put local certs in place for the webhook server to use when running locally.
+	mkdir -p /tmp/k8s-webhook-server/serving-certs
+	cp ./config/local/certs/mca-webhook.pem /tmp/k8s-webhook-server/serving-certs/tls.crt
+	cp ./config/local/certs/mca-webhook-key.pem /tmp/k8s-webhook-server/serving-certs/tls.key
+	echo "Local webhook certificates are in place."
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -167,9 +176,19 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
+# The local deploy command uses local overlay
+.PHONY: deploy-local 
+deploy-local: manifests kustomize
+	$(KUSTOMIZE) build config/local | kubectl apply -f -
+
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+
+.PHONY: undeploy-local
+undeploy-local: manifests kustomize
+	$(KUSTOMIZE) build config/local | kubectl delete -f -
+
 
 ##@ Dependencies
 
