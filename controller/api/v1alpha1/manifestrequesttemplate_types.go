@@ -21,8 +21,17 @@ import (
 )
 
 type ManifestRef struct {
+	// +required
 	Name      string `json:"name,omitempty"`
+	// +required
 	Namespace string `json:"namespace,omitempty"`
+}
+
+type VersionedManifestRef struct {
+	ManifestRef `json:",inline"`
+
+	// +required
+	Version int `json:"version,omitempty"`
 }
 
 type ArgoCDApplication struct {
@@ -146,6 +155,19 @@ type ApprovalRule struct {
 	Signer string `json:"signer,omitempty"`
 }
 
+type PGPPrivateKeySecret struct {
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	PublicKey string `json:"publicKey,omitempty"`
+	// +required
+	SecretsRef ManifestRef `json:"secretsRef,omitempty"`
+}
+
+type SSHPrivateKeySecret struct {
+	// +required
+	SecretsRef ManifestRef `json:"secretsRef,omitempty"`
+}
+
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
 type ManifestRequestTemplateSpec struct {
 
@@ -155,13 +177,11 @@ type ManifestRequestTemplateSpec struct {
 	// +required
 	Version int `json:"version"`
 
-	// publicKey is used to sign MCA.
-	// +kubebuilder:validation:MinLength=1
 	// +required
-	PublicKey string `json:"publicKey,omitempty"`
-	// TODO: make PublicKeyRef in future to reference to a secret
-	PGPSecretsRef ManifestRef `json:"pgpSecretsRef,omitempty"`
-	SSHSecretsRef ManifestRef `json:"sshSecretsRef,omitempty"`
+	PGP PGPPrivateKeySecret `json:"pgp"`
+	
+	// +required
+	SSH SSHPrivateKeySecret `json:"ssh"`
 
 	// ArgoCDApplicationName is the name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.

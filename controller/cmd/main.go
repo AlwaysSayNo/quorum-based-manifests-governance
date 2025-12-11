@@ -197,19 +197,27 @@ func main() {
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		hookServer := webhook.NewServer(webhook.Options{})
 
-		// Register generic handler with the path we defined in the marker.
-		hookServer.Register("/validate-all", &admissionwh.Webhook{
+		// Register generic handler
+		hookServer.Register("/mca/validate/argocd-requests", &admissionwh.Webhook{
 			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{
 				Client:  mgr.GetClient(),
 				Decoder: admissionwh.NewDecoder(mgr.GetScheme()),
 			},
 		})
-
-		// Add the server to the manager, which will start it.
+    
 		if err := mgr.Add(hookServer); err != nil {
 			setupLog.Error(err, "unable to add webhook server to manager")
 			os.Exit(1)
 		}
+
+		// Register MRT handler
+		if err := (&webhookv1alpha1.ManifestRequestTemplateWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "ManifestRequestTemplate")
+			os.Exit(1)
+		}
+		
+		// TODO: Block any requests, coming for MSR, except governance application 
+		// TODO: Block any requests, coming for MCA, except governance application
 	}
 
 	if err := (&controller.ManifestSigningRequestReconciler{

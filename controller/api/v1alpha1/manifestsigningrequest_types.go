@@ -20,13 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type GitRepository struct {
-	// +required
-	URL string `json:"url,omitempty"`
-	// +required
-	Path string `json:"path,omitempty"`
-}
-
 type FileChangeStatus string
 
 const (
@@ -43,6 +36,11 @@ const (
 	Approved    SigningRequestStatus = "Approved"
 )
 
+type GitRepository struct {
+	// +required
+	URL string `json:"url,omitempty"`
+}
+
 type FileChange struct {
 	// +required
 	Kind string `json:"kind,omitempty"`
@@ -58,11 +56,36 @@ type FileChange struct {
 	Path string `json:"path"`
 }
 
-// ManifestSigningRequestSpec defines the desired state of ManifestSigningRequest
-type ManifestSigningRequestSpec struct {
-	// +kubebuilder:validation:Minimum=1
+type ManifestSigningRequestHistoryRecord struct {
+
 	// +required
 	Version int `json:"version,omitempty"`
+
+	// +required
+	Changes []FileChange `json:"changes"`
+
+	// +required
+	Governors GovernorList `json:"governors,omitempty"`
+
+	// +required
+	Require ApprovalRule `json:"require"`
+
+	// +required
+	Approves GovernorList `json:"approves,omitempty"`
+
+	// +required
+	Status SigningRequestStatus `json:"status,omitempty"`
+}
+
+// ManifestSigningRequestSpec defines the desired state of ManifestSigningRequest
+type ManifestSigningRequestSpec struct {
+	// 0 is value of the default ManifestSigningRequest, created by qubmango
+	// +kubebuilder:validation:Minimum=0
+	// +required
+	Version int `json:"version,omitempty"`
+
+	// +required
+	MRT VersionedManifestRef `json:"mrt,omitempty"`
 
 	// publicKey is used to sign MCA.
 	// +kubebuilder:validation:MinLength=1
@@ -82,30 +105,11 @@ type ManifestSigningRequestSpec struct {
 	// Required until GovernorsRef is implemented.
 	// +required
 	Governors GovernorList `json:"governors,omitempty"`
-	// TODO: make GovernorsRef in future to reference to a governor manifest
 
 	// The policy rules for approvals.
 	// Required until ApprovalRuleRef is implemented.
 	// +required
 	Require ApprovalRule `json:"require"`
-}
-
-type ManifestSigningRequestHistoryRecord struct {
-
-	// +required
-	Version int `json:"version,omitempty"`
-
-	// +required
-	Changes []FileChange `json:"changes"`
-
-	// +required
-	Governors GovernorList `json:"governors,omitempty"`
-
-	// +required
-	Require ApprovalRule `json:"require"`
-
-	// +required
-	Approves GovernorList `json:"approves,omitempty"`
 
 	// +required
 	Status SigningRequestStatus `json:"status,omitempty"`
