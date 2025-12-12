@@ -53,7 +53,7 @@ type GitRepository interface {
 	GetLatestRevision(ctx context.Context) (string, error)
 	// GetChangedFiles returns a list of files that changed between two commits.
 	// TODO: change type from FileChange. Because it bounds it straight to the governance module
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error)
+	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
 	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
 	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
 	PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error)
@@ -205,7 +205,7 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	}
 
 	// Fetch all changed files in the repository, that where created before governance process
-	fileChanges, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision)
+	fileChanges, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision, application.Spec.Source.Path)
 	if err != nil {
 		return fmt.Errorf("fetch changes between init commit and %s: %w", revision, err)
 	}
@@ -438,8 +438,13 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 	revision := mrt.Status.RevisionsQueue[0]
 	logger.Info("Start MSR process", "revision", revision)
 
+	application, resp, err := r.getApplication(ctx, mrt, logger)
+	if err != nil {
+		return resp, fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
+	}
+
 	// Get Changed Files from Git
-	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Status.LastApprovedCommitSHA, revision) // TODO: check the from commit once again
+	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Status.LastApprovedCommitSHA, revision, application.Spec.Source.Path)
 	if err != nil {
 		logger.Error(err, "Failed to get changed files from repository")
 		// This is a temporary error (e.g., network issue), so we should requeue.
@@ -499,7 +504,7 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest, revision string, changedFiles []governancev1alpha1.FileChange, logger *logr.Logger) (ctrl.Result, error) {
 	application, resp, err := r.getApplication(ctx, mrt, logger)
 	if err != nil {
-		return resp, err
+		return resp, fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
 	}
 
 	mrtSpecCpy := mrt.Spec.DeepCopy()
@@ -563,7 +568,8 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 		// ArgoCD can process .yaml, .yml, and .json files
 		isManifestType := strings.HasSuffix(filePath, ".yaml") ||
 			strings.HasSuffix(filePath, ".yml") ||
-			strings.HasSuffix(filePath, ".json")
+			file.Kind == ""
+			
 
 		if !isManifestType {
 			continue

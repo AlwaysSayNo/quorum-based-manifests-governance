@@ -1,4 +1,3 @@
-// in internal/repository/manager.go
 package repository
 
 import (
@@ -48,8 +47,8 @@ type GitRepository interface {
 }
 
 type PgpSecrets struct {
-	PgpKey        string
-	PgpPassphrase string
+	PrivateKey string
+	Passphrase string
 }
 
 // Manager handles the lifecycle of different repository provider instances.
@@ -159,8 +158,8 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	}
 
 	return PgpSecrets{
-		PgpKey:        string(privateKeyBytes),
-		PgpPassphrase: string(passphraseBytes),
+		PrivateKey: string(privateKeyBytes),
+		Passphrase: string(passphraseBytes),
 	}, nil
 }
 

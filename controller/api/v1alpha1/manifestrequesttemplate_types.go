@@ -22,7 +22,7 @@ import (
 
 type ManifestRef struct {
 	// +required
-	Name      string `json:"name,omitempty"`
+	Name string `json:"name,omitempty"`
 	// +required
 	Namespace string `json:"namespace,omitempty"`
 }
@@ -179,7 +179,7 @@ type ManifestRequestTemplateSpec struct {
 
 	// +required
 	PGP PGPPrivateKeySecret `json:"pgp"`
-	
+
 	// +required
 	SSH SSHPrivateKeySecret `json:"ssh"`
 

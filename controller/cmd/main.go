@@ -204,7 +204,7 @@ func main() {
 				Decoder: admissionwh.NewDecoder(mgr.GetScheme()),
 			},
 		})
-    
+
 		if err := mgr.Add(hookServer); err != nil {
 			setupLog.Error(err, "unable to add webhook server to manager")
 			os.Exit(1)
@@ -215,8 +215,8 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "ManifestRequestTemplate")
 			os.Exit(1)
 		}
-		
-		// TODO: Block any requests, coming for MSR, except governance application 
+
+		// TODO: Block any requests, coming for MSR, except governance application
 		// TODO: Block any requests, coming for MCA, except governance application
 	}
 

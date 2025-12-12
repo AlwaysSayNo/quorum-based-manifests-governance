@@ -40,10 +40,155 @@ spec:
           spec:
             description: spec defines the desired state of ManifestChangeApproval
             properties:
-              foo:
-                description: foo is an example field of ManifestChangeApproval. Edit
-                  manifestchangeapproval_types.go to remove/update
+              changes:
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    path:
+                      type: string
+                    sha256:
+                      type: string
+                    status:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - namespace
+                  - path
+                  - sha256
+                  - status
+                  type: object
+                type: array
+              gitRepository:
+                properties:
+                  url:
+                    type: string
+                required:
+                - url
+                type: object
+              governors:
+                description: Required until GovernorsRef is implemented.
+                properties:
+                  members:
+                    description: List of governors.
+                    items:
+                      properties:
+                        alias:
+                          description: Alias for governor (for easier identification)
+                          minLength: 1
+                          type: string
+                        publicKey:
+                          description: PublicKey of the governor used to verify signatures.
+                          minLength: 1
+                          type: string
+                      required:
+                      - alias
+                      - publicKey
+                      type: object
+                    type: array
+                  notificationChannels:
+                    description: General list of notification channels to inform governors
+                      about pending approvals.
+                    items:
+                      properties:
+                        slack:
+                          properties:
+                            channelID:
+                              description: Slack channel ID to notify (e.g., S01234567)
+                              minLength: 1
+                              type: string
+                          required:
+                          - channelID
+                          type: object
+                      type: object
+                    type: array
+                required:
+                - members
+                type: object
+              location:
+                description: Location contains information about where to store MSR,
+                  MCA and signatures.
+                properties:
+                  folder:
+                    description: |-
+                      Folder where MSR, MCA and Signatures will be stored.
+                      Default: root of the repo.
+                    minLength: 1
+                    type: string
+                type: object
+              mrt:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  version:
+                    type: integer
+                required:
+                - name
+                - namespace
+                - version
+                type: object
+              msr:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  version:
+                    type: integer
+                required:
+                - name
+                - namespace
+                - version
+                type: object
+              publicKey:
+                description: publicKey is used to sign MCA.
+                minLength: 1
                 type: string
+              require:
+                description: |-
+                  The policy rules for approvals.
+                  Required until ApprovalRuleRef is implemented.
+                properties:
+                  all:
+                    description: If true, all child rules must be satisfied.
+                    type: boolean
+                  atLeast:
+                    description: Specifies the minimum number of child rules that
+                      must be satisfied.
+                    minimum: 1
+                    type: integer
+                  require:
+                    description: List of child rules.
+                    x-kubernetes-preserve-unknown-fields: true
+                  signer:
+                    description: Signer can be either PublicKey or Alias of the governor.
+                      If alias is used, it should start with `$` to distinguish it
+                      from PublicKey.
+                    minLength: 1
+                    type: string
+                type: object
+              version:
+                description: 0 is value of the default ManifestSigningRequest, created
+                  by qubmango
+                minimum: 0
+                type: integer
+            required:
+            - changes
+            - gitRepository
+            - governors
+            - location
+            - mrt
+            - msr
+            - publicKey
+            - require
+            - version
             type: object
           status:
             description: status defines the observed state of ManifestChangeApproval
