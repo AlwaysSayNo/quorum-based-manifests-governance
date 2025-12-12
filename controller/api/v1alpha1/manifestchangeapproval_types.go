@@ -20,19 +20,44 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ManifestChangeApprovalSpec defines the desired state of ManifestChangeApproval
 type ManifestChangeApprovalSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// 0 is value of the default ManifestSigningRequest, created by qubmango
+	// +kubebuilder:validation:Minimum=0
+	// +required
+	Version int `json:"version,omitempty"`
 
-	// foo is an example field of ManifestChangeApproval. Edit manifestchangeapproval_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// +required
+	MRT VersionedManifestRef `json:"mrt,omitempty"`
+
+	// +required
+	MSR VersionedManifestRef `json:"msr,omitempty"`
+
+	// publicKey is used to sign MCA.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	PublicKey string `json:"publicKey,omitempty"`
+
+	// +required
+	GitRepository GitRepository `json:"gitRepository"`
+
+	// Location contains information about where to store MSR, MCA and signatures.
+	// +required
+	Location Location `json:"location,omitempty"`
+
+	// +required
+	Changes []FileChange `json:"changes"`
+
+	// Required until GovernorsRef is implemented.
+	// +required
+	Governors GovernorList `json:"governors,omitempty"`
+
+	// The policy rules for approvals.
+	// Required until ApprovalRuleRef is implemented.
+	// +required
+	Require ApprovalRule `json:"require"`
+
+	// Signers contains all governors, who signed ManifestSigningRequest, related to this approval
 }
 
 type ManifestChangeApprovalHistoryRecord struct {

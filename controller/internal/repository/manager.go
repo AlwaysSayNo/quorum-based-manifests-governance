@@ -1,4 +1,3 @@
-// in internal/repository/manager.go
 package repository
 
 import (
@@ -48,8 +47,8 @@ type GitRepository interface {
 }
 
 type PgpSecrets struct {
-	PgpKey        string
-	PgpPassphrase string
+	PrivateKey string
+	Passphrase string
 }
 
 // Manager handles the lifecycle of different repository provider instances.
@@ -141,14 +140,14 @@ func (m *Manager) findProvider(repoURL, localPath string, auth transport.AuthMet
 func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (PgpSecrets, error) {
 	// TODO: Decide between direct PGP key usage in MRT or as ref
 	pgpSecret := &corev1.Secret{}
-	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.PGPSecretsRef.Name, Namespace: mrt.Spec.PGPSecretsRef.Namespace}, pgpSecret)
+	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.PGP.SecretsRef.Name, Namespace: mrt.Spec.PGP.SecretsRef.Namespace}, pgpSecret)
 	if err != nil {
 		return PgpSecrets{}, fmt.Errorf("failed to fetch pgp secret: %w", err)
 	}
 
 	privateKeyBytes, ok := pgpSecret.Data["privateKey"]
 	if !ok {
-		return PgpSecrets{}, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.SSHSecretsRef.Name)
+		return PgpSecrets{}, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.PGP.SecretsRef.Name)
 	}
 
 	passphraseBytes, ok := pgpSecret.Data["passphrase"]
@@ -159,22 +158,22 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	}
 
 	return PgpSecrets{
-		PgpKey:        string(privateKeyBytes),
-		PgpPassphrase: string(passphraseBytes),
+		PrivateKey: string(privateKeyBytes),
+		Passphrase: string(passphraseBytes),
 	}, nil
 }
 
 func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*ssh.PublicKeys, error) {
 	// TODO: Decide between direct SHH key usage in MRT or as ref
 	gitSecret := &corev1.Secret{}
-	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.SSHSecretsRef.Name, Namespace: mrt.Spec.SSHSecretsRef.Namespace}, gitSecret)
+	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.SSH.SecretsRef.Name, Namespace: mrt.Spec.SSH.SecretsRef.Namespace}, gitSecret)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", mrt.Spec.SSHSecretsRef.Name, err)
+		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", mrt.Spec.SSH.SecretsRef.Name, err)
 	}
 
 	privateKeyBytes, ok := gitSecret.Data["privateKey"]
 	if !ok {
-		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.SSHSecretsRef.Name)
+		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.SSH.SecretsRef.Name)
 	}
 
 	passphraseBytes, ok := gitSecret.Data["passphrase"]

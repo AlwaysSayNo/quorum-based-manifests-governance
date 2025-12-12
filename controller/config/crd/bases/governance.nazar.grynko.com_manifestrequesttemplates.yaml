@@ -142,17 +142,25 @@ spec:
                     minLength: 0
                     type: string
                 type: object
-              pgpSecretsRef:
+              pgp:
                 properties:
-                  name:
+                  publicKey:
+                    minLength: 1
                     type: string
-                  namespace:
-                    type: string
+                  secretsRef:
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                required:
+                - publicKey
+                - secretsRef
                 type: object
-              publicKey:
-                description: publicKey is used to sign MCA.
-                minLength: 1
-                type: string
               require:
                 description: |-
                   The policy rules for approvals.
@@ -176,12 +184,20 @@ spec:
                     minLength: 1
                     type: string
                 type: object
-              sshSecretsRef:
+              ssh:
                 properties:
-                  name:
-                    type: string
-                  namespace:
-                    type: string
+                  secretsRef:
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                required:
+                - secretsRef
                 type: object
               version:
                 description: |-
@@ -192,8 +208,9 @@ spec:
             required:
             - argoCDApplication
             - governors
-            - publicKey
+            - pgp
             - require
+            - ssh
             - version
             type: object
           status:

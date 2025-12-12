@@ -41,7 +41,7 @@ import (
 // log is for logging in this package.
 var manifestchangeapprovallog = logf.Log.WithName("manifestchangeapproval-resource")
 
-// +kubebuilder:webhook:path=/validate-all,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
+// +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
 
 type ManifestChangeApprovalCustomValidator struct {
 	Client  client.Client
@@ -59,7 +59,6 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	}
 
 	// Get ManifestRequestTemplate resource linked to the current Application
-	// TODO: what should we do, if Application doesn't have MRT bound to it? Maybe allow?
 	mrt, resp, ok := v.getMRTForApplication(ctx, &logger, application)
 	if !ok {
 		return *resp
@@ -231,11 +230,6 @@ func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(appli
 }
 
 func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, logger *logr.Logger, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
-	// TODO: add defaulting webhook, which would set this value
-	if mrt.Status.RevisionsQueue == nil {
-		mrt.Status.RevisionsQueue = []string{}
-	}
-
 	if !slices.Contains(mrt.Status.RevisionsQueue, *revision) {
 		mrt.Status.RevisionsQueue = append(mrt.Status.RevisionsQueue, *revision)
 		if err := v.Client.Status().Update(ctx, mrt); err != nil { //TODO: or update object directly?
@@ -254,7 +248,8 @@ func (v *ManifestChangeApprovalCustomValidator) handleArgoCDRequest(ctx context.
 	logger := logf.FromContext(ctx)
 
 	gvk := v.getGroupVersionKind(req)
-	if req.Kind.Kind == "Application" {
+	switch req.Kind.Kind {
+	case "Application":
 		applicationObj := &argoappv1.Application{}
 		applicationObj.SetGroupVersionKind(gvk)
 		if err := v.Decoder.Decode(req, applicationObj); err != nil {
@@ -266,21 +261,21 @@ func (v *ManifestChangeApprovalCustomValidator) handleArgoCDRequest(ctx context.
 		} else {
 			logger.Info("Decoded with Argo CD Application object", "status", applicationObj.Status, "operation", *applicationObj.Operation)
 		}
-	} else if req.Kind.Kind == "ConfigMap" {
+	case "ConfigMap":
 		configmap := corev1.ConfigMap{}
 		configmap.SetGroupVersionKind(gvk)
 		if err := v.Decoder.Decode(req, &configmap); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
 		logger.Info("Decoded with Argo CD configmap object", "name", configmap)
-	} else if req.Kind.Kind == "ManifestRequestTemplate" {
+	case "ManifestRequestTemplate":
 		mtrObj := governancev1alpha1.ManifestRequestTemplate{}
 		mtrObj.SetGroupVersionKind(gvk)
 		if err := v.Decoder.Decode(req, &mtrObj); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
 		logger.Info("Decoded with Argo CD MRT object", "name", mtrObj)
-	} else {
+	default:
 		logger.Info("Decoded with Argo CD unknown request kind", "kind", gvk)
 	}
 

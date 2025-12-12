@@ -269,9 +269,12 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					PGPSecretsRef: governancev1alpha1.ManifestRef{
-						Name:      PGPSecretName,
-						Namespace: testNamespace.Name,
+					PGP: governancev1alpha1.PGPPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
+						PublicKey: "FAKE_PGP_KEY",
 					},
 					ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
 						Name:      ArgoCDApplicationName,
@@ -330,13 +333,18 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					SSHSecretsRef: governancev1alpha1.ManifestRef{
-						Name:      SSHSecretName,
-						Namespace: testNamespace.Name,
+					SSH: governancev1alpha1.SSHPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
 					},
-					PGPSecretsRef: governancev1alpha1.ManifestRef{
-						Name:      PGPSecretName,
-						Namespace: testNamespace.Name,
+					PGP: governancev1alpha1.PGPPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
+						PublicKey: "FAKE_PGP_KEY",
 					},
 					ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
 						Name:      ArgoCDApplicationName,
@@ -408,13 +416,18 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					SSHSecretsRef: governancev1alpha1.ManifestRef{
-						Name:      SSHSecretName,
-						Namespace: testNamespace.Name,
+					SSH: governancev1alpha1.SSHPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
 					},
-					PGPSecretsRef: governancev1alpha1.ManifestRef{
-						Name:      PGPSecretName,
-						Namespace: testNamespace.Name,
+					PGP: governancev1alpha1.PGPPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
+						PublicKey: "FAKE_PGP_KEY",
 					},
 					ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
 						Name:      ArgoCDApplicationName,

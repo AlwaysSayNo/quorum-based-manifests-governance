@@ -66,12 +66,9 @@ spec:
                 type: array
               gitRepository:
                 properties:
-                  path:
-                    type: string
                   url:
                     type: string
                 required:
-                - path
                 - url
                 type: object
               governors:
@@ -124,6 +121,19 @@ spec:
                     minLength: 1
                     type: string
                 type: object
+              mrt:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  version:
+                    type: integer
+                required:
+                - name
+                - namespace
+                - version
+                type: object
               publicKey:
                 description: publicKey is used to sign MCA.
                 minLength: 1
@@ -151,16 +161,22 @@ spec:
                     minLength: 1
                     type: string
                 type: object
+              status:
+                type: string
               version:
-                minimum: 1
+                description: 0 is value of the default ManifestSigningRequest, created
+                  by qubmango
+                minimum: 0
                 type: integer
             required:
             - changes
             - gitRepository
             - governors
             - location
+            - mrt
             - publicKey
             - require
+            - status
             - version
             type: object
           status:

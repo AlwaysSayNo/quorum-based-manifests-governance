@@ -63,7 +63,7 @@ type GitRepository interface {
 	Sync(ctx context.Context) error
 	HasRevision(ctx context.Context, commit string) (bool, error)
 	GetLatestRevision(ctx context.Context) (string, error)
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error)
+	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
 	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
 	PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error)
 }
@@ -84,35 +84,36 @@ func (p *gitProvider) Sync(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Repo is already cloned. Pull the latest changes
-	if p.repo != nil {
-		w, err := p.repo.Worktree()
+	// Check, if repo is not cloned
+	if p.repo == nil {
+		// Check if a clone already exists on disk from a previous operator run
+		repo, err := git.PlainOpen(p.localPath)
 		if err != nil {
-			return err
+			// Local copy doesn't exist. Create it
+			repo, err = git.PlainCloneContext(ctx, p.localPath, false, &git.CloneOptions{
+				URL:  p.remoteURL,
+				Auth: p.auth,
+			})
+			if err != nil {
+				return err
+			}
 		}
-		return w.PullContext(ctx, &git.PullOptions{
-			RemoteName: "origin",
-			Auth:       p.auth,
-		})
-	}
-
-	// Check if a clone already exists on disk from a previous operator run.
-	repo, err := git.PlainOpen(p.localPath)
-	if err == nil {
 		p.repo = repo
-		// It exists, so just pull.
-		return p.Sync(ctx)
 	}
 
-	// Local copy doesn't exist. Create it.
-	repo, err = git.PlainCloneContext(ctx, p.localPath, false, &git.CloneOptions{
-		URL:  p.remoteURL,
-		Auth: p.auth,
-	})
+	// Repo is already cloned. Pull the latest changes
+	w, err := p.repo.Worktree()
 	if err != nil {
 		return err
 	}
-	p.repo = repo
+	err = w.PullContext(ctx, &git.PullOptions{
+		RemoteName: "origin",
+		Auth:       p.auth,
+	})
+
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return err
+	}
 	return nil
 }
 
@@ -145,7 +146,7 @@ func (p *gitProvider) HasRevision(ctx context.Context, commit string) (bool, err
 	}
 
 	// Check if the target commit is an ancestor of the head commit
-	isAncestor, err := headCommit.IsAncestor(targetCommit)
+	isAncestor, err := targetCommit.IsAncestor(headCommit)
 	if err != nil {
 		return false, fmt.Errorf("error checking ancestry for commit %s: %w", commit, err)
 	}
@@ -173,7 +174,7 @@ func (p *gitProvider) GetLatestRevision(ctx context.Context) (string, error) {
 	return headRef.Hash().String(), nil
 }
 
-func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error) {
+func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error) {
 	if err := p.Sync(ctx); err != nil {
 		return nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
 	}
@@ -205,7 +206,7 @@ func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit 
 		return nil, fmt.Errorf("could not compute patch between commits: %w", err)
 	}
 
-	return p.patchToFileChangeList(toTree, patch)
+	return p.patchToFileChangeList(toTree, patch, fromFolder)
 }
 
 func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*object.Tree, error) {
@@ -223,8 +224,9 @@ func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*objec
 	return tree, nil
 }
 
-func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.Patch) ([]governancev1alpha1.FileChange, error) {
+func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.Patch, fromFolder string) ([]governancev1alpha1.FileChange, error) {
 	var changes []governancev1alpha1.FileChange
+	fromFolderNormalized := filepath.Clean(fromFolder)
 
 	for _, filePatch := range patch.FilePatches() {
 		from, to := filePatch.Files()
@@ -255,6 +257,10 @@ func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.P
 			return nil, fmt.Errorf("could not get file object for path %s: %w", path, err)
 		}
 
+		if !strings.HasPrefix(path, fromFolderNormalized+"/") {
+			continue
+		}
+
 		// Get sha256 and meta
 		var sha256Hex string
 		var meta k8sObjectMetadata
@@ -265,16 +271,16 @@ func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.P
 				return nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
 			}
 
-			// Calculate SHA256
-			hasher := sha256.New()
-			hasher.Write([]byte(content))
-			sha256Hex = hex.EncodeToString(hasher.Sum(nil))
-
 			if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
 				// Could be a non-k8s file, or malformed. Log and skip for now.
 				p.logger.Error(err, fmt.Sprintf("could not unmarshal k8s metadata from %s, skipping: %v\n", path, err))
 				continue
 			}
+
+			// Calculate SHA256
+			hasher := sha256.New()
+			hasher.Write([]byte(content))
+			sha256Hex = hex.EncodeToString(hasher.Sum(nil))
 		}
 
 		changes = append(changes, governancev1alpha1.FileChange{
@@ -318,29 +324,6 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
 	}
 
-	// Write MSR file into repo folder
-	msrFileName := fmt.Sprintf("%s.yaml", msr.Name)
-	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.Name)
-
-	msrFilePath := filepath.Join(p.localPath, msr.Spec.Location.Folder, msrFileName)
-	sigFilePath := filepath.Join(p.localPath, msr.Spec.Location.Folder, sigFileName)
-
-	msrRepoPath := filepath.Join(msr.Spec.Location.Folder, msrFileName)
-	sigRepoPath := filepath.Join(msr.Spec.Location.Folder, sigFileName)
-
-	err = os.WriteFile(msrFilePath, msrBytes, 0644)
-	if err != nil {
-		return "", fmt.Errorf("failed to write MSR file to worktree: %w", err)
-	}
-	if err := os.WriteFile(sigFilePath, signatureBytes, 0644); err != nil {
-		return "", fmt.Errorf("failed to write signature file: %w", err)
-	}
-
-	// Function to delete MSR file, if error appears
-	deleteFile := func() {
-		os.Remove(msrFileName)
-		os.Remove(sigFilePath)
-	}
 	// Function to rollback working tree to the old state, if error appears
 	headRef, err := p.repo.Head()
 	if err != nil {
@@ -354,23 +337,32 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		})
 	}
 
-	// Add files to the staging area
-	if _, err = worktree.Add(msrRepoPath); err != nil {
+	// Create folder for new MSR and signatures subfolder
+	repoRequestFolderPath := filepath.Join(msr.Spec.Location.Folder, fmt.Sprintf("v_%d", msr.Spec.Version))
+	repoMsrSignaturesFolderPath := filepath.Join(repoRequestFolderPath, "signatures")
+
+	os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644)
+	os.MkdirAll(filepath.Join(p.localPath, repoMsrSignaturesFolderPath), 0644)
+
+	// Write MSR and sig files into repo folder
+	msrFileName := fmt.Sprintf("%s.yaml", msr.Name)
+	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.Name)
+
+	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, msrFileName, msrBytes); err != nil {
 		rollback()
-		deleteFile()
-		return "", fmt.Errorf("failed to git add MSR file to the staging area: %w", err)
+		return "", fmt.Errorf("create MSR file and to worktree: %w", err)
 	}
-	if _, err := worktree.Add(sigRepoPath); err != nil {
+	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, sigFileName, signatureBytes); err != nil {
 		rollback()
-		return "", fmt.Errorf("failed to git add signature file: %w", err)
+		return "", fmt.Errorf("create MSR.sig file and to worktree: %w", err)
 	}
 
 	// Commit and push changes
-	commitMsg := fmt.Sprintf("chore(governance): create manifest signing request %s with version %d", msr.Name, msr.Spec.Version)
+	commitMsg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.Name, msr.Spec.Version)
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "Governance Operator",
-			Email: "operator@yourdomain.com",
+			Name:  "Qubmango Governance Operator",
+			Email: "noreply@qubmango.com",
 			When:  time.Now(),
 		},
 		SignKey: gpgEntity,
@@ -378,7 +370,6 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	commitHash, err := worktree.Commit(commitMsg, commitOpts)
 	if err != nil {
 		rollback()
-		deleteFile()
 		return "", fmt.Errorf("failed to commit MSR: %w", err)
 	}
 
@@ -387,13 +378,28 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		Auth:       p.auth,
 	}
 	err = p.repo.PushContext(ctx, pushOpts)
-	if err != nil {
+	if err != nil && err != git.NoErrAlreadyUpToDate {
 		rollback()
-		deleteFile()
 		return "", fmt.Errorf("failed to push MSR commit: %w", err)
 	}
 
 	return commitHash.String(), nil
+}
+
+func (p *gitProvider) addCreateFileAndAddToWorktree(worktree *git.Worktree, repoFolderPath, fileName string, file []byte) error {
+	filePath := filepath.Join(p.localPath, repoFolderPath, fileName)
+	repoPath := filepath.Join(repoFolderPath, fileName)
+
+	err := os.WriteFile(filePath, file, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write MSR file: %w", err)
+	}
+
+	if _, err = worktree.Add(repoPath); err != nil {
+		return fmt.Errorf("failed to git add MSR file to the staging area: %w", err)
+	}
+
+	return nil
 }
 
 func (p *gitProvider) PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error) {
@@ -401,11 +407,11 @@ func (p *gitProvider) PushSignature(ctx context.Context, msr *governancev1alpha1
 }
 
 func (p *gitProvider) getGpgEntity(ctx context.Context) (*openpgp.Entity, error) {
-	if p.pgpSecrets.PgpKey == "" {
+	if p.pgpSecrets.PrivateKey == "" {
 		return nil, fmt.Errorf("PGP private key is not configured")
 	}
 
-	entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(p.pgpSecrets.PgpKey))
+	entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(p.pgpSecrets.PrivateKey))
 	if err != nil {
 		return nil, err
 	}
@@ -413,15 +419,15 @@ func (p *gitProvider) getGpgEntity(ctx context.Context) (*openpgp.Entity, error)
 
 	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
 		// If a passphrase is required but not provided, fail.
-		if p.pgpSecrets.PgpPassphrase == "" {
+		if p.pgpSecrets.Passphrase == "" {
 			return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
 		}
 
-		passphrase := []byte(p.pgpSecrets.PgpPassphrase)
+		passphrase := []byte(p.pgpSecrets.Passphrase)
 
 		// Attempt to decrypt the private key.
 		err := entity.PrivateKey.Decrypt(passphrase)
-		if err != nil {
+		if err != nil || entity.PrivateKey.Encrypted {
 			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
 		}
 	}
