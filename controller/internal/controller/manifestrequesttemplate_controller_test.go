@@ -17,7 +17,7 @@ limitations under the License.
 package controller_test
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -55,8 +55,13 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		mockRepo            *managermocks.MockGitRepository
 		governanceNamespace *corev1.Namespace
 		argoCDNamespace     *corev1.Namespace
-		defaultMSR          governancev1alpha1.ManifestRequestTemplate
+		defaultMRT          governancev1alpha1.ManifestRequestTemplate
+		defaultMSR          governancev1alpha1.ManifestSigningRequest
+		defaultMCA          governancev1alpha1.ManifestChangeApproval
 		defaultApp          argocdv1alpha1.Application
+		mrtKey              types.NamespacedName
+		defaultInitCommit   string
+		defaultRepoChanges  []governancev1alpha1.FileChange
 	)
 
 	BeforeEach(func() {
@@ -64,6 +69,12 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		mockRepoManager = controllermocks.NewMockRepositoryManager(mockCtrl)
 		mockRepo = managermocks.NewMockGitRepository(mockCtrl)
 		mrtReconciler.RepoManager = mockRepoManager
+
+		defaultInitCommit = "abc123def456"
+		defaultRepoChanges = []governancev1alpha1.FileChange{
+			{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
+			{Kind: "ManifestRequestTemplate", Status: governancev1alpha1.New, Name: "test-mrt", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/mrt.yaml"},
+		}
 
 		// create random governance namespace
 		governanceNamespace = &corev1.Namespace{
@@ -81,8 +92,8 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, argoCDNamespace)).Should(Succeed())
 
-		// Create default bare minimum MSR
-		defaultMSR = governancev1alpha1.ManifestRequestTemplate{
+		// Create default bare minimum MRT
+		defaultMRT = governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      MRTName,
 				Namespace: governanceNamespace.Name,
@@ -125,12 +136,90 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				},
 			},
 		}
+		mrtKey = types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}
 
 		// Create dependent Application
 		defaultApp = argocdv1alpha1.Application{
 			ObjectMeta: metav1.ObjectMeta{Name: AppName, Namespace: argoCDNamespace.Name},
 			Spec: argocdv1alpha1.ApplicationSpec{
 				Source: &argocdv1alpha1.ApplicationSource{RepoURL: TestRepoURL, Path: "app-manifests"},
+			},
+		}
+
+		// Create default bare minimum MSR depending on default MRT
+		defaultMSR = governancev1alpha1.ManifestSigningRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      defaultMRT.Spec.MSR.Name,
+				Namespace: defaultMRT.Spec.MSR.Namespace,
+			},
+			Spec: governancev1alpha1.ManifestSigningRequestSpec{
+				Version: 0,
+				MRT: governancev1alpha1.VersionedManifestRef{
+					Name:      mrtKey.Name,
+					Namespace: mrtKey.Namespace,
+					Version:   defaultMRT.Spec.Version,
+				},
+				PublicKey: defaultMRT.Spec.PGP.PublicKey,
+				GitRepository: governancev1alpha1.GitRepository{
+					URL: defaultApp.Spec.Source.RepoURL,
+				},
+				Location:  *defaultMRT.Spec.Location.DeepCopy(),
+				Changes:   defaultRepoChanges,
+				Governors: *defaultMRT.Spec.Governors.DeepCopy(),
+				Require:   *defaultMRT.Spec.Require.DeepCopy(),
+				Status:    governancev1alpha1.Approved,
+			},
+		}
+		defaultMSR.Status.RequestHistory = []governancev1alpha1.ManifestSigningRequestHistoryRecord{
+			{
+				Version:   defaultMRT.Spec.Version,
+				Changes:   defaultMSR.Spec.Changes,
+				Governors: defaultMRT.Spec.Governors,
+				Require:   defaultMRT.Spec.Require,
+				Approves:  defaultMSR.Status.Approves,
+				Status:    defaultMSR.Spec.Status,
+			},
+		}
+
+		// Create default bare minimum MCA depending on default MRT
+		defaultMCA = governancev1alpha1.ManifestChangeApproval{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      defaultMRT.Spec.MCA.Name,
+				Namespace: defaultMRT.Spec.MCA.Namespace,
+			},
+			Spec: governancev1alpha1.ManifestChangeApprovalSpec{
+				Version: 0,
+				MRT: governancev1alpha1.VersionedManifestRef{
+					Name:      mrtKey.Name,
+					Namespace: mrtKey.Namespace,
+					Version:   defaultMRT.Spec.Version,
+				},
+				MSR: governancev1alpha1.VersionedManifestRef{
+					Name:      defaultMSR.Name,
+					Namespace: defaultMSR.Namespace,
+					Version:   defaultMSR.Spec.Version,
+				},
+				PublicKey: defaultMRT.Spec.PGP.PublicKey,
+				GitRepository: governancev1alpha1.GitRepository{
+					URL: defaultApp.Spec.Source.RepoURL,
+				},
+				Location:  *defaultMRT.Spec.Location.DeepCopy(),
+				Changes:   defaultRepoChanges,
+				Governors: *defaultMRT.Spec.Governors.DeepCopy(),
+				Require:   *defaultMRT.Spec.Require.DeepCopy(),
+			},
+			Status: governancev1alpha1.ManifestChangeApprovalStatus{
+				LastApprovedCommitSHA: defaultInitCommit,
+			},
+		}
+		defaultMCA.Status.ApprovalHistory = []governancev1alpha1.ManifestChangeApprovalHistoryRecord{
+			{
+				CommitSHA: defaultInitCommit,
+				Version:   defaultMCA.Spec.Version,
+				Changes:   defaultMCA.Spec.Changes,
+				Governors: defaultMCA.Spec.Governors,
+				Require:   defaultMCA.Spec.Require,
+				Approves:  defaultMCA.Status.Approves,
 			},
 		}
 	})
@@ -142,15 +231,11 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 	Context("Reconciliation Lifecycle", func() {
 		It("should remove the finalizer when an MRT is deleted", func() {
 			// SETUP
-			ctx := context.Background()
 			mrtKey := types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}
 
 			// Mock manager and repository calls
-			mockLatestRevision := "abc123def456"
-			mockChangedFiles := []governancev1alpha1.FileChange{
-				{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
-				{Kind: "ManifestRequestTemplate", Status: governancev1alpha1.New, Name: "test-mrt", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/mrt.yaml"},
-			}
+			mockLatestRevision := defaultInitCommit
+			mockChangedFiles := defaultRepoChanges
 
 			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
 
@@ -162,7 +247,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			Expect(k8sClient.Create(ctx, app)).Should(Succeed())
 
 			// Create MRT
-			mrt := &defaultMSR
+			mrt := &defaultMRT
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// ACT + VERIFY
@@ -187,11 +272,10 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 
 		It("should fail initialization if the referenced Argo CD Application does not exist", func() {
 			// SETUP
-			ctx := context.Background()
 
 			// Don't setup the Application
 
-			mrt := &defaultMSR
+			mrt := &defaultMRT
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// ACT + ASSERT
@@ -209,7 +293,6 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 
 		It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
 			// SETUP
-			ctx := context.Background()
 			mrtKey := types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}
 
 			// Mock manager and repository calls
@@ -228,7 +311,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			Expect(k8sClient.Create(ctx, app)).Should(Succeed())
 
 			// Create MRT
-			mrt := &defaultMSR
+			mrt := &defaultMRT
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// ACT + ASSERT
@@ -253,12 +336,12 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			Expect(createdMSR.Spec.Version).To(Equal(0)) // expect version 0
 			Expect(createdMSR.Spec.MRT.Name).To(Equal(MRTName))
 			Expect(createdMSR.Spec.MRT.Namespace).To(Equal(governanceNamespace.Name))
-			Expect(createdMSR.Spec.MRT.Version).To(Equal(defaultMSR.Spec.Version))
-			Expect(createdMSR.Spec.PublicKey).To(Equal(defaultMSR.Spec.PGP.PublicKey))
+			Expect(createdMSR.Spec.MRT.Version).To(Equal(defaultMRT.Spec.Version))
+			Expect(createdMSR.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
 			Expect(createdMSR.Spec.GitRepository.URL).To(Equal(TestRepoURL))
 			Expect(createdMSR.Spec.Status).To(Equal(governancev1alpha1.Approved))
-			Expect(createdMSR.Spec.Governors).To(Equal(defaultMSR.Spec.Governors))
-			Expect(createdMSR.Spec.Require).To(Equal(defaultMSR.Spec.Require))
+			Expect(createdMSR.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
+			Expect(createdMSR.Spec.Require).To(Equal(defaultMRT.Spec.Require))
 			Expect(createdMSR.Status.RequestHistory).To(HaveLen(1))
 
 			// Check MCA exists
@@ -275,10 +358,10 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			Expect(createdMCA.Spec.MSR.Name).To(Equal(MSRName))
 			Expect(createdMCA.Spec.MSR.Namespace).To(Equal(governanceNamespace.Name))
 			Expect(createdMCA.Spec.MSR.Version).To(Equal(0))
-			Expect(createdMCA.Spec.PublicKey).To(Equal(defaultMSR.Spec.PGP.PublicKey))
+			Expect(createdMCA.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
 			Expect(createdMCA.Spec.GitRepository.URL).To(Equal(TestRepoURL))
-			Expect(createdMCA.Spec.Governors).To(Equal(defaultMSR.Spec.Governors))
-			Expect(createdMCA.Spec.Require).To(Equal(defaultMSR.Spec.Require))
+			Expect(createdMCA.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
+			Expect(createdMCA.Spec.Require).To(Equal(defaultMRT.Spec.Require))
 			Expect(createdMCA.Spec.Changes).To(Equal(createdMSR.Spec.Changes))
 			Expect(createdMCA.Status.ApprovalHistory).To(HaveLen(1))
 
@@ -288,6 +371,126 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
 			Expect(updatedMRT.Status.LastObservedCommitHash).To(Equal(mockLatestRevision))
 			Expect(updatedMRT.Status.LastMSRVersion).To(Equal(0)) // expect version 0
+		})
+
+		It("should fail reconciliation if the repository provider cannot be initialized", func() {
+			// SETUP
+			// Create all dependent resources
+			Expect(k8sClient.Create(ctx, &defaultApp)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, &defaultMSR)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, &defaultMCA)).Should(Succeed())
+
+			// Setup manager mock to fail
+			mockRepoManager.EXPECT().
+				GetProviderForMRT(gomock.Any(), gomock.Any()).
+				Return(nil, errors.New("unknown repository type")).
+				AnyTimes()
+
+			// Create the MRT with finalizer
+			mrt := &defaultMRT
+			mrt.Finalizers = []string{MRTFinalizer}
+			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+
+			// Wait, until first reconcile finished
+			Eventually(func() error {
+				return k8sClient.Get(ctx, mrtKey, mrt)
+			}, timeout, interval).Should(Succeed())
+
+			// // Update revision to trigger revision reconciliation
+			mrt.Status.RevisionsQueue = []string{"abc456def"}
+			Expect(k8sClient.Status().Update(ctx, mrt)).Should(Succeed())
+
+			// ACT + ASSERT
+			By("checking that the revision queue is not popped")
+			// Use Consistently to prove that over a period of time, the queue length remains 1.
+			// Reconcile loop will keep failing and revision won be popped.
+			Consistently(func() int {
+				checkMRT := &governancev1alpha1.ManifestRequestTemplate{}
+				if err := k8sClient.Get(ctx, mrtKey, checkMRT); err != nil {
+					return -1 // Return an invalid length on error
+				}
+				return len(checkMRT.Status.RevisionsQueue)
+			}, 2, interval).Should(Equal(1), "The revision queue should not be popped when repository initialization fails")
+		})
+
+		It("should do nothing and pop the revision if it's the latest in MCA history", func() {
+			// SETUP
+			// Create MRT linked resources
+			Expect(k8sClient.Create(ctx, &defaultApp)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, &defaultMSR)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, &defaultMCA)).Should(Succeed())
+
+			// Setup mockRepoManager not to fail
+			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
+
+			// Create an MRT with the finalizer and the same revision in queue as default MCA
+			mrt := &defaultMRT
+			initialCommit := defaultInitCommit
+			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Status.RevisionsQueue = []string{initialCommit}
+			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+			Expect(k8sClient.Status().Update(ctx, mrt)).Should(Succeed())
+
+			// ACT + ASSERT
+			// Expect: reconciler sees revision and latest MCA, popped revision and does nothing.
+			Eventually(func() []string {
+				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+				return updatedMRT.Status.RevisionsQueue
+			}, 3, interval).Should(BeEmpty())
+		})
+
+		It("should do nothing and pop the revision if it corresponds to an old MCA entry", func() {
+			// SETUP
+			// Create MRT linked resources
+			Expect(k8sClient.Create(ctx, &defaultApp)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, &defaultMSR)).Should(Succeed())
+
+			// Setup mockRepoManager not to fail
+			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
+
+			// Setup MCA with 2 records in approvalHistory
+			oldCommit := "111111"
+			latestCommit := "222222"
+
+			mca := &defaultMCA
+			mca.Status.ApprovalHistory = []governancev1alpha1.ManifestChangeApprovalHistoryRecord{
+				{
+					CommitSHA: oldCommit,
+					Version:   0,
+					Changes:   defaultMCA.Spec.Changes,
+					Governors: defaultMCA.Spec.Governors,
+					Require:   defaultMCA.Spec.Require,
+					Approves:  defaultMCA.Status.Approves,
+				},
+				{
+					CommitSHA: latestCommit,
+					Version:   1,
+					Changes: []governancev1alpha1.FileChange{
+						{Kind: "Deployment", Status: governancev1alpha1.Updated, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
+					},
+					Governors: defaultMCA.Spec.Governors,
+					Require:   defaultMCA.Spec.Require,
+					Approves:  defaultMCA.Status.Approves,
+				},
+			}
+			mca.Status.LastApprovedCommitSHA = latestCommit
+			Expect(k8sClient.Create(ctx, mca)).Should(Succeed())
+			Expect(k8sClient.Status().Update(ctx, mca)).Should(Succeed())
+
+			// Create an MRT with the finalizer and the old revision in the queue
+			mrt := &defaultMRT
+			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Status.RevisionsQueue = []string{oldCommit}
+			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+
+			// ACT & ASSERT
+			// Expect: reconciler sees revision and old MCA, popped revision and does nothing.
+			Eventually(func() []string {
+				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+				return updatedMRT.Status.RevisionsQueue
+			}, timeout, interval).Should(BeEmpty())
 		})
 	})
 })

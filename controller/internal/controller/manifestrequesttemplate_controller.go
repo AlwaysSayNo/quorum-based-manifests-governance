@@ -325,9 +325,10 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 		return ctrl.Result{}, fmt.Errorf("new revision handle failed, since revision queue is empty")
 	}
 
+	// Shouldn't be possible, that MCA gets deleted.
 	mca, res, err := r.getMCAForMRT(ctx, mrt, logger)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("get ManifestChangeRequest for handling new revision: %w", err)
 	}
 
 	revision := mrt.Status.RevisionsQueue[0]
@@ -605,7 +606,11 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 }
 
 func (r *ManifestRequestTemplateReconciler) popFromRevisionQueueWithResult(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (ctrl.Result, error) {
-	mrt.Status.RevisionsQueue = mrt.Status.RevisionsQueue[:1]
+	if len(mrt.Status.RevisionsQueue) == 0 {
+		return ctrl.Result{}, nil
+	}
+
+	mrt.Status.RevisionsQueue = mrt.Status.RevisionsQueue[1:]
 	if err := r.Status().Update(ctx, mrt); err != nil {
 		logger.Error(err, "Failed to update ManifestRequestTemplate status")
 		return ctrl.Result{}, fmt.Errorf("update ManifestRequestTemplate status: %w", err)
