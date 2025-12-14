@@ -35,7 +35,7 @@ func (d *dummyGitRepo) HasRevision(ctx context.Context, commit string) (bool, er
 	return true, nil
 }
 func (d *dummyGitRepo) GetLatestRevision(ctx context.Context) (string, error) { return "rev", nil }
-func (d *dummyGitRepo) GetChangedFiles(ctx context.Context, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error) {
+func (d *dummyGitRepo) GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error) {
 	return nil, nil
 }
 func (d *dummyGitRepo) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error) {
@@ -56,7 +56,6 @@ var _ = Describe("Repository Manager", func() {
 		TestRepoURL                = "https://testhub.com/TestUser/test-repo.git"
 	)
 
-	// These variables will be fresh for each "It" block
 	var (
 		ctx           context.Context
 		testNamespace *corev1.Namespace
@@ -269,7 +268,7 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					PGP: governancev1alpha1.PGPPrivateKeySecret{
+					PGP: &governancev1alpha1.PGPPrivateKeySecret{
 						SecretsRef: governancev1alpha1.ManifestRef{
 							Name:      PGPSecretName,
 							Namespace: testNamespace.Name,
@@ -291,6 +290,49 @@ var _ = Describe("Repository Manager", func() {
 
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to fetch pgp secret"))
+			Expect(provider).Should(BeNil())
+		})
+
+		It("should fail if pgpSecrets information is nil", func() {
+			// --- SETUP ---
+
+			application := &argocdv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ArgoCDApplicationName,
+					Namespace: testNamespace.Name,
+				},
+				Spec: argocdv1alpha1.ApplicationSpec{
+					Source: &argocdv1alpha1.ApplicationSource{
+						RepoURL: TestRepoURL,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, application)).Should(Succeed())
+
+			// Inject dummy provider
+			manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+
+			mrt := &governancev1alpha1.ManifestRequestTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      MRTName,
+					Namespace: testNamespace.Name,
+				},
+				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
+					ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
+						Name:      ArgoCDApplicationName,
+						Namespace: testNamespace.Name,
+					},
+				},
+			}
+
+			// --- ACT ---
+
+			provider, err := manager.GetProviderForMRT(ctx, mrt)
+
+			// --- VERIFY ---
+
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("pgp information is nil"))
 			Expect(provider).Should(BeNil())
 		})
 
@@ -333,13 +375,13 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					SSH: governancev1alpha1.SSHPrivateKeySecret{
+					SSH: &governancev1alpha1.SSHPrivateKeySecret{
 						SecretsRef: governancev1alpha1.ManifestRef{
-							Name:      PGPSecretName,
+							Name:      SSHSecretName,
 							Namespace: testNamespace.Name,
 						},
 					},
-					PGP: governancev1alpha1.PGPPrivateKeySecret{
+					PGP: &governancev1alpha1.PGPPrivateKeySecret{
 						SecretsRef: governancev1alpha1.ManifestRef{
 							Name:      PGPSecretName,
 							Namespace: testNamespace.Name,
@@ -361,6 +403,70 @@ var _ = Describe("Repository Manager", func() {
 
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to fetch git secret"))
+			Expect(provider).Should(BeNil())
+		})
+
+		It("should fail if pgpSecrets exists but sshSecrets is nil", func() {
+			// SETUP
+
+			// Create Application
+			application := &argocdv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ArgoCDApplicationName,
+					Namespace: testNamespace.Name,
+				},
+				Spec: argocdv1alpha1.ApplicationSpec{
+					Source: &argocdv1alpha1.ApplicationSource{
+						RepoURL: TestRepoURL,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, application)).Should(Succeed())
+
+			// Create PGP secret
+			pgpSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      PGPSecretName,
+					Namespace: testNamespace.Name,
+				},
+				StringData: map[string]string{
+					"privateKey": "FAKE_PGP_KEY",
+					"passphrase": "FAKE_PASSPHRASE",
+				},
+			}
+			Expect(k8sClient.Create(ctx, pgpSecret)).Should(Succeed())
+
+			// Inject dummy provider
+			manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+
+			mrt := &governancev1alpha1.ManifestRequestTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      MRTName,
+					Namespace: testNamespace.Name,
+				},
+				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
+					PGP: &governancev1alpha1.PGPPrivateKeySecret{
+						SecretsRef: governancev1alpha1.ManifestRef{
+							Name:      PGPSecretName,
+							Namespace: testNamespace.Name,
+						},
+						PublicKey: "FAKE_PGP_KEY",
+					},
+					ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
+						Name:      ArgoCDApplicationName,
+						Namespace: testNamespace.Name,
+					},
+				},
+			}
+
+			// --- ACT ---
+
+			provider, err := manager.GetProviderForMRT(ctx, mrt)
+
+			// --- VERIFY ---
+
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ssh information is nil"))
 			Expect(provider).Should(BeNil())
 		})
 
@@ -416,13 +522,13 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-					SSH: governancev1alpha1.SSHPrivateKeySecret{
+					SSH: &governancev1alpha1.SSHPrivateKeySecret{
 						SecretsRef: governancev1alpha1.ManifestRef{
-							Name:      PGPSecretName,
+							Name:      SSHSecretName,
 							Namespace: testNamespace.Name,
 						},
 					},
-					PGP: governancev1alpha1.PGPPrivateKeySecret{
+					PGP: &governancev1alpha1.PGPPrivateKeySecret{
 						SecretsRef: governancev1alpha1.ManifestRef{
 							Name:      PGPSecretName,
 							Namespace: testNamespace.Name,

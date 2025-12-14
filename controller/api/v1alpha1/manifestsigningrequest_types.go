@@ -41,6 +41,16 @@ type GitRepository struct {
 	URL string `json:"url,omitempty"`
 }
 
+type VersionedManifestRef struct {
+	// +required
+	Name string `json:"name"`
+	// +required
+	Namespace string `json:"namespace"`
+
+	// +required
+	Version int `json:"version"`
+}
+
 type FileChange struct {
 	// +required
 	Kind string `json:"kind,omitempty"`
@@ -56,10 +66,16 @@ type FileChange struct {
 	Path string `json:"path"`
 }
 
+type ApproverList struct {
+	// List of governors.
+	// +optional
+	Members []Governor `json:"members"`
+}
+
 type ManifestSigningRequestHistoryRecord struct {
 
 	// +required
-	Version int `json:"version,omitempty"`
+	Version int `json:"version"`
 
 	// +required
 	Changes []FileChange `json:"changes"`
@@ -70,8 +86,8 @@ type ManifestSigningRequestHistoryRecord struct {
 	// +required
 	Require ApprovalRule `json:"require"`
 
-	// +required
-	Approves GovernorList `json:"approves,omitempty"`
+	// +optional
+	Approves ApproverList `json:"approves"`
 
 	// +required
 	Status SigningRequestStatus `json:"status,omitempty"`
@@ -82,10 +98,10 @@ type ManifestSigningRequestSpec struct {
 	// 0 is value of the default ManifestSigningRequest, created by qubmango
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	Version int `json:"version,omitempty"`
+	Version int `json:"version"`
 
-	// +required
-	MRT VersionedManifestRef `json:"mrt,omitempty"`
+	// +optional
+	MRT VersionedManifestRef `json:"mrt"`
 
 	// publicKey is used to sign MCA.
 	// +kubebuilder:validation:MinLength=1
@@ -119,7 +135,10 @@ type ManifestSigningRequestSpec struct {
 type ManifestSigningRequestStatus struct {
 
 	// +required
-	RequestHistory []ManifestSigningRequestHistoryRecord `json:"approvalHistory,omitempty"`
+	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty"`
+
+	// +optional
+	Approves ApproverList `json:"approves"`
 
 	// conditions represent the current state of the ManifestSigningRequest resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

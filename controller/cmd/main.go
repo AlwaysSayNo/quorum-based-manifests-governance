@@ -41,6 +41,7 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
+	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
 	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
@@ -185,8 +186,9 @@ func main() {
 	}
 
 	if err := (&controller.ManifestRequestTemplateReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		RepoManager: repomanager.NewManager(mgr.GetClient(), ""),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)

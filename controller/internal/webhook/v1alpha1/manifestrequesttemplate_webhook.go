@@ -19,6 +19,13 @@ import (
 
 var mrtlog = logf.Log.WithName("mrt-resource")
 
+const (
+	MSRDefaultName         = "manifestsigningrequest"
+	MCADefaultName         = "manifestchangeapproval"
+	ArgoCDDefaultNamespace = "argocd"
+	LocationDefaultFolder  = "qubmango"
+)
+
 func (w *ManifestRequestTemplateWebhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	w.Client = mgr.GetClient()
 
@@ -51,7 +58,72 @@ func (w *ManifestRequestTemplateWebhook) Default(ctx context.Context, obj runtim
 		mrt.Status.RevisionsQueue = []string{}
 	}
 
+	// Set default MSR values
+	if mrt.Spec.MSR.Name == "" {
+		mrt.Spec.MSR.Name = MSRDefaultName
+	}
+	if mrt.Spec.MSR.Namespace == "" {
+		mrt.Spec.MSR.Namespace = mrt.Namespace
+	}
+
+	// Set default MCA values
+	if mrt.Spec.MCA.Name == "" {
+		mrt.Spec.MCA.Name = MCADefaultName
+	}
+	if mrt.Spec.MCA.Namespace == "" {
+		mrt.Spec.MCA.Namespace = mrt.Namespace
+	}
+
+	// Set default Application namespace value
+	if mrt.Spec.ArgoCDApplication.Namespace == "" {
+		mrt.Spec.MCA.Namespace = ArgoCDDefaultNamespace
+	}
+
+	// Set default Location values
+	if mrt.Spec.Location.Folder == "" {
+		mrt.Spec.Location.Folder = LocationDefaultFolder
+	}
+
 	return nil
+}
+
+func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(rule governancev1alpha1.ApprovalRule, path *field.Path) (bool, *field.Error) {
+	isValid, err := w.approvalRuleValidCheck(rule, path)
+	if !isValid {
+		return isValid, err
+	}
+
+	if len(rule.Require) > 0 {
+		for _, child := range rule.Require {
+			isValid, err := w.approvalRuleValidCheck(child, path.Child("require"))
+			if !isValid {
+				return isValid, err
+			}
+		}
+	}
+
+	return true, nil
+}
+
+func (w *ManifestRequestTemplateWebhook) approvalRuleValidCheck(rule governancev1alpha1.ApprovalRule, path *field.Path) (bool, *field.Error) {
+	if rule.AtLeast == nil && rule.All == nil {
+		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be null in the same time")
+	} else if rule.AtLeast != nil && rule.All != nil {
+		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be set in the same time")
+	}
+
+	cnt := len(rule.Require)
+	if rule.Signer != "" {
+		cnt++
+	}
+
+	if cnt == 0 {
+		return false, field.Forbidden(path.Child("signer"), "no rule or signer is set")
+	} else if rule.AtLeast != nil && cnt < *rule.AtLeast {
+		return false, field.Forbidden(path.Child("signer"), fmt.Sprintf("atLeast is not reachable: %d < %d", cnt, *rule.AtLeast))
+	}
+
+	return true, nil
 }
 
 func (w *ManifestRequestTemplateWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
@@ -63,12 +135,14 @@ func (w *ManifestRequestTemplateWebhook) ValidateCreate(ctx context.Context, obj
 	mrtlog.Info("validating MRT creation", "name", mrt.Name, "namespace", mrt.Namespace)
 	var allErrs field.ErrorList
 
-	// TODO: make reconciler to create resources on create event
-	// TODO: make logic in repo to fetch MRT, even if it's in the governance folder
-
 	// Validate, that argocd Application has the default namespace ('argocd')
 	if mrt.Spec.ArgoCDApplication.Namespace != "argocd" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCDApplication").Child("namespace"), mrt.Spec.ArgoCDApplication.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
+	}
+
+	// Check nested approval rules
+	if isValid, errorField := w.isApprovalRuleValid(mrt.Spec.Require, field.NewPath("spec").Child("require")); !isValid {
+		allErrs = append(allErrs, errorField)
 	}
 
 	if len(allErrs) == 0 {

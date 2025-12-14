@@ -206,7 +206,7 @@ func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit 
 		return nil, fmt.Errorf("could not compute patch between commits: %w", err)
 	}
 
-	return p.patchToFileChangeList(toTree, patch, fromFolder)
+	return p.patchToFileChangeList(fromTree, toTree, patch, fromFolder)
 }
 
 func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*object.Tree, error) {
@@ -224,7 +224,7 @@ func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*objec
 	return tree, nil
 }
 
-func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.Patch, fromFolder string) ([]governancev1alpha1.FileChange, error) {
+func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *object.Tree, patch *object.Patch, fromFolder string) ([]governancev1alpha1.FileChange, error) {
 	var changes []governancev1alpha1.FileChange
 	fromFolderNormalized := filepath.Clean(fromFolder)
 
@@ -241,9 +241,10 @@ func (p *gitProvider) patchToFileChangeList(toTree *object.Tree, patch *object.P
 			path = to.Path()
 			file, err = toTree.File(path)
 		} else if from != nil && to == nil {
-			// File was deleted. No file to process
+			// File was deleted. Take old file information
 			status = governancev1alpha1.Deleted
 			path = from.Path()
+			file, err = fromTree.File(path)
 		} else if from != nil && to != nil {
 			// File was modified
 			status = governancev1alpha1.Updated

@@ -114,32 +114,16 @@ spec:
                 description: MCA contains information about MCA metadata.
                 properties:
                   name:
-                    description: |-
-                      Name of the MCA resource.
-                      Default is "mca".
-                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace where the MCA resource will be created.
-                      Default is the same namespace as the MRT.
-                    minLength: 0
                     type: string
                 type: object
               msr:
                 description: MSR contains information about MSR metadata.
                 properties:
                   name:
-                    description: |-
-                      Name of the MSR resource.
-                      Default is "msr".
-                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace where the MSR resource will be created.
-                      Default is the same namespace as the MRT.
-                    minLength: 0
                     type: string
                 type: object
               pgp:
@@ -216,21 +200,6 @@ spec:
           status:
             description: status defines the observed state of ManifestRequestTemplate
             properties:
-              approvalHistory:
-                items:
-                  properties:
-                    commitSHA:
-                      description: CommitSHA is the SHA of the approved commit
-                      type: string
-                    time:
-                      description: Time is the time when the approval was created
-                      format: date-time
-                      type: string
-                  required:
-                  - commitSHA
-                  - time
-                  type: object
-                type: array
               conditions:
                 description: |-
                   conditions represent the current state of the ManifestRequestTemplate resource.
@@ -301,12 +270,13 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               lastAcceptedMSR:
-                description: LastAcceptedMSR is the name of the last accepted MSR
-                  resource
-                type: string
+                description: LastAcceptedMSRVersion is the version of the last accepted
+                  MSR resource
+                type: integer
               lastMSR:
-                description: LastMSR is the name of the last created MSR resource
-                type: string
+                description: LastMSRVersion is the version of the last created MSR
+                  resource
+                type: integer
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
                   from the git repository
@@ -317,9 +287,6 @@ spec:
                 items:
                   type: string
                 type: array
-            required:
-            - approvalHistory
-            - revisionsQueue
             type: object
         required:
         - spec

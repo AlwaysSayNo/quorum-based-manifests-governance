@@ -15,6 +15,7 @@ require (
 	github.com/argoproj/argo-cd/v3 v3.2.0
 	github.com/go-git/go-git/v5 v5.14.0
 	github.com/onsi/gomega v1.38.2
+	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.42.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.34.2

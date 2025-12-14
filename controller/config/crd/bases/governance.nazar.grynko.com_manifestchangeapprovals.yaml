@@ -197,18 +197,158 @@ spec:
                 description: History of approvals
                 items:
                   properties:
+                    approves:
+                      properties:
+                        members:
+                          description: List of governors.
+                          items:
+                            properties:
+                              alias:
+                                description: Alias for governor (for easier identification)
+                                minLength: 1
+                                type: string
+                              publicKey:
+                                description: PublicKey of the governor used to verify
+                                  signatures.
+                                minLength: 1
+                                type: string
+                            required:
+                            - alias
+                            - publicKey
+                            type: object
+                          type: array
+                      type: object
+                    changes:
+                      items:
+                        properties:
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          path:
+                            type: string
+                          sha256:
+                            type: string
+                          status:
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        - namespace
+                        - path
+                        - sha256
+                        - status
+                        type: object
+                      type: array
                     commitSHA:
                       description: CommitSHA is the SHA of the approved commit
                       type: string
+                    governors:
+                      properties:
+                        members:
+                          description: List of governors.
+                          items:
+                            properties:
+                              alias:
+                                description: Alias for governor (for easier identification)
+                                minLength: 1
+                                type: string
+                              publicKey:
+                                description: PublicKey of the governor used to verify
+                                  signatures.
+                                minLength: 1
+                                type: string
+                            required:
+                            - alias
+                            - publicKey
+                            type: object
+                          type: array
+                        notificationChannels:
+                          description: General list of notification channels to inform
+                            governors about pending approvals.
+                          items:
+                            properties:
+                              slack:
+                                properties:
+                                  channelID:
+                                    description: Slack channel ID to notify (e.g.,
+                                      S01234567)
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - channelID
+                                type: object
+                            type: object
+                          type: array
+                      required:
+                      - members
+                      type: object
+                    require:
+                      description: |-
+                        ApprovalRule defines nested rules for approvals required.
+                        Each rule is a node. Each node can be:
+                        - intermediate node. Contains Require field with child rules:
+                        - AtLeast: number of child rules that must be satisfied
+                        - All: if true, all child rules must be satisfied
+
+                        - leaf node. Doesn't contain Require field, but contains Signer field:
+                        - Signer: the signer (governor) whose approval is required
+                      properties:
+                        all:
+                          description: If true, all child rules must be satisfied.
+                          type: boolean
+                        atLeast:
+                          description: Specifies the minimum number of child rules
+                            that must be satisfied.
+                          minimum: 1
+                          type: integer
+                        require:
+                          description: List of child rules.
+                          x-kubernetes-preserve-unknown-fields: true
+                        signer:
+                          description: Signer can be either PublicKey or Alias of
+                            the governor. If alias is used, it should start with `$`
+                            to distinguish it from PublicKey.
+                          minLength: 1
+                          type: string
+                      type: object
                     time:
                       description: Time is the time when the approval was created
                       format: date-time
                       type: string
+                    version:
+                      type: integer
                   required:
+                  - changes
                   - commitSHA
+                  - governors
+                  - require
                   - time
+                  - version
                   type: object
                 type: array
+              approves:
+                properties:
+                  members:
+                    description: List of governors.
+                    items:
+                      properties:
+                        alias:
+                          description: Alias for governor (for easier identification)
+                          minLength: 1
+                          type: string
+                        publicKey:
+                          description: PublicKey of the governor used to verify signatures.
+                          minLength: 1
+                          type: string
+                      required:
+                      - alias
+                      - publicKey
+                      type: object
+                    type: array
+                type: object
               conditions:
                 description: |-
                   Standard condition types include:
@@ -278,8 +418,6 @@ spec:
               lastApprovedCommitSHA:
                 description: Last approved commit SHA
                 type: string
-            required:
-            - approvalHistory
             type: object
         required:
         - spec

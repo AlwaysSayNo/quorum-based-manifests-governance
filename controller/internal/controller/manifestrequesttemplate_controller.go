@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +36,8 @@ import (
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
+	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -43,20 +46,7 @@ const (
 )
 
 type RepositoryManager interface {
-	GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error)
-}
-
-type GitRepository interface {
-	// HasRevision return true, if revision commit is the part of git repository.
-	HasRevision(ctx context.Context, commit string) (bool, error)
-	// GetLatestRevision return the last observed revision for the repository.
-	GetLatestRevision(ctx context.Context) (string, error)
-	// GetChangedFiles returns a list of files that changed between two commits.
-	// TODO: change type from FileChange. Because it bounds it straight to the governance module
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
-	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
-	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
-	PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error)
+	GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (repomanager.GitRepository, error)
 }
 
 type Notifier interface {
@@ -67,8 +57,8 @@ type Notifier interface {
 type ManifestRequestTemplateReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
-	repoManager RepositoryManager
-	notifier    Notifier
+	RepoManager RepositoryManager
+	Notifier    Notifier
 }
 
 func Pointer[T any](d T) *T {
@@ -136,18 +126,13 @@ func (r *ManifestRequestTemplateReconciler) isToFinzalize(ctx context.Context, m
 
 // isNewMRTReconcile looks for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new MRT.
 func (r *ManifestRequestTemplateReconciler) isNewMRTReconcile(mrt *governancev1alpha1.ManifestRequestTemplate) bool {
-	return !r.containsFinalizer(mrt, MRTFinalizer)
-}
-
-// Return true, if MRT is being deleted.
-func (r *ManifestRequestTemplateReconciler) containsFinalizer(mrt *governancev1alpha1.ManifestRequestTemplate, finilizer string) bool {
-	return mrt.ObjectMeta.Annotations[finilizer] != finilizer
+	return !controllerutil.ContainsFinalizer(mrt, MRTFinalizer)
 }
 
 // finalize is used for object clean-up on deletion event.
 // So far, it's needed to remove the `initial` finalize annotation.
 func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (ctrl.Result, error) {
-	if !r.containsFinalizer(mrt, MRTFinalizer) {
+	if !controllerutil.ContainsFinalizer(mrt, MRTFinalizer) {
 		// No custom finalizer is found. Do nothing
 		return ctrl.Result{}, nil
 	}
@@ -156,7 +141,7 @@ func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *
 	logger.Info("Successfully finalized ManifestRequestTemplate")
 
 	// Remove the custom finalizer. The object will be deleted
-	delete(mrt.ObjectMeta.Annotations, MRTFinalizer)
+	controllerutil.RemoveFinalizer(mrt, MRTFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", MRTFinalizer, err)
 	}
@@ -173,7 +158,7 @@ func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mr
 	}
 
 	// Mark MRT as set up
-	mrt.ObjectMeta.Annotations[MRTFinalizer] = MRTFinalizerValue
+	controllerutil.AddFinalizer(mrt, MRTFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
 	}
@@ -191,11 +176,9 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	}
 
 	mrtMetaRef := governancev1alpha1.VersionedManifestRef{
-		ManifestRef: governancev1alpha1.ManifestRef{
-			Name:      mrt.ObjectMeta.Name,
-			Namespace: mrt.ObjectMeta.Namespace,
-		},
-		Version: mrt.Spec.Version,
+		Name:      mrt.ObjectMeta.Name,
+		Namespace: mrt.ObjectMeta.Namespace,
+		Version:   mrt.Spec.Version,
 	}
 
 	// Fetch the latest revision from the repository
@@ -227,11 +210,7 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 			Require:       *mrt.Spec.Require.DeepCopy(),
 			Status:        governancev1alpha1.Approved,
 		},
-		Status: governancev1alpha1.ManifestSigningRequestStatus{
-			RequestHistory: []governancev1alpha1.ManifestSigningRequestHistoryRecord{},
-		},
 	}
-	msr.Status.RequestHistory = append(msr.Status.RequestHistory, r.createNewMSRHistoryRecordFromMSR(msr))
 	// Set MRT as MSR owner
 	if err := ctrl.SetControllerReference(mrt, msr, r.Scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference on MSR")
@@ -243,13 +222,21 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 			return fmt.Errorf("while creating default ManifestSigningRequest: %w", err)
 		}
 	}
+	// Update MSR
+	msr, err = r.getMSR(ctx, mrt, logger)
+	if err != nil {
+		return fmt.Errorf("while fetching ManifestSigningRequest after save: %w", err)
+	}
+	msr.Status.RequestHistory = append(msr.Status.RequestHistory, r.createNewMSRHistoryRecordFromMSR(msr))
+	if err := r.Status().Update(ctx, msr); err != nil {
+		logger.Error(err, "Failed to update initial MSR status")
+		return fmt.Errorf("while updating default ManifestSigningRequest status: %w", err)
+	}
 
 	msrMetaRef := governancev1alpha1.VersionedManifestRef{
-		ManifestRef: governancev1alpha1.ManifestRef{
-			Name:      msr.ObjectMeta.Name,
-			Namespace: msr.ObjectMeta.Namespace,
-		},
-		Version: msr.Spec.Version,
+		Name:      msr.ObjectMeta.Name,
+		Namespace: msr.ObjectMeta.Namespace,
+		Version:   msr.Spec.Version,
 	}
 
 	// Create default MCA
@@ -269,11 +256,8 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 			Governors:     *mrt.Spec.Governors.DeepCopy(),
 			Require:       *mrt.Spec.Require.DeepCopy(),
 		},
-		Status: governancev1alpha1.ManifestChangeApprovalStatus{
-			LastApprovedCommitSHA: revision, // revision, on which MRT should have been created
-			ApprovalHistory:       []governancev1alpha1.ManifestChangeApprovalHistoryRecord{},
-		},
 	}
+	mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, r.createNewMCAHistoryRecordFromMCA(mca))
 	// Set MRT as MCA owner
 	if err := ctrl.SetControllerReference(mrt, mca, r.Scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference on MCA")
@@ -285,6 +269,24 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 			return fmt.Errorf("while creating default ManifestChangeApproval: %w", err)
 		}
 	}
+	// Update MCA
+	mca, _, err = r.getMCAForMRT(ctx, mrt, logger)
+	if err != nil {
+		return fmt.Errorf("while fetching ManifestChangeApproval after save: %w", err)
+	}
+	mca.Status.LastApprovedCommitSHA = revision // revision, on which MRT should have been created
+	mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, r.createNewMCAHistoryRecordFromMCA(mca))
+	if err := r.Status().Update(ctx, mca); err != nil {
+		logger.Error(err, "Failed to update initial MCA status")
+		return fmt.Errorf("while updating default ManifestChangeApproval status: %w", err)
+	}
+
+	// Update MRT
+	mrt.Status.LastObservedCommitHash = revision
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		logger.Error(err, "Failed to update initial MRT status")
+		return fmt.Errorf("while updating initial ManifestRequestTemplate status: %w", err)
+	}
 
 	return nil
 }
@@ -295,7 +297,7 @@ func (r *ManifestRequestTemplateReconciler) checkDependencies(ctx context.Contex
 	app := &argocdv1alpha1.Application{}
 	err := r.Get(ctx, types.NamespacedName{Name: mrt.Spec.ArgoCDApplication.Name, Namespace: mrt.Spec.ArgoCDApplication.Namespace}, app)
 	if err != nil {
-		logger.Error(err, "Failed to find linked Application: %w", err)
+		logger.Error(err, "Failed to find linked Application")
 		return fmt.Errorf("couldn't find linked Application")
 	}
 
@@ -490,7 +492,7 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 	logger.Info("Successfully updated MRT status")
 
 	// Notify the Governors
-	if err := r.notifier.NotifyGovernors(ctx, mrt, msr); err != nil {
+	if err := r.Notifier.NotifyGovernors(ctx, mrt, msr); err != nil {
 		// Non-critical error. Log it.
 		logger.Error(err, "Failed to send notifications to governors")
 	} else {
@@ -511,11 +513,9 @@ func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *
 
 	msr.Spec.Version = msr.Spec.Version + 1
 	msr.Spec.MRT = governancev1alpha1.VersionedManifestRef{
-		ManifestRef: governancev1alpha1.ManifestRef{
-			Name:      mrt.ObjectMeta.Name,
-			Namespace: mrt.ObjectMeta.Namespace,
-		},
-		Version: mrt.Spec.Version,
+		Name:      mrt.ObjectMeta.Name,
+		Namespace: mrt.ObjectMeta.Namespace,
+		Version:   mrt.Spec.Version,
 	}
 	msr.Spec.PublicKey = mrtSpecCpy.PGP.PublicKey
 	msr.Spec.GitRepository = governancev1alpha1.GitRepository{
@@ -539,16 +539,30 @@ func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *
 
 func (r *ManifestRequestTemplateReconciler) createNewMSRHistoryRecordFromMSR(msr *governancev1alpha1.ManifestSigningRequest) governancev1alpha1.ManifestSigningRequestHistoryRecord {
 	msrSpecCpy := msr.Spec.DeepCopy()
+	msrStatusCpy := msr.Status.DeepCopy()
 
 	return governancev1alpha1.ManifestSigningRequestHistoryRecord{
 		Version:   msrSpecCpy.Version,
 		Changes:   msrSpecCpy.Changes,
 		Governors: msrSpecCpy.Governors,
 		Require:   msrSpecCpy.Require,
-		Approves: governancev1alpha1.GovernorList{
-			Members: []governancev1alpha1.Governor{},
-		},
-		Status: msr.Spec.Status,
+		Approves:  msrStatusCpy.Approves,
+		Status:    msr.Spec.Status,
+	}
+}
+
+func (r *ManifestRequestTemplateReconciler) createNewMCAHistoryRecordFromMCA(mca *governancev1alpha1.ManifestChangeApproval) governancev1alpha1.ManifestChangeApprovalHistoryRecord {
+	mcaSpecCpy := mca.Spec.DeepCopy()
+	mcaStatusCpy := mca.Status.DeepCopy()
+
+	return governancev1alpha1.ManifestChangeApprovalHistoryRecord{
+		CommitSHA: mcaStatusCpy.LastApprovedCommitSHA, // TODO: check after MSR controller created
+		Time:      metav1.NewTime(time.Now()),
+		Version:   mcaSpecCpy.Version,
+		Changes:   mcaSpecCpy.Changes,
+		Governors: mcaSpecCpy.Governors,
+		Require:   mcaSpecCpy.Require,
+		Approves:  mcaStatusCpy.Approves,
 	}
 }
 
@@ -569,7 +583,6 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 		isManifestType := strings.HasSuffix(filePath, ".yaml") ||
 			strings.HasSuffix(filePath, ".yml") ||
 			file.Kind == ""
-			
 
 		if !isManifestType {
 			continue
@@ -617,11 +630,26 @@ func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, 
 	return app, ctrl.Result{}, nil
 }
 
-func (r *ManifestRequestTemplateReconciler) repositoryWithError(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error) {
-	return r.repoManager.GetProviderForMRT(ctx, mrt)
+func (r *ManifestRequestTemplateReconciler) getMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (*governancev1alpha1.ManifestSigningRequest, error) {
+	msr := &governancev1alpha1.ManifestSigningRequest{}
+	msrKey := types.NamespacedName{
+		Name:      mrt.Spec.MSR.Name,
+		Namespace: mrt.Spec.MSR.Namespace,
+	}
+
+	if err := r.Get(ctx, msrKey, msr); err != nil {
+		logger.Error(err, "Failed to get ManifestSigningRequest", "manifestSigningRequestNamespacedName", msrKey)
+		return nil, fmt.Errorf("fetch ManifestSigningRequest associated with ManifestRequestTemplate: %w", err)
+	}
+
+	return msr, nil
 }
 
-func (r *ManifestRequestTemplateReconciler) repository(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) GitRepository {
-	repo, _ := r.repoManager.GetProviderForMRT(ctx, mrt)
+func (r *ManifestRequestTemplateReconciler) repositoryWithError(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (repomanager.GitRepository, error) {
+	return r.RepoManager.GetProviderForMRT(ctx, mrt)
+}
+
+func (r *ManifestRequestTemplateReconciler) repository(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) repomanager.GitRepository {
+	repo, _ := r.RepoManager.GetProviderForMRT(ctx, mrt)
 	return repo
 }

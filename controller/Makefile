@@ -45,8 +45,13 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+.PHONY: mocks
+mocks: 
+	mockgen -source=internal/controller/manifestrequesttemplate_controller.go -destination=internal/controller/mocks/manifestrequesttemplate_controller_mock.go -package=controller_mock
+	mockgen -source=internal/repository/manager.go -destination=internal/repository/mocks/manager_mock.go -package=manager_mock
+
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen mocks## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt

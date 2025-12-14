@@ -25,7 +25,7 @@ type ManifestChangeApprovalSpec struct {
 	// 0 is value of the default ManifestSigningRequest, created by qubmango
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	Version int `json:"version,omitempty"`
+	Version int `json:"version"`
 
 	// +required
 	MRT VersionedManifestRef `json:"mrt,omitempty"`
@@ -66,6 +66,21 @@ type ManifestChangeApprovalHistoryRecord struct {
 
 	// Time is the time when the approval was created
 	Time metav1.Time `json:"time"`
+
+	// +required
+	Version int `json:"version"`
+
+	// +required
+	Changes []FileChange `json:"changes"`
+
+	// +required
+	Governors GovernorList `json:"governors,omitempty"`
+
+	// +required
+	Require ApprovalRule `json:"require"`
+
+	// +optional
+	Approves ApproverList `json:"approves,omitempty"`
 }
 
 // ManifestChangeApprovalStatus defines the observed state of ManifestChangeApproval.
@@ -76,8 +91,11 @@ type ManifestChangeApprovalStatus struct {
 	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
 
 	// History of approvals
-	// +required
+	// +optional
 	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
+
+	// +optional
+	Approves ApproverList `json:"approves"`
 
 	// Standard condition types include:
 	// - "Available": the resource is fully functional

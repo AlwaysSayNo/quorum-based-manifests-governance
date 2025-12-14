@@ -27,11 +27,11 @@ type ManifestRef struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-type VersionedManifestRef struct {
-	ManifestRef `json:",inline"`
-
-	// +required
-	Version int `json:"version,omitempty"`
+type ManifestRefOptional struct {
+	// +optional
+	Name string `json:"name"`
+	// +optional
+	Namespace string `json:"namespace"`
 }
 
 type ArgoCDApplication struct {
@@ -54,20 +54,6 @@ type Location struct {
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Folder string `json:"folder,omitempty"`
-}
-
-type MSR struct {
-	// Name of the MSR resource.
-	// Default is "msr".
-	// +kubebuilder:validation:MinLength=1
-	// +optional
-	Name string `json:"name,omitempty"`
-
-	// Namespace where the MSR resource will be created.
-	// Default is the same namespace as the MRT.
-	// +kubebuilder:validation:MinLength=0
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
 }
 
 type MCA struct {
@@ -137,11 +123,11 @@ type ApprovalRule struct {
 	// Specifies the minimum number of child rules that must be satisfied.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	AtLeast int `json:"atLeast,omitempty"`
+	AtLeast *int `json:"atLeast"`
 
 	// If true, all child rules must be satisfied.
 	// +optional
-	All bool `json:"all,omitempty"`
+	All *bool `json:"all,omitempty"`
 
 	// List of child rules.
 	// +optional
@@ -178,10 +164,10 @@ type ManifestRequestTemplateSpec struct {
 	Version int `json:"version"`
 
 	// +required
-	PGP PGPPrivateKeySecret `json:"pgp"`
+	PGP *PGPPrivateKeySecret `json:"pgp"`
 
 	// +required
-	SSH SSHPrivateKeySecret `json:"ssh"`
+	SSH *SSHPrivateKeySecret `json:"ssh"`
 
 	// ArgoCDApplicationName is the name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.
@@ -193,14 +179,12 @@ type ManifestRequestTemplateSpec struct {
 	Location Location `json:"location,omitempty"`
 
 	// MSR contains information about MSR metadata.
-	// TODO: cannot be changed later
 	// +optional
-	MSR MSR `json:"msr,omitempty"`
+	MSR ManifestRefOptional `json:"msr,omitempty"`
 
 	// MCA contains information about MCA metadata.
-	// TODO: cannot be changed later
 	// +optional
-	MCA MCA `json:"mca,omitempty"`
+	MCA ManifestRefOptional `json:"mca,omitempty"`
 
 	// Required until GovernorsRef is implemented.
 	// +required
@@ -215,9 +199,6 @@ type ManifestRequestTemplateSpec struct {
 
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
 type ManifestRequestTemplateStatus struct {
-
-	// +required
-	RequestHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
 
 	// conditions represent the current state of the ManifestRequestTemplate resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
@@ -234,18 +215,17 @@ type ManifestRequestTemplateStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// RevisionsQueue is the list of commit SHAs waiting for processing.
-	// TODO:
-	// +required
+	// +optional
 	RevisionsQueue []string `json:"revisionsQueue,omitempty"`
 
 	// LastObservedCommitHash is the last observed commit hash from the git repository
 	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
 
-	// LastMSR is the name of the last created MSR resource
-	LastMSR string `json:"lastMSR,omitempty"`
+	// LastMSRVersion is the version of the last created MSR resource
+	LastMSRVersion int `json:"lastMSR,omitempty"`
 
-	// LastAcceptedMSR is the name of the last accepted MSR resource
-	LastAcceptedMSR string `json:"lastAcceptedMSR,omitempty"`
+	// LastAcceptedMSRVersion is the version of the last accepted MSR resource
+	LastAcceptedMSRVersion int `json:"lastAcceptedMSR,omitempty"`
 }
 
 // +kubebuilder:object:root=true

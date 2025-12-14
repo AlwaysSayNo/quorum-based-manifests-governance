@@ -447,7 +447,13 @@ var _ = Describe("gitProvider GetChangedFiles Method", func() {
 			workspaceRepo, err := git.PlainOpen(workspacePath)
 			Expect(err).NotTo(HaveOccurred())
 
-			fromCommitHash := makeCommit(workspaceRepo, workspacePath, "app-manifests/deployment.yaml", "some content", "Add deployment")
+			contnent := "{apiVersion: apps/v1, kind: Deployment, metadata: {name: my-app, namespace: my-ns}}"
+			fromCommitHash := makeCommit(workspaceRepo, workspacePath, "app-manifests/deployment.yaml", contnent, "Add deployment")
+
+			// Get expected hash
+			hasher := sha256.New()
+			hasher.Write([]byte(contnent))
+			expectedHash := hex.EncodeToString(hasher.Sum(nil))
 
 			// Delete manifest and commit
 			worktree, err := workspaceRepo.Worktree()
@@ -470,10 +476,12 @@ var _ = Describe("gitProvider GetChangedFiles Method", func() {
 			change := changes[0]
 			Expect(change.Status).To(Equal(governancev1alpha1.Deleted))
 			Expect(change.Path).To(Equal("app-manifests/deployment.yaml"))
-			// No content to hash for a deleted file
-			Expect(change.SHA256).To(BeEmpty())
-			// Kind, Name, Namespace also empty
-			Expect(change.Kind).To(BeEmpty())
+			// Hash of the deleted file
+			Expect(change.SHA256).To(Equal(expectedHash))
+			Expect(change.Path).To(Equal("app-manifests/deployment.yaml"))
+			Expect(change.Kind).To(Equal("Deployment"))
+			Expect(change.Name).To(Equal("my-app"))
+			Expect(change.Namespace).To(Equal("my-ns"))
 		})
 	})
 
@@ -680,7 +688,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 	Context("when the PGP private key is malformed", func() {
 		It("should fail to read the armored key ring", func() {
 			// SETUP
-			provider.pgpSecrets.PrivateKey = "--- THIS IS NOT A VALID PGP KEY ---"
+			provider.pgpSecrets.PrivateKey = "--- FAKE_PGP_KEY ---"
 
 			// ACT
 			commit, err := provider.PushMSR(ctx, dummyMSR)

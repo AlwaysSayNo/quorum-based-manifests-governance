@@ -36,7 +36,7 @@ type GitRepository interface {
 
 	// GetChangedFiles returns a list of files that changed between two commits.
 	// TODO: change type from FileChange. Because it bounds it straight to the governance module
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string) ([]governancev1alpha1.FileChange, error)
+	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
 
 	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
 	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
@@ -138,6 +138,9 @@ func (m *Manager) findProvider(repoURL, localPath string, auth transport.AuthMet
 }
 
 func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (PgpSecrets, error) {
+	if mrt.Spec.PGP == nil {
+		return PgpSecrets{}, fmt.Errorf("pgp information is nil")
+	}
 	// TODO: Decide between direct PGP key usage in MRT or as ref
 	pgpSecret := &corev1.Secret{}
 	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.PGP.SecretsRef.Name, Namespace: mrt.Spec.PGP.SecretsRef.Namespace}, pgpSecret)
@@ -153,7 +156,7 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	passphraseBytes, ok := pgpSecret.Data["passphrase"]
 	if !ok {
 		// If the key is passphrase-protected, this will cause the next step to fail.
-		// We can treat it as an empty string and let the crypto library handle the failure.
+		// We can treat it as an empty string and let the crypto library handle the failure
 		passphraseBytes = []byte("")
 	}
 
@@ -164,6 +167,10 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 }
 
 func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*ssh.PublicKeys, error) {
+	if mrt.Spec.SSH == nil {
+		return nil, fmt.Errorf("ssh information is nil")
+	}
+
 	// TODO: Decide between direct SHH key usage in MRT or as ref
 	gitSecret := &corev1.Secret{}
 	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.SSH.SecretsRef.Name, Namespace: mrt.Spec.SSH.SecretsRef.Namespace}, gitSecret)
@@ -194,21 +201,13 @@ func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 
 // getApplication fetches the ArgoCD Application resource referenced by the ManifestRequestTemplate
 func (m *Manager) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*argocdv1alpha1.Application, error) {
-	// TODO: create a defaulting webhook to set these values, in order to avoid validating it every time.
-	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
-	if appNamespace == "" {
-		appNamespace = "argocd"
-	}
-
 	app := &argocdv1alpha1.Application{}
 	appKey := types.NamespacedName{
 		Name:      mrt.Spec.ArgoCDApplication.Name,
-		Namespace: appNamespace,
+		Namespace: mrt.Spec.ArgoCDApplication.Namespace,
 	}
 
 	if err := m.client.Get(ctx, appKey, app); err != nil {
-		// TODO: create validating webhook, that ensures, that MRT corresponds to an existing Application
-		// TODO: In validating webhook we can also set mapping for Application to MRT (in case of non default Application namespace)
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("no Application for MRT was found")
 		}
