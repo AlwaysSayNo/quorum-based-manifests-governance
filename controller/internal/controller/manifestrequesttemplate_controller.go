@@ -99,7 +99,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	// Create linked default resources, if it's a new object
 	if r.isNewMRTReconcile(mrt) {
-		return r.onMRTCreation(ctx, mrt, &logger)
+		return r.onMRTCreation(ctx, mrt, req, &logger)
 	}
 
 	// Check, if all linked default resources exist in the cluster
@@ -149,15 +149,19 @@ func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *
 	return ctrl.Result{}, nil
 }
 
-func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) (ctrl.Result, error) {
+func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request, logger *logr.Logger) (ctrl.Result, error) {
 	logger.Info("Initializing new ManifestRequestTemplate")
 
-	if err := r.createLinkedDefaultResources(ctx, mrt, logger); err != nil {
+	if err := r.createLinkedDefaultResources(ctx, mrt, req, logger); err != nil {
 		// If setup fails, we return the error to retry. We don't add the finalizer yet
 		return ctrl.Result{}, fmt.Errorf("create default linked resources: %w", err)
 	}
 
 	// Mark MRT as set up
+	mrt, _, err := r.getMRTForRequest(ctx, req, logger)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("while fetching ManifestRequestTemplate after creating default resources: %w", err)
+	}
 	controllerutil.AddFinalizer(mrt, MRTFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
@@ -167,7 +171,7 @@ func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mr
 }
 
 // createLinkedDefaultResources performs one-time setup to create linked default resources associated with this MRT.
-func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, logger *logr.Logger) error {
+func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request, logger *logr.Logger) error {
 	logger.Info("Creating dependent MSR and MCA resources")
 
 	application, _, err := r.getApplication(ctx, mrt, logger)
@@ -282,6 +286,10 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	}
 
 	// Update MRT
+	mrt, _, err = r.getMRTForRequest(ctx, req, logger)
+	if err != nil {
+		return fmt.Errorf("while fetching ManifestRequestTemplate after save: %w", err)
+	}
 	mrt.Status.LastObservedCommitHash = revision
 	if err := r.Status().Update(ctx, mrt); err != nil {
 		logger.Error(err, "Failed to update initial MRT status")
@@ -335,7 +343,7 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 	mcaRevisionIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
 		return rec.CommitSHA == revision
 	})
-	if mcaRevisionIdx == len(mca.Status.ApprovalHistory)-1 {
+	if mcaRevisionIdx != -1 && mcaRevisionIdx == len(mca.Status.ApprovalHistory)-1 {
 		logger.Info("Revision %s corresponds to the latest MCA. Do nothing", "revision", revision)
 		return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
 	} else if mcaRevisionIdx != -1 {
@@ -369,6 +377,8 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 			})
 			if latestRevisionIdx == -1 {
 				mrt.Status.RevisionsQueue = append(mrt.Status.RevisionsQueue, latestRevision)
+			} else {
+				return ctrl.Result{}, fmt.Errorf("latest revision not tracked, but has ManifestChangeApproval idx: %d", latestRevisionIdx)
 			}
 			return r.popFromRevisionQueueWithResult(ctx, mrt, logger)
 		}
@@ -583,7 +593,7 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 		// ArgoCD can process .yaml, .yml, and .json files
 		isManifestType := strings.HasSuffix(filePath, ".yaml") ||
 			strings.HasSuffix(filePath, ".yml") ||
-			file.Kind == ""
+			file.Kind != ""
 
 		if !isManifestType {
 			continue
