@@ -4,4 +4,4 @@
   - name: "ignore-subresources"
     expression: "(!has(request.subResource) || request.subResource == '')"
   - name: "require-argocd-annotation"
-    expression: "has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"
+    expression: "has(object.metadata) && has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"

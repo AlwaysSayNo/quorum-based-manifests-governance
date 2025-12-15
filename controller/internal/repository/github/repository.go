@@ -41,12 +41,13 @@ type GitProviderFactory struct {
 }
 
 // New creates and initializes a gitProvider
-func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets repository.PgpSecrets) (GitRepository, error) {
+func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets repository.PgpSecrets) (repository.GitRepository, error) {
 	p := &gitProvider{
-		remoteURL: remoteURL,
-		localPath: localPath,
-		auth:      auth,
-		logger:    log.FromContext(ctx),
+		remoteURL:  remoteURL,
+		localPath:  localPath,
+		auth:       auth,
+		logger:     log.FromContext(ctx),
+		pgpSecrets: pgpSecrets,
 	}
 	// Sync on creation
 	if err := p.Sync(context.Background()); err != nil {
@@ -57,15 +58,6 @@ func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath strin
 
 func (f *GitProviderFactory) IdentifyProvider(repoURL string) bool {
 	return strings.Contains(repoURL, "github.com")
-}
-
-type GitRepository interface {
-	Sync(ctx context.Context) error
-	HasRevision(ctx context.Context, commit string) (bool, error)
-	GetLatestRevision(ctx context.Context) (string, error)
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
-	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
-	PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error)
 }
 
 type gitProvider struct {

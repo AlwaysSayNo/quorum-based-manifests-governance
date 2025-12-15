@@ -60,6 +60,13 @@ spec:
                 required:
                 - name
                 type: object
+              gitRepository:
+                properties:
+                  url:
+                    type: string
+                required:
+                - url
+                type: object
               governors:
                 description: Required until GovernorsRef is implemented.
                 properties:
@@ -191,6 +198,7 @@ spec:
                 type: integer
             required:
             - argoCDApplication
+            - gitRepository
             - governors
             - pgp
             - require

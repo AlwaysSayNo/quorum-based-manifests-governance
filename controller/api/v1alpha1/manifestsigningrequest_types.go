@@ -36,11 +36,6 @@ const (
 	Approved    SigningRequestStatus = "Approved"
 )
 
-type GitRepository struct {
-	// +required
-	URL string `json:"url,omitempty"`
-}
-
 type VersionedManifestRef struct {
 	// +required
 	Name string `json:"name"`

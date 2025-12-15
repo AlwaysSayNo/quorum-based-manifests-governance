@@ -9,17 +9,15 @@ import (
 	"sync"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type GitRepositoryFactory interface {
-	New(remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error)
+	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error)
 	IdentifyProvider(repoURL string) bool
 }
 
@@ -72,16 +70,16 @@ func NewManager(client client.Client, basePath string) *Manager {
 	}
 }
 
+func (m *Manager) Register(factory GitRepositoryFactory) error {
+	m.providers = append(m.providers, factory)
+	return nil
+}
+
 func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	application, err := m.getApplication(ctx, mrt)
-	if err != nil {
-		return nil, err
-	}
-
-	repoURL := application.Spec.Source.RepoURL
+	repoURL := mrt.Spec.GitRepository.URL
 	if repoURL == "" {
 		return nil, fmt.Errorf("repository URL is not defined in MRT spec")
 	}
@@ -108,7 +106,7 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 		return nil, err
 	}
 
-	provider, err := m.findProvider(repoURL, localPath, sshSecrets, pgpSecrets)
+	provider, err := m.findProvider(ctx, repoURL, localPath, sshSecrets, pgpSecrets)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +124,7 @@ func (m *Manager) providerExists(repoURL string) bool {
 	return idx != -1
 }
 
-func (m *Manager) findProvider(repoURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error) {
+func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error) {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})
@@ -134,14 +132,14 @@ func (m *Manager) findProvider(repoURL, localPath string, auth transport.AuthMet
 	if idx == -1 {
 		return nil, fmt.Errorf("no supported git provider for URL: %s", repoURL)
 	}
-	return m.providers[idx].New(repoURL, localPath, auth, pgpSecrets)
+	return m.providers[idx].New(ctx, repoURL, localPath, auth, pgpSecrets)
 }
 
 func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (PgpSecrets, error) {
 	if mrt.Spec.PGP == nil {
 		return PgpSecrets{}, fmt.Errorf("pgp information is nil")
 	}
-	// TODO: Decide between direct PGP key usage in MRT or as ref
+
 	pgpSecret := &corev1.Secret{}
 	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.PGP.SecretsRef.Name, Namespace: mrt.Spec.PGP.SecretsRef.Namespace}, pgpSecret)
 	if err != nil {
@@ -171,14 +169,13 @@ func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 		return nil, fmt.Errorf("ssh information is nil")
 	}
 
-	// TODO: Decide between direct SHH key usage in MRT or as ref
 	gitSecret := &corev1.Secret{}
 	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.SSH.SecretsRef.Name, Namespace: mrt.Spec.SSH.SecretsRef.Namespace}, gitSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", mrt.Spec.SSH.SecretsRef.Name, err)
 	}
 
-	privateKeyBytes, ok := gitSecret.Data["privateKey"]
+	privateKeyBytes, ok := gitSecret.Data["ssh-privatekey"]
 	if !ok {
 		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.SSH.SecretsRef.Name)
 	}
@@ -197,22 +194,4 @@ func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	}
 
 	return publicKeys, nil
-}
-
-// getApplication fetches the ArgoCD Application resource referenced by the ManifestRequestTemplate
-func (m *Manager) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*argocdv1alpha1.Application, error) {
-	app := &argocdv1alpha1.Application{}
-	appKey := types.NamespacedName{
-		Name:      mrt.Spec.ArgoCDApplication.Name,
-		Namespace: mrt.Spec.ArgoCDApplication.Namespace,
-	}
-
-	if err := m.client.Get(ctx, appKey, app); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("no Application for MRT was found")
-		}
-		return nil, err
-	}
-
-	return app, nil
 }

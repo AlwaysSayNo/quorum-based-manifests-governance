@@ -58,18 +58,18 @@ func (mr *MockGitRepositoryFactoryMockRecorder) IdentifyProvider(repoURL any) *g
 }
 
 // New mocks base method.
-func (m *MockGitRepositoryFactory) New(remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets repository.PgpSecrets) (repository.GitRepository, error) {
+func (m *MockGitRepositoryFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets repository.PgpSecrets) (repository.GitRepository, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "New", remoteURL, localPath, auth, pgpSecrets)
+	ret := m.ctrl.Call(m, "New", ctx, remoteURL, localPath, auth, pgpSecrets)
 	ret0, _ := ret[0].(repository.GitRepository)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // New indicates an expected call of New.
-func (mr *MockGitRepositoryFactoryMockRecorder) New(remoteURL, localPath, auth, pgpSecrets any) *gomock.Call {
+func (mr *MockGitRepositoryFactoryMockRecorder) New(ctx, remoteURL, localPath, auth, pgpSecrets any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "New", reflect.TypeOf((*MockGitRepositoryFactory)(nil).New), remoteURL, localPath, auth, pgpSecrets)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "New", reflect.TypeOf((*MockGitRepositoryFactory)(nil).New), ctx, remoteURL, localPath, auth, pgpSecrets)
 }
 
 // MockGitRepository is a mock of GitRepository interface.

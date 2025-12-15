@@ -20,6 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type GitRepository struct {
+	// +required
+	URL string `json:"url,omitempty"`
+}
+
 type ManifestRef struct {
 	// +required
 	Name string `json:"name,omitempty"`
@@ -123,7 +128,7 @@ type ApprovalRule struct {
 	// Specifies the minimum number of child rules that must be satisfied.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	AtLeast *int `json:"atLeast"`
+	AtLeast *int `json:"atLeast,omitempty"`
 
 	// If true, all child rules must be satisfied.
 	// +optional
@@ -162,6 +167,9 @@ type ManifestRequestTemplateSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +required
 	Version int `json:"version"`
+
+	// +require
+	GitRepository GitRepository `json:"gitRepository"`
 
 	// +required
 	PGP *PGPPrivateKeySecret `json:"pgp"`

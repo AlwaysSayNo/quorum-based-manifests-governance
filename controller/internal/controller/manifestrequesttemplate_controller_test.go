@@ -293,7 +293,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			}, "2s", interval).Should(BeEmpty(), "The finalizer should never be added if the dependent Application is missing")
 		})
 
-		// TODO: somehow it breaks some tests 
+		// TODO: somehow it breaks some tests
 		// It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
 		// 	// SETUP
 		// 	// Mock manager and repository calls

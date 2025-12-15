@@ -25,11 +25,20 @@ cd $repo_name
 # Create manifests directory
 mkdir -p app-manifests
 
+# Create an initial dummy namespace
+echo "apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-ns
+  labels:
+    name: test-ns" > app-manifests/namespace.yaml
+
 # Create an initial dummy manifest
 echo "apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: my-config
+  name: config-my
+  namespace: test-ns
 data:
   version: v1" > app-manifests/config.yaml
 
@@ -37,12 +46,12 @@ data:
 echo "apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: test-app
-  namespace: argocd:test-app
+  name: application-my
+  namespace: argocd
 spec:
   project: default
   source:
-    # The URL of your new public GitHub repository
+    # The URL of new public GitHub repository
     repoURL: #{REPO_URL}#
     targetRevision: HEAD
     path: app-manifests

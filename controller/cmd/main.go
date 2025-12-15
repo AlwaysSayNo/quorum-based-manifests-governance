@@ -41,7 +41,9 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
+	slacknotifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/notifier/slack"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
+	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository/github"
 	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
@@ -69,6 +71,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var repositoriesBasePath string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -86,6 +89,10 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+
+	// Custom flags
+	flag.StringVar(&repositoriesBasePath, "repositories-base-path", "/tmp/git/repos", "The base folder where all repositories are copied to.")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -185,10 +192,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	githubFactory := githubprovider.GitProviderFactory{}
+
+	repoManager := repomanager.NewManager(mgr.GetClient(), "/tmp/git") // TODO: name this directory from the environment variable
+	repoManager.Register(&githubFactory)
+
 	if err := (&controller.ManifestRequestTemplateReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
-		RepoManager: repomanager.NewManager(mgr.GetClient(), ""),
+		RepoManager: repoManager,
+		Notifier:    slacknotifier.NewNotifier(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)
@@ -199,7 +212,7 @@ func main() {
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		hookServer := webhook.NewServer(webhook.Options{})
 
-		// Register generic handler
+		// 1. Existing Generic Handler (remains the same)
 		hookServer.Register("/mca/validate/argocd-requests", &admissionwh.Webhook{
 			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{
 				Client:  mgr.GetClient(),
@@ -207,14 +220,24 @@ func main() {
 			},
 		})
 
+		// 2. Register MRT Mutating Webhook
+		// Use WithCustomDefaulter from your screenshot
+		hookServer.Register("/mrt/mutate", admissionwh.WithCustomDefaulter(
+			mgr.GetScheme(),
+			&governancev1alpha1.ManifestRequestTemplate{},
+			&webhookv1alpha1.ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
+		))
+
+		// 3. Register MRT Validating Webhook
+		// Use WithCustomValidator from your screenshot
+		hookServer.Register("/mrt/validate", admissionwh.WithCustomValidator(
+			mgr.GetScheme(),
+			&governancev1alpha1.ManifestRequestTemplate{},
+			&webhookv1alpha1.ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
+		))
+
 		if err := mgr.Add(hookServer); err != nil {
 			setupLog.Error(err, "unable to add webhook server to manager")
-			os.Exit(1)
-		}
-
-		// Register MRT handler
-		if err := (&webhookv1alpha1.ManifestRequestTemplateWebhook{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ManifestRequestTemplate")
 			os.Exit(1)
 		}
 
@@ -222,13 +245,13 @@ func main() {
 		// TODO: Block any requests, coming for MCA, except governance application
 	}
 
-	if err := (&controller.ManifestSigningRequestReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
-		os.Exit(1)
-	}
+	// if err := (&controller.ManifestSigningRequestReconciler{
+	// 	Client: mgr.GetClient(),
+	// 	Scheme: mgr.GetScheme(),
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
+	// 	os.Exit(1)
+	// }
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

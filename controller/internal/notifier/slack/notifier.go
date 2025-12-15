@@ -14,8 +14,8 @@ type slackNotifier struct {
 }
 
 // TODO: implement the method and maybe make the same architecture, as repository: manager+providers
-func NewNotifier(ctx context.Context) (Notifier, error) {
-	return &slackNotifier{}, nil
+func NewNotifier() *slackNotifier {
+	return &slackNotifier{}
 }
 
 func (s *slackNotifier) NotifyGovernors(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest) error {
