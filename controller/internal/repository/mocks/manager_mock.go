@@ -142,7 +142,7 @@ func (mr *MockGitRepositoryMockRecorder) HasRevision(ctx, commit any) *gomock.Ca
 }
 
 // PushMSR mocks base method.
-func (m *MockGitRepository) PushMSR(ctx context.Context, msr *v1alpha1.ManifestSigningRequest) (string, error) {
+func (m *MockGitRepository) PushMSR(ctx context.Context, msr *v1alpha1.ManifestSigningRequestManifestObject) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PushMSR", ctx, msr)
 	ret0, _ := ret[0].(string)

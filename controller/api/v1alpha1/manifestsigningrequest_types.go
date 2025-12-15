@@ -170,6 +170,12 @@ type ManifestSigningRequest struct {
 	Status ManifestSigningRequestStatus `json:"status,omitzero"`
 }
 
+type ManifestSigningRequestManifestObject struct {
+	metav1.TypeMeta `json:",inline"`
+	ObjectMeta      ManifestRef                `json:"metadata,omitzero"`
+	Spec            ManifestSigningRequestSpec `json:"spec"`
+}
+
 // +kubebuilder:object:root=true
 
 // ManifestSigningRequestList contains a list of ManifestSigningRequest

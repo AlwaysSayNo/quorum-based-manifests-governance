@@ -194,7 +194,7 @@ func main() {
 
 	githubFactory := githubprovider.GitProviderFactory{}
 
-	repoManager := repomanager.NewManager(mgr.GetClient(), "/tmp/git") // TODO: name this directory from the environment variable
+	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath)
 	repoManager.Register(&githubFactory)
 
 	if err := (&controller.ManifestRequestTemplateReconciler{
@@ -245,13 +245,22 @@ func main() {
 		// TODO: Block any requests, coming for MCA, except governance application
 	}
 
-	// if err := (&controller.ManifestSigningRequestReconciler{
-	// 	Client: mgr.GetClient(),
-	// 	Scheme: mgr.GetScheme(),
-	// }).SetupWithManager(mgr); err != nil {
-	// 	setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
-	// 	os.Exit(1)
-	// }
+	if err := (&controller.ManifestSigningRequestReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ManifestChangeApprovalReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManifestChangeApproval")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

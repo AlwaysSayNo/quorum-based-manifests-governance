@@ -41,6 +41,10 @@ type ManifestChangeApprovalSpec struct {
 	// +required
 	GitRepository GitRepository `json:"gitRepository"`
 
+	// Last approved commit SHA
+	// +optional
+	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
+
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
 	Location Location `json:"location,omitempty"`
@@ -85,10 +89,6 @@ type ManifestChangeApprovalHistoryRecord struct {
 
 // ManifestChangeApprovalStatus defines the observed state of ManifestChangeApproval.
 type ManifestChangeApprovalStatus struct {
-
-	// Last approved commit SHA
-	// +optional
-	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
 
 	// History of approvals
 	// +optional

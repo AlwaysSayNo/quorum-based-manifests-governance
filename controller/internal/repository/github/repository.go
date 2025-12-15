@@ -289,7 +289,7 @@ func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *objec
 	return changes, nil
 }
 
-func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error) {
+func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error) {
 	if err := p.Sync(ctx); err != nil {
 		return "", fmt.Errorf("failed to sync repository before pushing MSR: %w", err)
 	}
@@ -338,8 +338,8 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	os.MkdirAll(filepath.Join(p.localPath, repoMsrSignaturesFolderPath), 0644)
 
 	// Write MSR and sig files into repo folder
-	msrFileName := fmt.Sprintf("%s.yaml", msr.Name)
-	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.Name)
+	msrFileName := fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name)
+	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Namespace)
 
 	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, msrFileName, msrBytes); err != nil {
 		rollback()
@@ -351,7 +351,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	}
 
 	// Commit and push changes
-	commitMsg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.Name, msr.Spec.Version)
+	commitMsg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "Qubmango Governance Operator",

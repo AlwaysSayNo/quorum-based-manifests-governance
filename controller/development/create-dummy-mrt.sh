@@ -4,10 +4,10 @@ ssh_repo_url=$1
 repo_name=$2
 
 if [ -z "$ssh_repo_url" ]; then
-    echo "Usage: $0 <git-repo-url>"
+    echo "Usage: $0 <git-repo-ssh-url>"
     exit 1
 elif [ -z "$repo_name" ]; then
-    echo "Usage: $0 <git-repo-url> <git-repo-name>"
+    echo "Usage: $0 <git-repo-ssh-url> <git-repo-name>"
     exit 1
 fi
 

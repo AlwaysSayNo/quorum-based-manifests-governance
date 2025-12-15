@@ -197,7 +197,6 @@ type ManifestRequestTemplateSpec struct {
 	// Required until GovernorsRef is implemented.
 	// +required
 	Governors GovernorList `json:"governors,omitempty"`
-	// TODO: make GovernorsRef in future to reference to a governor manifest
 
 	// The policy rules for approvals.
 	// Required until ApprovalRuleRef is implemented.
@@ -245,7 +244,7 @@ type ManifestRequestTemplate struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of ManifestRequestTemplate
 	// +required

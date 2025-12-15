@@ -110,6 +110,9 @@ spec:
                 required:
                 - members
                 type: object
+              lastApprovedCommitSHA:
+                description: Last approved commit SHA
+                type: string
               location:
                 description: Location contains information about where to store MSR,
                   MCA and signatures.
@@ -415,9 +418,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              lastApprovedCommitSHA:
-                description: Last approved commit SHA
-                type: string
             type: object
         required:
         - spec

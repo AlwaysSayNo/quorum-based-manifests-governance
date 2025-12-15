@@ -38,8 +38,9 @@ import (
 )
 
 // nolint:unused
-// log is for logging in this package.
-var manifestchangeapprovallog = logf.Log.WithName("manifestchangeapproval-resource")
+var (
+	logger logr.Logger
+)
 
 // +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
 
@@ -50,35 +51,39 @@ type ManifestChangeApprovalCustomValidator struct {
 
 // Handle is the function that gets called for validation admission request.
 func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	logger := logf.FromContext(ctx).WithValues("user", req.UserInfo.Username)
+	// if true {
+	// 	return admission.Allowed("Change approved by Manifest Change Approval")
+	// }
+
+	logger = logf.FromContext(ctx).WithValues("user", req.UserInfo.Username)
 
 	// Get Application resource for request
-	application, resp, ok := v.getApplication(ctx, &logger, req)
+	application, resp, ok := v.getApplication(ctx, req)
 	if !ok {
 		return *resp
 	}
 
 	// Get ManifestRequestTemplate resource linked to the current Application
-	mrt, resp, ok := v.getMRTForApplication(ctx, &logger, application)
+	mrt, resp, ok := v.getMRTForApplication(ctx, application)
 	if !ok {
 		return *resp
 	} else if mrt == nil {
 		logger.Info("No governing MRT found for Application", "application", application.Name, "namespace", application.Namespace)
-		return admission.Denied("No governing MRT found, deny by default")
+		return admission.Allowed("No governing MRT found, allow by default")
 	}
 
 	// Take revision commit hash from Application
 	revision := v.getRevisionFromApplication(application)
 
 	// Get the latest ManifestChangeApproval for current ManifestRequestTemplate
-	mca, resp, ok := v.getMCAForMRT(ctx, &logger, mrt)
+	mca, resp, ok := v.getMCAForMRT(ctx, mrt)
 	if !ok {
 		return *resp
 	} else if mca == nil {
 		logger.Info("No MCA found for MRT", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
 		// If there is no ManifestChangeApproval -- add the revision to ManifestRequestTemplate review queue
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &logger, &revision, mrt); !ok {
+		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
 			return *resp
 		}
 		return admission.Denied("No MCA found for MRT, deny by default")
@@ -92,7 +97,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 		logger.Info("No approval found in MCA for requested revision", "revision", revision, "mca", mca.Name)
 
 		// If there is no ManifestChangeApproval, corresponding for this revision -- put it into ManifestRequestTemplate review queue
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &logger, &revision, mrt); !ok {
+		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
 			return *resp
 		}
 		return admission.Denied(fmt.Sprintf("Change from commit %s has not been approved by the governance board.", revision))
@@ -101,10 +106,10 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	// Check, if revision corresponds to the latest ManifestChangeApproval
 	// If not, it might be rollback request and it should be handled differently
 	mcaRecord := mca.Status.ApprovalHistory[requestedMCAIdx]
-	if mcaRecord.CommitSHA != mca.Status.LastApprovedCommitSHA {
-		logger.Info("Application revision is older than last approved commit in MCA", "requestedRevision", revision, "lastApprovedCommitSHA", mca.Status.LastApprovedCommitSHA)
+	if mcaRecord.CommitSHA != mca.Spec.LastApprovedCommitSHA {
+		logger.Info("Application revision is older than last approved commit in MCA", "requestedRevision", revision, "lastApprovedCommitSHA", mca.Spec.LastApprovedCommitSHA)
 		// TODO: might be rollback, and should be handled differently. Deny for now
-		return admission.Denied(fmt.Sprintf("Change from commit %s is older than last approved commit %s in MCA.", revision, mca.Status.LastApprovedCommitSHA))
+		return admission.Denied(fmt.Sprintf("Change from commit %s is older than last approved commit %s in MCA.", revision, mca.Spec.LastApprovedCommitSHA))
 	}
 
 	// Otherwise, the request is latest approved and we allow, to apply it
@@ -112,15 +117,15 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	return admission.Allowed("Change approved by Manifest Change Approval")
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getApplication(ctx context.Context, logger *logr.Logger, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getApplication(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
 	if req.Kind.Kind != "Application" {
-		return v.getApplicationFromNonApplicationRequest(ctx, logger, req)
+		return v.getApplicationFromNonApplicationRequest(ctx, req)
 	} else {
-		return v.getApplicationFromApplicationRequest(ctx, logger, req)
+		return v.getApplicationFromApplicationRequest(ctx, req)
 	}
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplicationRequest(ctx context.Context, logger *logr.Logger, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplicationRequest(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
 	gvk := v.getGroupVersionKind(req)
 
 	unstruct := &unstructuredv1.Unstructured{}
@@ -157,7 +162,7 @@ func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplication
 	return application, nil, true
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getApplicationFromApplicationRequest(ctx context.Context, logger *logr.Logger, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getApplicationFromApplicationRequest(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
 	gvk := v.getGroupVersionKind(req)
 
 	application := &argoappv1.Application{}
@@ -171,7 +176,7 @@ func (v *ManifestChangeApprovalCustomValidator) getApplicationFromApplicationReq
 	return application, nil, true
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getMRTForApplication(ctx context.Context, logger *logr.Logger, applicationObj *argoappv1.Application) (*governancev1alpha1.ManifestRequestTemplate, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getMRTForApplication(ctx context.Context, applicationObj *argoappv1.Application) (*governancev1alpha1.ManifestRequestTemplate, *admission.Response, bool) {
 	// Fetch list of all MRTs
 	mrtList := &governancev1alpha1.ManifestRequestTemplateList{}
 	if err := v.Client.List(ctx, mrtList); err != nil {
@@ -195,7 +200,7 @@ func (v *ManifestChangeApprovalCustomValidator) getMRTForApplication(ctx context
 	return nil, nil, true
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getMCAForMRT(ctx context.Context, logger *logr.Logger, mrt *governancev1alpha1.ManifestRequestTemplate) (*governancev1alpha1.ManifestChangeApproval, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getMCAForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*governancev1alpha1.ManifestChangeApproval, *admission.Response, bool) {
 	// Fetch list of all MRTs
 	mcaList := &governancev1alpha1.ManifestChangeApprovalList{}
 	if err := v.Client.List(ctx, mcaList); err != nil {
@@ -229,10 +234,10 @@ func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(appli
 	return revision
 }
 
-func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, logger *logr.Logger, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
 	if !slices.Contains(mrt.Status.RevisionsQueue, *revision) {
 		mrt.Status.RevisionsQueue = append(mrt.Status.RevisionsQueue, *revision)
-		if err := v.Client.Status().Update(ctx, mrt); err != nil { //TODO: or update object directly?
+		if err := v.Client.Status().Update(ctx, mrt); err != nil {
 			logger.Error(err, "Failed to update MRT status with new commit in queue", "mrt", mrt.Name, "namespace", mrt.Namespace, "revision", revision)
 			resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("update MRT %s.%s status with new commit in queue: %w", mrt.Namespace, mrt.Name, err))
 			return &resp, false

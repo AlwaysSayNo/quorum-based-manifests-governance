@@ -37,7 +37,7 @@ func (d *dummyGitRepo) GetLatestRevision(ctx context.Context) (string, error) { 
 func (d *dummyGitRepo) GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error) {
 	return nil, nil
 }
-func (d *dummyGitRepo) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error) {
+func (d *dummyGitRepo) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error) {
 	return "", nil
 }
 func (d *dummyGitRepo) PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error) {

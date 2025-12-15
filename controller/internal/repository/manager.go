@@ -37,7 +37,7 @@ type GitRepository interface {
 	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
 
 	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
-	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (string, error)
+	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
 
 	// PushSignature commits and pushes a governor's signature to the repository.
 	// This would be used by your CLI/API server.

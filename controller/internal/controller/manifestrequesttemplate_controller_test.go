@@ -205,13 +205,11 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				GitRepository: governancev1alpha1.GitRepository{
 					URL: defaultApp.Spec.Source.RepoURL,
 				},
-				Location:  *defaultMRT.Spec.Location.DeepCopy(),
-				Changes:   defaultRepoChanges,
-				Governors: *defaultMRT.Spec.Governors.DeepCopy(),
-				Require:   *defaultMRT.Spec.Require.DeepCopy(),
-			},
-			Status: governancev1alpha1.ManifestChangeApprovalStatus{
 				LastApprovedCommitSHA: defaultInitCommit,
+				Location:              *defaultMRT.Spec.Location.DeepCopy(),
+				Changes:               defaultRepoChanges,
+				Governors:             *defaultMRT.Spec.Governors.DeepCopy(),
+				Require:               *defaultMRT.Spec.Require.DeepCopy(),
 			},
 		}
 		defaultMCA.Status.ApprovalHistory = []governancev1alpha1.ManifestChangeApprovalHistoryRecord{
@@ -475,7 +473,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 					Approves:  defaultMCA.Status.Approves,
 				},
 			}
-			mca.Status.LastApprovedCommitSHA = latestCommit
+			mca.Spec.LastApprovedCommitSHA = latestCommit
 			Expect(k8sClient.Create(ctx, mca)).Should(Succeed())
 			Expect(k8sClient.Status().Update(ctx, mca)).Should(Succeed())
 

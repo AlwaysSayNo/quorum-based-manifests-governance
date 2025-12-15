@@ -87,15 +87,15 @@ func (w *ManifestRequestTemplateWebhook) Default(ctx context.Context, obj runtim
 	return nil
 }
 
-func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(rule governancev1alpha1.ApprovalRule, path *field.Path) (bool, *field.Error) {
-	isValid, err := w.approvalRuleValidCheck(rule, path)
+func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(rule governancev1alpha1.ApprovalRule, membersMap map[string]bool, path *field.Path) (bool, *field.Error) {
+	isValid, err := w.approvalRuleValidCheck(rule, membersMap, path)
 	if !isValid {
 		return isValid, err
 	}
 
 	if len(rule.Require) > 0 {
 		for _, child := range rule.Require {
-			isValid, err := w.approvalRuleValidCheck(child, path.Child("require"))
+			isValid, err := w.approvalRuleValidCheck(child, membersMap, path.Child("require"))
 			if !isValid {
 				return isValid, err
 			}
@@ -105,22 +105,30 @@ func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(rule governancev1al
 	return true, nil
 }
 
-func (w *ManifestRequestTemplateWebhook) approvalRuleValidCheck(rule governancev1alpha1.ApprovalRule, path *field.Path) (bool, *field.Error) {
+func (w *ManifestRequestTemplateWebhook) approvalRuleValidCheck(rule governancev1alpha1.ApprovalRule, membersMap map[string]bool, path *field.Path) (bool, *field.Error) {
+	// Check both missing / existing atLeast and all at the same time
 	if rule.AtLeast == nil && rule.All == nil {
 		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be null in the same time")
 	} else if rule.AtLeast != nil && rule.All != nil {
 		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be set in the same time")
 	}
 
+	// Check, if signer exists in the governors list
+	if _, ok := membersMap[rule.Signer]; rule.Signer != "" && !ok {
+		return false, field.Forbidden(path.Child("signer"), "signer doesn't exist in governors list")
+	}
+
+	// Count total number of possible singers
 	cnt := len(rule.Require)
 	if rule.Signer != "" {
 		cnt++
 	}
 
+	// Check if number of signers can be fulfilled
 	if cnt == 0 {
-		return false, field.Forbidden(path.Child("signer"), "no rule or signer is set")
+		return false, field.Forbidden(path.Child("require"), "no rule or signer is set")
 	} else if rule.AtLeast != nil && cnt < *rule.AtLeast {
-		return false, field.Forbidden(path.Child("signer"), fmt.Sprintf("atLeast is not reachable: %d < %d", cnt, *rule.AtLeast))
+		return false, field.Forbidden(path.Child("require"), fmt.Sprintf("atLeast is not reachable: %d < %d", cnt, *rule.AtLeast))
 	}
 
 	return true, nil
@@ -141,7 +149,13 @@ func (w *ManifestRequestTemplateWebhook) ValidateCreate(ctx context.Context, obj
 	}
 
 	// Check nested approval rules
-	if isValid, errorField := w.isApprovalRuleValid(mrt.Spec.Require, field.NewPath("spec").Child("require")); !isValid {
+	members := mrt.Spec.Governors.Members
+	membersMap := make(map[string]bool)
+	for _, m := range members {
+		membersMap[m.Alias] = true
+	}
+
+	if isValid, errorField := w.isApprovalRuleValid(mrt.Spec.Require, membersMap, field.NewPath("spec").Child("require")); !isValid {
 		allErrs = append(allErrs, errorField)
 	}
 
@@ -161,12 +175,27 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(ctx context.Context, old
 
 	// TODO: make reconciler to check existence of resources on actions
 
+	// Validate, that argocd Application has the default namespace ('argocd')
+	if newMRT.Spec.ArgoCDApplication.Namespace != "argocd" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCDApplication").Child("namespace"), newMRT.Spec.ArgoCDApplication.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
+	}
+
 	// Validate, that on update MSR, MCA values cannot be changed
 	if oldMRT.Spec.MSR != newMRT.Spec.MSR {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("msr"), "MSR reference is immutable and cannot be changed after creation"))
 	}
 	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
+	}
+
+	// Check nested approval rules
+	members := newMRT.Spec.Governors.Members
+	membersMap := make(map[string]bool)
+	for _, m := range members {
+		membersMap[m.Alias] = true
+	}
+	if isValid, errorField := w.isApprovalRuleValid(newMRT.Spec.Require, membersMap, field.NewPath("spec").Child("require")); !isValid {
+		allErrs = append(allErrs, errorField)
 	}
 
 	if len(allErrs) == 0 {

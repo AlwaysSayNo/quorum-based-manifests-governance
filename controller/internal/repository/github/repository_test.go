@@ -674,9 +674,21 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 	Context("when the PGP private key is not configured", func() {
 		It("should return a 'not configured' error", func() {
 			// SETUP
+			msrCopy := dummyMSR.DeepCopy()
+			repoObj := &governancev1alpha1.ManifestSigningRequestManifestObject{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       msrCopy.Kind,
+					APIVersion: msrCopy.APIVersion,
+				},
+				ObjectMeta: governancev1alpha1.ManifestRef{
+					Name:      msrCopy.Name,
+					Namespace: msrCopy.Namespace,
+				},
+				Spec: msrCopy.Spec,
+			}
 
 			// ACT
-			commit, err := provider.PushMSR(ctx, dummyMSR)
+			commit, err := provider.PushMSR(ctx, repoObj)
 
 			// VERIFY
 			Expect(err).To(HaveOccurred())
@@ -689,9 +701,21 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		It("should fail to read the armored key ring", func() {
 			// SETUP
 			provider.pgpSecrets.PrivateKey = "--- FAKE_PGP_KEY ---"
+			msrCopy := dummyMSR.DeepCopy()
+			repoObj := &governancev1alpha1.ManifestSigningRequestManifestObject{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       msrCopy.Kind,
+					APIVersion: msrCopy.APIVersion,
+				},
+				ObjectMeta: governancev1alpha1.ManifestRef{
+					Name:      msrCopy.Name,
+					Namespace: msrCopy.Namespace,
+				},
+				Spec: msrCopy.Spec,
+			}
 
 			// ACT
-			commit, err := provider.PushMSR(ctx, dummyMSR)
+			commit, err := provider.PushMSR(ctx, repoObj)
 
 			// VERIFY
 			Expect(err).To(HaveOccurred())
@@ -737,9 +761,21 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		It("should successfully create, sign, commit, and push the MSR and signature files", func() {
 			// SETUP
 			provider.pgpSecrets.PrivateKey = testNonEncryptedPgpPrivateKey
+			msrCopy := dummyMSR.DeepCopy()
+			repoObj := &governancev1alpha1.ManifestSigningRequestManifestObject{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       msrCopy.Kind,
+					APIVersion: msrCopy.APIVersion,
+				},
+				ObjectMeta: governancev1alpha1.ManifestRef{
+					Name:      msrCopy.Name,
+					Namespace: msrCopy.Namespace,
+				},
+				Spec: msrCopy.Spec,
+			}
 
 			// ACT
-			pushedCommitHash, err := provider.PushMSR(ctx, dummyMSR)
+			pushedCommitHash, err := provider.PushMSR(ctx, repoObj)
 
 			// VERIFY
 			Expect(err).NotTo(HaveOccurred())
@@ -772,9 +808,21 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 			// SETUP
 			provider.pgpSecrets.PrivateKey = testEncryptedPgpPrivateKey
 			provider.pgpSecrets.Passphrase = testEncryptedPgpPassphrase
+			msrCopy := dummyMSR.DeepCopy()
+			repoObj := &governancev1alpha1.ManifestSigningRequestManifestObject{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       msrCopy.Kind,
+					APIVersion: msrCopy.APIVersion,
+				},
+				ObjectMeta: governancev1alpha1.ManifestRef{
+					Name:      msrCopy.Name,
+					Namespace: msrCopy.Namespace,
+				},
+				Spec: msrCopy.Spec,
+			}
 
 			// ACT
-			pushedCommitHash, err := provider.PushMSR(ctx, dummyMSR)
+			pushedCommitHash, err := provider.PushMSR(ctx, repoObj)
 
 			// VERIFY
 			Expect(err).NotTo(HaveOccurred())
