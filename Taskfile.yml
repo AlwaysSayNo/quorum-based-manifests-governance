@@ -1,0 +1,10 @@
+version: "3"
+
+includes:
+  gke:
+    taskfile: ./controller/Taskfile-gke.yml
+    dir: ./controller/
+  
+  dev:
+    taskfile: ./controller/.development/Taskfile-dev.yml
+    dir: ./controller/.development

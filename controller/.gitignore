@@ -26,7 +26,7 @@ go.work
 *.swo
 *~
 
-/development/repos/**
+/.development/repos/**
 /config/local/certs/**
-**/*delete*
-**/*secrets*
+/.github/instructions/*
+/.github/prompts/*

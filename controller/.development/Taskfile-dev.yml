@@ -1,9 +1,8 @@
 version: "3"
 
 env:
-  CLUSTER_NAME: quorum-based-manifests-governance
-  GCP_ZONE: europe-west10-a
   REPO_URL: https://github.com/AlwaysSayNo/quorum-based-manifests-governance-test.git
+  SSH_REPO_URL: git@github.com:AlwaysSayNo/quorum-based-manifests-governance-test.git
   REPO_NAME: quorum-based-manifests-governance-test
   REPOS_FOLDER_PATH: repos
 
@@ -32,11 +31,6 @@ tasks:
     cmds:
       - git clone ${REPO_URL} ./${REPOS_FOLDER_PATH}
     desc: "Clones the shared test repository to your local machine"
-
-  dev:connect-to-cluster:
-    cmds:
-      - gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${GCP_ZONE}
-    desc: "Connect to the GKE cluster"
   
   # Trigger ArgoCD sync button
   dev:commit-dummy-change:
@@ -47,7 +41,7 @@ tasks:
   dev:create-mrt:
     desc: "Create a ManifestRequestTemplate in the cluster"
     cmds:
-      - (cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} && bash ../../create-dummy-mrt.sh)
+      - (cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} && bash ../../create-dummy-mrt.sh ${SSH_REPO_URL} ${REPO_NAME})
 
   dev:commit-all:
     desc: "Commit all changes in the local repo and push to GitHub"
