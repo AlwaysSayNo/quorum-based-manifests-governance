@@ -36,6 +36,9 @@ docker network create -d=bridge --subnet=192.168.1.0/24 kind | true
 # install go-task
 go install github.com/go-task/task/v3/cmd/task@latest
 
+# install mockgen
+go install go.uber.org/mock/mockgen@latest
+
 # install argocd cli
 curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
 install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
@@ -59,5 +62,6 @@ docker --version
 go version
 kubectl version --client
 task --version
+mockgen --version
 argocd version --client
 ngrok version

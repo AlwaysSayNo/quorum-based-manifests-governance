@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	v1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	repository "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
+	v1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	repository "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 	transport "github.com/go-git/go-git/v5/plumbing/transport"
 	gomock "go.uber.org/mock/gomock"
 )

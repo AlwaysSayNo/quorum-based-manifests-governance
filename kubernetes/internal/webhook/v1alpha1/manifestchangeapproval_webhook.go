@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/go-logr/logr"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 

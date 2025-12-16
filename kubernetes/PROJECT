@@ -6,8 +6,8 @@ cliVersion: 4.9.0
 domain: nazar.grynko.com
 layout:
 - go.kubebuilder.io/v4
-projectName: controller
-repo: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller
+projectName: kubernetes
+repo: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes
 resources:
 - api:
     crdVersion: v1
@@ -16,7 +16,7 @@ resources:
   domain: nazar.grynko.com
   group: governance
   kind: ManifestRequestTemplate
-  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
   version: v1alpha1
   webhooks:
     validation: true
@@ -27,7 +27,7 @@ resources:
   domain: nazar.grynko.com
   group: governance
   kind: ManifestChangeApproval
-  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
   version: v1alpha1
   webhooks:
     validation: true
@@ -39,6 +39,6 @@ resources:
   domain: nazar.grynko.com
   group: governance
   kind: ManifestSigningRequest
-  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
   version: v1alpha1
 version: "3"

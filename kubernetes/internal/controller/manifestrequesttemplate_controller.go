@@ -34,8 +34,8 @@ import (
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 

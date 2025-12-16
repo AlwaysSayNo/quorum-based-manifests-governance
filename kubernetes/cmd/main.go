@@ -39,12 +39,12 @@ import (
 
 	admissionwh "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
-	slacknotifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/notifier/slack"
-	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
-	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository/github"
-	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/webhook/v1alpha1"
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
+	slacknotifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier/slack"
+	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/github"
+	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

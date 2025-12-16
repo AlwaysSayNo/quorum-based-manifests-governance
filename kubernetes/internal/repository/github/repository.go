@@ -18,8 +18,8 @@ import (
 	"gopkg.in/yaml.v2"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/go-git/go-git/v5"

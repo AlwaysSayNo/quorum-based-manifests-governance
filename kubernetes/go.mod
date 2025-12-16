@@ -1,4 +1,4 @@
-module github.com/AlwaysSayNo/quorum-based-manifests-governance/controller
+module github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes
 
 go 1.25.4
 

@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/test/utils"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/test/utils"
 )
 
 var (

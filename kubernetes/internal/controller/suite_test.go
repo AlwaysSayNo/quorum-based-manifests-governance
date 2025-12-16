@@ -32,8 +32,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/api/v1alpha1"
-	controller "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/controller"
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	controller "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	// +kubebuilder:scaffold:imports
