@@ -1,0 +1,90 @@
+package github
+
+// Test non-encrypted PGP private key
+// gpg --full-generate-key
+// Type: RSA and RSA
+// Expire date: 0
+// Length: 1024
+// Real name: Test Test
+// Email address: test@test.com
+// gpg --export-secret-keys --armor "test@test.com" > test.unprotected.private.asc
+// gpg --export --armor "test@test.com" > test.unprotected.public.asc
+var testNonEncryptedPgpPrivateKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
+
+lQHYBGk8NF4BBADpZocQ6eWjFY2B9Tatws9ft6OhOdhRzvkZKzDj77CxWua4uhxQ
+80wwyc2nUzkBg77sWCLFrED+kA4bbSWZCBX1x8qaqgeKkHhMkvw4Vrh4lxDOj/GX
+2bFIvqnc/e5BrEQuyxDvwElskR4rARz38scTGJN+XV5+BMjm2OHhXcNnCQARAQAB
+AAP8CIIRSF+OXGyLtQIQVTM1xgJ2t4jZRtopoG4/oP96zGxI3tEB+T11OI4SrhfN
+iy2XRxxLYDNQRzdPHFbVOQffbP1iADlh0W7HoqYBHlVzg8JTDgwu6clMUnQzXeHB
+e0Md3DnL4UqCqW3zxm+dt8occIprYek8LR0ukGIcSmSdxCUCAPHxRN9WriNR2eSu
+D8lYVO9Bba6NczXrLZ2bv2AGqcm3vRG6tyZZXIBMyvDDtQ8oOhSsu3OBqxKRc20Q
+KTT4O48CAPb2M+OMBMLDERlGFdiCaED1YS0n7HdmHoCNTZxCI8TaT69ArEo3po59
+9wHdqjUknjNha/E/Q761TPyEZ5YvR+cB/RC7eziLAf4UmgrlOMVxVtCb17M/gdjy
+SYLdao16MYbPB/UmFDlcXrksZMrBFXeRo1BA0/Z4Zm4scFlx2bFowWWYBbQZVGVz
+dCBUZXN0IDx0ZXN0QHRlc3QuY29tPojOBBMBCgA4FiEEKPkp3nuZ3I64JK3SJHII
+7qggwYMFAmk8NF4CGwMFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AACgkQJHII7qgg
+wYOQbQQAsgcDcAKYf7ltzG8bSMFKRFStawcUDBMY4qwjG/oLvIPhT9TTD1g2OdT2
+rOUmL9IRnFmGBqdV6Wju/Yz6D8Jix1rg9dgoMIGaPOjy7axkBFl/NytkXCyv1hFd
+rdgJdc8LisFv2brTOce+NpTTeqtclPblMqwJTZc1kjEpdbRhMY+dAdgEaTw0XgEE
+AL9LdqW6Pcm+paqYoPC+WjawNpd+KCyH4huJNH2TZYxdEAsS004M2UobsD92peo9
+ZcMKbPWpAsCIXJ41xr5Dvu54EAGkKSpRzbAjBdNjVPDjuXnOcmJHGYcqcbSE0MzU
+ptOJEoJtgQguHgLkS7g12wxBryFt5edlDNN/PMWBJj+9ABEBAAEAA/9aY/au7deX
+dlICz/cwesnXEKHjKLYkAJtbZpRaiCUSU8Eqcl1Ngq3EIlxASLiyfAuTQ2BkHlYS
+Ev0stv1v10QmylVRELlNzyoc3WyXKgfsDm8zehP/kcU+2QIq+94EW8oB1gRIRKfq
+65vchg4p5+ZeFJnYLiouGGqiPH57a6DmYwIA05hvuO6lOOHj/MDLi7o5QOjSFW75
+tY4hVwotfs9DZr4k0Iw6HhTiQ73akZNkmH93GaEQvKjscd8O/sBY1nPpQwIA53Bp
+bqVZwVCmvgKPrhzoy5jLIHahAvUUI99lJWcttig5RFJ/Ty9w1BPyByXtYSYdFAzR
+mK/qJJITKKZ0CBIi/wIAxKMBic7qvVrGRZcLtN4g/kJCQJFZVcbuzxgkiiaYDX2p
+xzC7XH/TaisuZxepIFgJ0gKe8kyiB6f55YahGeksXZjsiLYEGAEKACAWIQQo+Sne
+e5ncjrgkrdIkcgjuqCDBgwUCaTw0XgIbDAAKCRAkcgjuqCDBgwNjA/9+18ybUdz+
+xtNf9OmnPG0DbxIaIQyn9Oh7S04EHIaxg0rtQZkmiKrtt9QcoyGTW5KJ8YAw3uDx
+206eV0+O+ZAVErmHDM+ESyxlFoSQu2GEZSiM+ho87H762uNRl/bA54WElCTccMqP
+S8O27Y4YlFtaKoggbZbMI5+2ckqBzexcAw==
+=/aDM
+-----END PGP PRIVATE KEY BLOCK-----`
+
+// Test encrypted with passphrase PGP private key
+// gpg --full-generate-key
+// Type: RSA and RSA
+// Expire date: 0
+// Length: 1024
+// Real name: Test Test
+// Email address: test.protected@test.com
+// Passphrase: password
+// gpg --export-secret-keys --armor "test.protected@test.com" > test.protected.private.asc
+// gpg --export --armor "test.protected@test.com" > test.protected.public.asc
+var testEncryptedPgpPrivateKey = `-----BEGIN PGP PRIVATE KEY BLOCK-----
+
+lQHYBGk8NF4BBADpZocQ6eWjFY2B9Tatws9ft6OhOdhRzvkZKzDj77CxWua4uhxQ
+80wwyc2nUzkBg77sWCLFrED+kA4bbSWZCBX1x8qaqgeKkHhMkvw4Vrh4lxDOj/GX
+2bFIvqnc/e5BrEQuyxDvwElskR4rARz38scTGJN+XV5+BMjm2OHhXcNnCQARAQAB
+AAP8CIIRSF+OXGyLtQIQVTM1xgJ2t4jZRtopoG4/oP96zGxI3tEB+T11OI4SrhfN
+iy2XRxxLYDNQRzdPHFbVOQffbP1iADlh0W7HoqYBHlVzg8JTDgwu6clMUnQzXeHB
+e0Md3DnL4UqCqW3zxm+dt8occIprYek8LR0ukGIcSmSdxCUCAPHxRN9WriNR2eSu
+D8lYVO9Bba6NczXrLZ2bv2AGqcm3vRG6tyZZXIBMyvDDtQ8oOhSsu3OBqxKRc20Q
+KTT4O48CAPb2M+OMBMLDERlGFdiCaED1YS0n7HdmHoCNTZxCI8TaT69ArEo3po59
+9wHdqjUknjNha/E/Q761TPyEZ5YvR+cB/RC7eziLAf4UmgrlOMVxVtCb17M/gdjy
+SYLdao16MYbPB/UmFDlcXrksZMrBFXeRo1BA0/Z4Zm4scFlx2bFowWWYBbQZVGVz
+dCBUZXN0IDx0ZXN0QHRlc3QuY29tPojOBBMBCgA4FiEEKPkp3nuZ3I64JK3SJHII
+7qggwYMFAmk8NF4CGwMFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AACgkQJHII7qgg
+wYOQbQQAsgcDcAKYf7ltzG8bSMFKRFStawcUDBMY4qwjG/oLvIPhT9TTD1g2OdT2
+rOUmL9IRnFmGBqdV6Wju/Yz6D8Jix1rg9dgoMIGaPOjy7axkBFl/NytkXCyv1hFd
+rdgJdc8LisFv2brTOce+NpTTeqtclPblMqwJTZc1kjEpdbRhMY+dAdgEaTw0XgEE
+AL9LdqW6Pcm+paqYoPC+WjawNpd+KCyH4huJNH2TZYxdEAsS004M2UobsD92peo9
+ZcMKbPWpAsCIXJ41xr5Dvu54EAGkKSpRzbAjBdNjVPDjuXnOcmJHGYcqcbSE0MzU
+ptOJEoJtgQguHgLkS7g12wxBryFt5edlDNN/PMWBJj+9ABEBAAEAA/9aY/au7deX
+dlICz/cwesnXEKHjKLYkAJtbZpRaiCUSU8Eqcl1Ngq3EIlxASLiyfAuTQ2BkHlYS
+Ev0stv1v10QmylVRELlNzyoc3WyXKgfsDm8zehP/kcU+2QIq+94EW8oB1gRIRKfq
+65vchg4p5+ZeFJnYLiouGGqiPH57a6DmYwIA05hvuO6lOOHj/MDLi7o5QOjSFW75
+tY4hVwotfs9DZr4k0Iw6HhTiQ73akZNkmH93GaEQvKjscd8O/sBY1nPpQwIA53Bp
+bqVZwVCmvgKPrhzoy5jLIHahAvUUI99lJWcttig5RFJ/Ty9w1BPyByXtYSYdFAzR
+mK/qJJITKKZ0CBIi/wIAxKMBic7qvVrGRZcLtN4g/kJCQJFZVcbuzxgkiiaYDX2p
+xzC7XH/TaisuZxepIFgJ0gKe8kyiB6f55YahGeksXZjsiLYEGAEKACAWIQQo+Sne
+e5ncjrgkrdIkcgjuqCDBgwUCaTw0XgIbDAAKCRAkcgjuqCDBgwNjA/9+18ybUdz+
+xtNf9OmnPG0DbxIaIQyn9Oh7S04EHIaxg0rtQZkmiKrtt9QcoyGTW5KJ8YAw3uDx
+206eV0+O+ZAVErmHDM+ESyxlFoSQu2GEZSiM+ho87H762uNRl/bA54WElCTccMqP
+S8O27Y4YlFtaKoggbZbMI5+2ckqBzexcAw==
+=/aDM
+-----END PGP PRIVATE KEY BLOCK-----`
+
+var testEncryptedPgpPassphrase = "password"
