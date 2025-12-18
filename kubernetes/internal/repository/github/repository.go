@@ -339,7 +339,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 
 	// Write MSR and sig files into repo folder
 	msrFileName := fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name)
-	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Namespace)
+	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Name)
 
 	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, msrFileName, msrBytes); err != nil {
 		rollback()
