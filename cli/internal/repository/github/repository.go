@@ -1,7 +1,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -24,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
+	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 )
 
 // Helper struct for GetChangedFiles to parse Kind, Name, and Namespace
@@ -40,7 +38,7 @@ type GitProviderFactory struct {
 }
 
 // New creates and initializes a gitProvider
-func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets manager.Secrets) (manager.GitRepository, error) {
+func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (manager.GitRepository, error) {
 	p := &gitProvider{
 		remoteURL:  remoteURL,
 		localPath:  localPath,
@@ -67,7 +65,7 @@ type gitProvider struct {
 	logger    logr.Logger
 	// A mutex to protect repo from concurrent git operations
 	mu         sync.Mutex
-	pgpSecrets manager.Secrets
+	pgpSecrets crypto.Secrets
 }
 
 // Sync ensures the local repository is cloned and up-to-date.
@@ -300,7 +298,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *manager.ManifestSigningR
 	if err != nil {
 		return "", fmt.Errorf("could not get repository worktree: %w", err)
 	}
-	gpgEntity, err := p.getGpgEntity(ctx)
+	gpgEntity, err := crypto.GetGpgEntity(ctx, &p.pgpSecrets)
 	if err != nil {
 		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
 	}
@@ -311,7 +309,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *manager.ManifestSigningR
 		return "", fmt.Errorf("failed to marshal MSR to YAML: %w", err)
 	}
 	// Create detached signature from the MSR file
-	signatureBytes, err := createDetachedSignature(msrBytes, gpgEntity)
+	signatureBytes, err := crypto.CreateDetachedSignatureByEntity(msrBytes, gpgEntity)
 	if err != nil {
 		return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
 	}
@@ -394,55 +392,10 @@ func (p *gitProvider) addCreateFileAndAddToWorktree(worktree *git.Worktree, repo
 	return nil
 }
 
-func (p *gitProvider) PushSignature(ctx context.Context, msr *manager.ManifestSigningRequestManifestObject, governorAlias string, signatureData []byte) (string, error) {
+func (p *gitProvider) PushSignature(ctx context.Context, msr *manager.ManifestSigningRequestManifestObject, signatureData []byte) (string, error) {
 	return "", nil
 }
 
-func (p *gitProvider) getGpgEntity(ctx context.Context) (*openpgp.Entity, error) {
-	if p.pgpSecrets.PrivateKey == "" {
-		return nil, fmt.Errorf("PGP private key is not configured")
-	}
-
-	entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(p.pgpSecrets.PrivateKey))
-	if err != nil {
-		return nil, err
-	}
-	entity := entityList[0]
-
-	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
-		// If a passphrase is required but not provided, fail.
-		if p.pgpSecrets.Passphrase == "" {
-			return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
-		}
-
-		passphrase := []byte(p.pgpSecrets.Passphrase)
-
-		// Attempt to decrypt the private key.
-		err := entity.PrivateKey.Decrypt(passphrase)
-		if err != nil || entity.PrivateKey.Encrypted {
-			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
-		}
-	}
-
-	return entity, nil
-}
-
-// createDetachedSignature takes the raw bytes of a file and a GPG entity,
-// and returns the raw bytes of an armored, detached signature.
-func createDetachedSignature(fileContent []byte, signKey *openpgp.Entity) ([]byte, error) {
-	// Create a buffer to hold the armored signature
-	sigBuf := new(bytes.Buffer)
-	armorWriter, err := armor.Encode(sigBuf, openpgp.SignatureType, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Generate the detached signature from the file content
-	err = openpgp.DetachSign(armorWriter, signKey, bytes.NewReader(fileContent), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create detached signature: %w", err)
-	}
-	armorWriter.Close()
-
-	return sigBuf.Bytes(), nil
+func (p *gitProvider) GetActiveMSR(ctx context.Context) (manager.ManifestSigningRequestManifestObject, [][]byte, error) {
+	return manager.ManifestSigningRequestManifestObject{}, make([][]byte, 0), nil
 }

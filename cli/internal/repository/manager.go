@@ -9,12 +9,16 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	
+	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
+)
+
+const (
+	DefaultReposPath = "~/tmp/qubmango/git/repos"
 )
 
 type GitRepositoryFactory interface {
-	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets Secrets) (GitRepository, error)
+	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepository, error)
 	IdentifyProvider(repoURL string) bool
 }
 
@@ -23,17 +27,12 @@ type GitRepository interface {
 	HasRevision(ctx context.Context, commit string) (bool, error)
 	GetLatestRevision(ctx context.Context) (string, error)
 	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]FileChange, error)
-	PushSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, governorAlias string, signatureData []byte) (string, error)
-}
-
-type Secrets struct {
-	PrivateKey string
-	Passphrase string
+	PushSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, signatureData []byte) (string, error)
+	GetActiveMSR(ctx context.Context) (ManifestSigningRequestManifestObject, [][]byte, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.
 type Manager struct {
-	client client.Client
 	// Base directory to store local clones
 	basePath string
 	// List of all available providers factories
@@ -43,9 +42,12 @@ type Manager struct {
 	mu             sync.Mutex
 }
 
-func NewManager(client client.Client, basePath string) *Manager {
+func NewManager() *Manager {
+	return NewManagerWithPath(DefaultReposPath)
+}
+
+func NewManagerWithPath(basePath string) *Manager {
 	return &Manager{
-		client:         client,
 		basePath:       basePath,
 		providers:      []GitRepositoryFactory{},
 		providersToMRT: make(map[string]GitRepository),
@@ -59,11 +61,11 @@ func (m *Manager) Register(factory GitRepositoryFactory) error {
 
 type GovernorRepositoryConfig struct {
 	GitRepositoryURL string
-	PGPSecrets       *Secrets
-	SSHSecrets       *Secrets
+	PGPSecretPath    string
+	SSHSecretPath    string
 }
 
-func (m *Manager) GetProviderForMRT(ctx context.Context, conf *GovernorRepositoryConfig) (GitRepository, error) {
+func (m *Manager) GetProvider(ctx context.Context, conf *GovernorRepositoryConfig) (GitRepository, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -84,19 +86,26 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, conf *GovernorRepositor
 	repoHash := fmt.Sprintf("%x", sha1.Sum([]byte(repoURL)))
 	localPath := filepath.Join(m.basePath, repoHash)
 
-	// Sync pgp and ssh secrets
-
-	if conf.PGPSecrets == nil {
-		return nil, fmt.Errorf("pgp information is nil")
-	}
-	sshSecrets, err := m.syncSSHSecrets(ctx, conf)
+	// Sync ssh secrets
+	sshSecrets, err := crypto.GetSSHSecrets(conf.SSHSecretPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get ssh secrets: %w", err)
+	}
+	sshPublicKeys, err := crypto.SyncSSHSecrets(ctx, sshSecrets)
+	if err != nil {
+		return nil, fmt.Errorf("sync ssh secrets", err)
 	}
 
-	provider, err := m.findProvider(ctx, repoURL, localPath, sshSecrets, *conf.PGPSecrets)
+	// Get pgp secrets
+	pgpSecrets, err := crypto.GetPGPSecrets(conf.SSHSecretPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get pgp secrets: %w", err)
+	}
+
+	// Find provider
+	provider, err := m.findProvider(ctx, repoURL, localPath, sshPublicKeys, *pgpSecrets)
+	if err != nil {
+		return nil, fmt.Errorf("find provider for git link %s: %w", repoURL, err)
 	}
 
 	// Cache the new provider
@@ -112,7 +121,7 @@ func (m *Manager) providerExists(repoURL string) bool {
 	return idx != -1
 }
 
-func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, auth transport.AuthMethod, pgpSecrets Secrets) (GitRepository, error) {
+func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepository, error) {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})
@@ -121,21 +130,4 @@ func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, a
 		return nil, fmt.Errorf("no supported git provider for URL: %s", repoURL)
 	}
 	return m.providers[idx].New(ctx, repoURL, localPath, auth, pgpSecrets)
-}
-
-func (m *Manager) syncSSHSecrets(ctx context.Context, conf *GovernorRepositoryConfig) (*ssh.PublicKeys, error) {
-	if conf.SSHSecrets == nil {
-		return nil, fmt.Errorf("ssh information is nil")
-	}
-
-	privateKeyBytes := []byte(conf.SSHSecrets.PrivateKey)
-	passphraseBytes := []byte(conf.SSHSecrets.Passphrase)
-
-	// Decrypt the private key.
-	publicKeys, err := ssh.NewPublicKeys("git", privateKeyBytes, string(passphraseBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create public keys from secret: %w", err)
-	}
-
-	return publicKeys, nil
 }

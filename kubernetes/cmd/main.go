@@ -91,7 +91,7 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 
 	// Custom flags
-	flag.StringVar(&repositoriesBasePath, "repositories-base-path", "/tmp/git/repos", "The base folder where all repositories are copied to.")
+	flag.StringVar(&repositoriesBasePath, "repositories-base-path", "/tmp/qubmango/git/repos", "The base folder where all repositories are copied to.")
 
 	opts := zap.Options{
 		Development: true,
