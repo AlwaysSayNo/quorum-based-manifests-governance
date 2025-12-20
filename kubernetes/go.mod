@@ -12,7 +12,7 @@ require (
 
 require (
 	github.com/ProtonMail/go-crypto v1.1.6
-	github.com/argoproj/argo-cd/v3 v3.2.0
+	github.com/argoproj/argo-cd/v3 v3.2.2
 	github.com/go-git/go-git/v5 v5.14.0
 	github.com/onsi/gomega v1.38.2
 	go.uber.org/mock v0.6.0
@@ -23,7 +23,7 @@ require (
 
 require (
 	cel.dev/expr v0.24.0 // indirect
-	cloud.google.com/go/compute/metadata v0.7.0 // indirect
+	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.11.0 // indirect
@@ -34,7 +34,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/argoproj/gitops-engine v0.7.1-0.20251006172252-b89b0871b414 // indirect
+	github.com/argoproj/gitops-engine v0.7.1-0.20251217140045-5baed5604d2d // indirect
 	github.com/argoproj/pkg v0.13.7-0.20230626144333-d56162821bd1 // indirect
 	github.com/argoproj/pkg/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -135,7 +135,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.59.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.38.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.38.0 // indirect
@@ -150,7 +150,7 @@ require (
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/net v0.44.0 // indirect
-	golang.org/x/oauth2 v0.31.0 // indirect
+	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/term v0.35.0 // indirect
@@ -176,7 +176,7 @@ require (
 	k8s.io/kube-aggregator v0.34.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
 	k8s.io/kubectl v0.34.0 // indirect
-	k8s.io/kubernetes v1.34.0 // indirect
+	k8s.io/kubernetes v1.34.2 // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 	oras.land/oras-go/v2 v2.6.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
@@ -189,6 +189,8 @@ require (
 )
 
 replace (
+	cloud.google.com/go => cloud.google.com/go v0.123.0
+	cloud.google.com/go/compute/metadata => cloud.google.com/go/compute/metadata v0.7.0
 	github.com/golang/protobuf => github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway => github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	golang.org/x/tools => golang.org/x/tools v0.35.0
