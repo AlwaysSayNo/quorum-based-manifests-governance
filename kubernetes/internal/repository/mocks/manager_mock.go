@@ -141,6 +141,36 @@ func (mr *MockGitRepositoryMockRecorder) HasRevision(ctx, commit any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasRevision", reflect.TypeOf((*MockGitRepository)(nil).HasRevision), ctx, commit)
 }
 
+// InitializeGovernance mocks base method.
+func (m *MockGitRepository) InitializeGovernance(ctx context.Context, msr *v1alpha1.ManifestSigningRequestManifestObject, mca *v1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InitializeGovernance", ctx, msr, mca)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// InitializeGovernance indicates an expected call of InitializeGovernance.
+func (mr *MockGitRepositoryMockRecorder) InitializeGovernance(ctx, msr, mca any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializeGovernance", reflect.TypeOf((*MockGitRepository)(nil).InitializeGovernance), ctx, msr, mca)
+}
+
+// PushMCA mocks base method.
+func (m *MockGitRepository) PushMCA(ctx context.Context, msr *v1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PushMCA", ctx, msr)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PushMCA indicates an expected call of PushMCA.
+func (mr *MockGitRepositoryMockRecorder) PushMCA(ctx, msr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushMCA", reflect.TypeOf((*MockGitRepository)(nil).PushMCA), ctx, msr)
+}
+
 // PushMSR mocks base method.
 func (m *MockGitRepository) PushMSR(ctx context.Context, msr *v1alpha1.ManifestSigningRequestManifestObject) (string, error) {
 	m.ctrl.T.Helper()

@@ -269,9 +269,14 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 		}
 	}
 
+	// Save initial files into the repo
 	repositoryMSR := r.createRepositoryMSR(msr)
 	repositoryMCA := r.createRepositoryMCA(mca)
-	commitHash, err := r.repository(ctx, mrt).PushMSRAndMCA(ctx, &repositoryMSR, &repositoryMCA)
+	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, &repositoryMSR, &repositoryMCA)
+	if err != nil {
+		// TODO: do rollback of the files in the cluster
+		return fmt.Errorf("save initial ManifestSigningRequest and ManifestChangeApproval to repository: %w", err)
+	}
 
 	// Update MRT
 	mrt, _, err = r.getMRTForRequest(ctx, req)

@@ -5,28 +5,9 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - argoproj.io
-  resources:
-  - applications
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - governance.nazar.grynko.com
   resources:
-  - manifestchangeapprovals
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - governance.nazar.grynko.com
-  resources:
-  - manifestrequesttemplates
-  - manifestsigningrequests
+  - qubmangoindices
   verbs:
   - create
   - delete
@@ -38,15 +19,13 @@ rules:
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
-  - manifestrequesttemplates/finalizers
-  - manifestsigningrequests/finalizers
+  - qubmangoindices/finalizers
   verbs:
   - update
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
-  - manifestrequesttemplates/status
-  - manifestsigningrequests/status
+  - qubmangoindices/status
   verbs:
   - get
   - patch

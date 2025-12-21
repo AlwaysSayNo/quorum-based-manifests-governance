@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -312,13 +313,140 @@ func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.Manif
 	return p.pushGovernanceFiles(ctx, files, msg)
 }
 
-func (p *gitProvider) PushMSRAndMCA(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+func (p *gitProvider) InitializeGovernance(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+	indexName := msr.Spec.MRT.Namespace + ":" + msr.Spec.MRT.Name
 	files := []fileToPush{
 		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
 		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
 	}
 	msg := fmt.Sprintf("New ManifestSigningRequest and ManifestChangeApproval: create manifest signing request %s and manifest change approval %s with version %d", msr.ObjectMeta.Name, mca.ObjectMeta.Name, msr.Spec.Version)
-	return p.pushGovernanceFiles(ctx, files, msg)
+	return p.registerInIndexFileAndPushGovernanceFiles(ctx, indexName, msr.Spec.Location.Folder, files, msg)
+}
+
+func (p *gitProvider) registerInIndexFileAndPushGovernanceFiles(
+	ctx context.Context,
+	indexName string,
+	governanceFolder string,
+	files []fileToPush,
+	commitMsg string) (string, error) {
+
+	if err := p.Sync(ctx); err != nil {
+		return "", fmt.Errorf("failed to sync repository before index registration: %w", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	worktree, err := p.repo.Worktree()
+	if err != nil {
+		return "", fmt.Errorf("could not get repository worktree: %w", err)
+	}
+	gpgEntity, err := p.getGpgEntity(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
+	}
+
+	// Function to rollback working tree to the old state, if error appears
+	headRef, err := p.repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("could not get current HEAD before commit: %w", err)
+	}
+	originalCommitHash := headRef.Hash()
+	rollback := func() {
+		worktree.Reset(&git.ResetOptions{
+			Commit: originalCommitHash,
+			Mode:   git.HardReset,
+		})
+	}
+
+	// Register governance in index file
+	err = p.registerInIndexFile(worktree, gpgEntity, indexName, governanceFolder)
+	if err != nil {
+		return "", fmt.Errorf("register new entity in governance index file: %w", err)
+	}
+
+	// Stage all files
+	for _, f := range files {
+		if err := p.createYAMLFileWithSignatureAndAttach(worktree, gpgEntity, f.Object, f.Name, f.Folder, f.Version); err != nil {
+			rollback()
+			return "", fmt.Errorf("add file %s to worktree: %w", f.Name, err)
+		}
+	}
+
+	// Commit and push changes
+	commitOpts := &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Qubmango Governance Operator",
+			Email: "noreply@qubmango.com",
+			When:  time.Now(),
+		},
+		SignKey: gpgEntity,
+	}
+	commitHash, err := worktree.Commit(commitMsg, commitOpts)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("failed to commit: %w", err)
+	}
+
+	pushOpts := &git.PushOptions{
+		RemoteName: "origin",
+		Auth:       p.auth,
+	}
+	err = p.repo.PushContext(ctx, pushOpts)
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		rollback()
+		return "", fmt.Errorf("failed to push commit: %w", err)
+	}
+
+	return commitHash.String(), nil
+}
+
+func (p *gitProvider) registerInIndexFile(
+	worktree *git.Worktree,
+	gpgEntity *openpgp.Entity,
+	indexName string,
+	governanceFolder string,
+) error {
+
+	// Create index file if doesn't exist yet
+	inRepoFolderPath := filepath.Join(".qubmango", "index.yaml")
+	if _, err := os.Stat(inRepoFolderPath); os.IsNotExist(err) {
+		os.MkdirAll(filepath.Dir(inRepoFolderPath), 0644)
+		os.WriteFile(filepath.Base(inRepoFolderPath), nil, 0644)
+	} else if err != nil {
+		return fmt.Errorf("find qubmango index file: %w", err)
+	}
+
+	// Fetch index file from the local repo
+	fileBytes, err := os.ReadFile(inRepoFolderPath)
+	if err != nil {
+		return fmt.Errorf("read qubmango index file: %w", err)
+	}
+
+	var indexManifest governancev1alpha1.QubmangoIndex
+	if err := yaml.Unmarshal([]byte(fileBytes), &indexManifest); err != nil {
+		return fmt.Errorf("unmarshal qubmango index file: %w", err)
+	}
+
+	// Check, if index with such alias already exist. Alias should be unique
+	idx := slices.IndexFunc(indexManifest.Spec.Policies, func(policy governancev1alpha1.QubmangoPolicy) bool {
+		return policy.Alias == indexName
+	})
+	if idx != -1 {
+		return fmt.Errorf("index %s already exist", indexName)
+	}
+
+	// Append new policy and add to staging tree
+	policy := governancev1alpha1.QubmangoPolicy{
+		Alias: indexName,
+		GovernancePath: governanceFolder,
+	}
+	indexManifest.Spec.Policies = append(indexManifest.Spec.Policies, policy)
+	if _, err = worktree.Add(inRepoFolderPath); err != nil {
+		return fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
+	}
+
+	return nil
 }
 
 func (p *gitProvider) pushGovernanceFiles(

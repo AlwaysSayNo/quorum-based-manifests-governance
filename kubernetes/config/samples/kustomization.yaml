@@ -3,4 +3,5 @@ resources:
 - governance_v1alpha1_manifestrequesttemplate.yaml
 - governance_v1alpha1_manifestchangeapproval.yaml
 - governance_v1alpha1_manifestsigningrequest.yaml
+- governance_v1alpha1_qubmangoindex.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

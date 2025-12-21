@@ -5,6 +5,7 @@ resources:
 - bases/governance.nazar.grynko.com_manifestrequesttemplates.yaml
 - bases/governance.nazar.grynko.com_manifestchangeapprovals.yaml
 - bases/governance.nazar.grynko.com_manifestsigningrequests.yaml
+- bases/governance.nazar.grynko.com_qubmangoindices.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

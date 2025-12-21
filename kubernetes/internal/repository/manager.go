@@ -43,7 +43,7 @@ type GitRepository interface {
 	PushMCA(ctx context.Context, msr *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
 
 	// pushMSRAndMCA commits and pushes the generated MSR, MCA manifests to the correct folder in the repo along with their signatures.
-	PushMSRAndMCA(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
+	InitializeGovernance(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
 
 	// PushSignature commits and pushes a governor's signature to the repository.
 	// This would be used by your CLI/API server.
