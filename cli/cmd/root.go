@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -48,8 +49,6 @@ func Execute() {
 }
 
 func init() {
-	// This creates the persistent --repo flag, available on all subcommands.
-	rootCmd.PersistentFlags().StringVar(&repoAlias, "repo", "", "Alias of the repository to use (from config file)")
 }
 
 func repositoryManager() *manager.Manager {
@@ -57,4 +56,16 @@ func repositoryManager() *manager.Manager {
 	m.Register(&github.GitProviderFactory{})
 
 	return m
+}
+
+func getRepoAlias() (string, error) {
+	currRepo := cliConfig.GetData().CurrentRepository
+
+	if repoAlias != "" {
+		return repoAlias, nil
+	} else if currRepo != "" {
+		return currRepo, nil
+	}
+
+	return "", fmt.Errorf("no current repository is set")
 }

@@ -2,9 +2,9 @@ version: "3"
 
 includes:
   gke:
-    taskfile: ./controller/Taskfile-gke.yml
-    dir: ./controller/
+    taskfile: ./kubernetes/Taskfile-gke.yml
+    dir: ./kubernetes/
   
   dev:
-    taskfile: ./controller/.development/Taskfile-dev.yml
-    dir: ./controller/.development
+    taskfile: ./kubernetes/.development/Taskfile-dev.yml
+    dir: ./kubernetes/.development
