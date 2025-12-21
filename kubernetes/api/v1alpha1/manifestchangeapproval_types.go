@@ -129,6 +129,12 @@ type ManifestChangeApproval struct {
 	Status ManifestChangeApprovalStatus `json:"status,omitzero"`
 }
 
+type ManifestChangeApprovalManifestObject struct {
+	metav1.TypeMeta `json:",inline"`
+	ObjectMeta      ManifestRef                `json:"metadata,omitzero"`
+	Spec            ManifestChangeApprovalSpec `json:"spec"`
+}
+
 // +kubebuilder:object:root=true
 
 // ManifestChangeApprovalList contains a list of ManifestChangeApproval

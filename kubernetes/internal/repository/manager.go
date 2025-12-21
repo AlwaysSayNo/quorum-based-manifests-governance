@@ -36,8 +36,14 @@ type GitRepository interface {
 	// TODO: change type from FileChange. Because it bounds it straight to the governance module
 	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
 
-	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo.
+	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo along with its signature.
 	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
+
+	// PushMCA commits and pushes the generated MCA manifest to the correct folder in the repo along with its signature.
+	PushMCA(ctx context.Context, msr *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
+
+	// pushMSRAndMCA commits and pushes the generated MSR, MCA manifests to the correct folder in the repo along with their signatures.
+	PushMSRAndMCA(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
 
 	// PushSignature commits and pushes a governor's signature to the repository.
 	// This would be used by your CLI/API server.

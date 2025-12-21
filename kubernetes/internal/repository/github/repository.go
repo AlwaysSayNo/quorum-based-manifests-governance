@@ -27,6 +27,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
+type fileToPush struct {
+	Object  interface{}
+	Name    string
+	Folder  string
+	Version int
+}
+
 // Helper struct for GetChangedFiles to parse Kind, Name, and Namespace
 type k8sObjectMetadata struct {
 	APIVersion string `yaml:"apiVersion"`
@@ -290,8 +297,38 @@ func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *objec
 }
 
 func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error) {
+	files := []fileToPush{
+		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
+	}
+	msg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
+	return p.pushGovernanceFiles(ctx, files, msg)
+}
+
+func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+	files := []fileToPush{
+		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
+	}
+	msg := fmt.Sprintf("New ManifestChangeApproval: create manifest change approval %s with version %d", mca.ObjectMeta.Name, mca.Spec.Version)
+	return p.pushGovernanceFiles(ctx, files, msg)
+}
+
+func (p *gitProvider) PushMSRAndMCA(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
+	files := []fileToPush{
+		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
+		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
+	}
+	msg := fmt.Sprintf("New ManifestSigningRequest and ManifestChangeApproval: create manifest signing request %s and manifest change approval %s with version %d", msr.ObjectMeta.Name, mca.ObjectMeta.Name, msr.Spec.Version)
+	return p.pushGovernanceFiles(ctx, files, msg)
+}
+
+func (p *gitProvider) pushGovernanceFiles(
+	ctx context.Context,
+	files []fileToPush,
+	commitMsg string,
+) (string, error) {
+
 	if err := p.Sync(ctx); err != nil {
-		return "", fmt.Errorf("failed to sync repository before pushing MSR: %w", err)
+		return "", fmt.Errorf("failed to sync repository before push: %w", err)
 	}
 
 	p.mu.Lock()
@@ -304,17 +341,6 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	gpgEntity, err := p.getGpgEntity(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
-	}
-
-	// Convert MSR object to file
-	msrBytes, err := yaml.Marshal(msr)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal MSR to YAML: %w", err)
-	}
-	// Create detached signature from the MSR file
-	signatureBytes, err := createDetachedSignature(msrBytes, gpgEntity)
-	if err != nil {
-		return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
 	}
 
 	// Function to rollback working tree to the old state, if error appears
@@ -330,28 +356,15 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		})
 	}
 
-	// Create folder for new MSR and signatures subfolder
-	repoRequestFolderPath := filepath.Join(msr.Spec.Location.Folder, fmt.Sprintf("v_%d", msr.Spec.Version))
-	repoMsrSignaturesFolderPath := filepath.Join(repoRequestFolderPath, "signatures")
-
-	os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644)
-	os.MkdirAll(filepath.Join(p.localPath, repoMsrSignaturesFolderPath), 0644)
-
-	// Write MSR and sig files into repo folder
-	msrFileName := fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name)
-	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Name)
-
-	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, msrFileName, msrBytes); err != nil {
-		rollback()
-		return "", fmt.Errorf("create MSR file and to worktree: %w", err)
-	}
-	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, sigFileName, signatureBytes); err != nil {
-		rollback()
-		return "", fmt.Errorf("create MSR.sig file and to worktree: %w", err)
+	// Stage all files
+	for _, f := range files {
+		if err := p.createYAMLFileWithSignatureAndAttach(worktree, gpgEntity, f.Object, f.Name, f.Folder, f.Version); err != nil {
+			rollback()
+			return "", fmt.Errorf("add file %s to worktree: %w", f.Name, err)
+		}
 	}
 
 	// Commit and push changes
-	commitMsg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
 	commitOpts := &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "Qubmango Governance Operator",
@@ -363,7 +376,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	commitHash, err := worktree.Commit(commitMsg, commitOpts)
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("failed to commit MSR: %w", err)
+		return "", fmt.Errorf("failed to commit: %w", err)
 	}
 
 	pushOpts := &git.PushOptions{
@@ -373,13 +386,43 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 	err = p.repo.PushContext(ctx, pushOpts)
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		rollback()
-		return "", fmt.Errorf("failed to push MSR commit: %w", err)
+		return "", fmt.Errorf("failed to push commit: %w", err)
 	}
 
 	return commitHash.String(), nil
 }
 
-func (p *gitProvider) addCreateFileAndAddToWorktree(worktree *git.Worktree, repoFolderPath, fileName string, file []byte) error {
+func (p *gitProvider) createYAMLFileWithSignatureAndAttach(worktree *git.Worktree, gpgEntity *openpgp.Entity, file any, fileName, inRepoFolderPath string, version int) error {
+	// Create folder for new file and signature
+	repoRequestFolderPath := filepath.Join(inRepoFolderPath, fmt.Sprintf("v_%d", version))
+	os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644)
+
+	// Write file and sig files into repo folder
+	fileNameExtended := fmt.Sprintf("%s.yaml", fileName)
+	sigFileName := fmt.Sprintf("%s.yaml.sig", fileName)
+
+	// Convert file object to bytes
+	fileBytes, err := yaml.Marshal(file)
+	if err != nil {
+		return fmt.Errorf("failed to marshal file to YAML: %w", err)
+	}
+	// Create detached signature from the bytes
+	signatureBytes, err := createDetachedSignature(fileBytes, gpgEntity)
+	if err != nil {
+		return fmt.Errorf("failed to create detached signature for MSR: %w", err)
+	}
+
+	if err := p.createFileAndAddToWorktree(worktree, repoRequestFolderPath, fileNameExtended, fileBytes); err != nil {
+		return fmt.Errorf("create MSR file and to worktree: %w", err)
+	}
+	if err := p.createFileAndAddToWorktree(worktree, repoRequestFolderPath, sigFileName, signatureBytes); err != nil {
+		return fmt.Errorf("create MSR.sig file and to worktree: %w", err)
+	}
+
+	return nil
+}
+
+func (p *gitProvider) createFileAndAddToWorktree(worktree *git.Worktree, repoFolderPath, fileName string, file []byte) error {
 	filePath := filepath.Join(p.localPath, repoFolderPath, fileName)
 	repoPath := filepath.Join(repoFolderPath, fileName)
 

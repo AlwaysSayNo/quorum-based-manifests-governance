@@ -269,12 +269,16 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 		}
 	}
 
+	repositoryMSR := r.createRepositoryMSR(msr)
+	repositoryMCA := r.createRepositoryMCA(mca)
+	commitHash, err := r.repository(ctx, mrt).PushMSRAndMCA(ctx, &repositoryMSR, &repositoryMCA)
+
 	// Update MRT
 	mrt, _, err = r.getMRTForRequest(ctx, req)
 	if err != nil {
 		return fmt.Errorf("while fetching ManifestRequestTemplate after save: %w", err)
 	}
-	mrt.Status.LastObservedCommitHash = revision
+	mrt.Status.LastObservedCommitHash = commitHash
 	if err := r.Status().Update(ctx, mrt); err != nil {
 		logger.Error(err, "Failed to update initial MRT status")
 		return fmt.Errorf("while updating initial ManifestRequestTemplate status: %w", err)
@@ -506,6 +510,21 @@ func (r *ManifestRequestTemplateReconciler) createRepositoryMSR(msr *governancev
 			Namespace: msrCopy.Namespace,
 		},
 		Spec: msrCopy.Spec,
+	}
+}
+
+func (r *ManifestRequestTemplateReconciler) createRepositoryMCA(mca *governancev1alpha1.ManifestChangeApproval) governancev1alpha1.ManifestChangeApprovalManifestObject {
+	mcaCopy := mca.DeepCopy()
+	return governancev1alpha1.ManifestChangeApprovalManifestObject{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       mcaCopy.Kind,
+			APIVersion: mcaCopy.APIVersion,
+		},
+		ObjectMeta: governancev1alpha1.ManifestRef{
+			Name:      mcaCopy.Name,
+			Namespace: mcaCopy.Namespace,
+		},
+		Spec: mcaCopy.Spec,
 	}
 }
 
