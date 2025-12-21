@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
-	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -323,82 +323,20 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, msr *governancev
 	return p.registerInIndexFileAndPushGovernanceFiles(ctx, indexName, msr.Spec.Location.Folder, files, msg)
 }
 
+func (p *gitProvider) pushGovernanceFiles(ctx context.Context, files []fileToPush, commitMsg string) (string, error) {
+	return p.pushWorkflow(ctx, files, commitMsg, nil)
+}
+
 func (p *gitProvider) registerInIndexFileAndPushGovernanceFiles(
 	ctx context.Context,
 	indexName string,
 	governanceFolder string,
 	files []fileToPush,
 	commitMsg string) (string, error) {
-
-	if err := p.Sync(ctx); err != nil {
-		return "", fmt.Errorf("failed to sync repository before index registration: %w", err)
+	indexFn := func(wt *git.Worktree, gpg *openpgp.Entity) error {
+		return p.registerInIndexFile(wt, gpg, indexName, governanceFolder)
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	worktree, err := p.repo.Worktree()
-	if err != nil {
-		return "", fmt.Errorf("could not get repository worktree: %w", err)
-	}
-	gpgEntity, err := p.getGpgEntity(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
-	}
-
-	// Function to rollback working tree to the old state, if error appears
-	headRef, err := p.repo.Head()
-	if err != nil {
-		return "", fmt.Errorf("could not get current HEAD before commit: %w", err)
-	}
-	originalCommitHash := headRef.Hash()
-	rollback := func() {
-		worktree.Reset(&git.ResetOptions{
-			Commit: originalCommitHash,
-			Mode:   git.HardReset,
-		})
-	}
-
-	// Register governance in index file
-	err = p.registerInIndexFile(worktree, gpgEntity, indexName, governanceFolder)
-	if err != nil {
-		return "", fmt.Errorf("register new entity in governance index file: %w", err)
-	}
-
-	// Stage all files
-	for _, f := range files {
-		if err := p.createYAMLFileWithSignatureAndAttach(worktree, gpgEntity, f.Object, f.Name, f.Folder, f.Version); err != nil {
-			rollback()
-			return "", fmt.Errorf("add file %s to worktree: %w", f.Name, err)
-		}
-	}
-
-	// Commit and push changes
-	commitOpts := &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Qubmango Governance Operator",
-			Email: "noreply@qubmango.com",
-			When:  time.Now(),
-		},
-		SignKey: gpgEntity,
-	}
-	commitHash, err := worktree.Commit(commitMsg, commitOpts)
-	if err != nil {
-		rollback()
-		return "", fmt.Errorf("failed to commit: %w", err)
-	}
-
-	pushOpts := &git.PushOptions{
-		RemoteName: "origin",
-		Auth:       p.auth,
-	}
-	err = p.repo.PushContext(ctx, pushOpts)
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		rollback()
-		return "", fmt.Errorf("failed to push commit: %w", err)
-	}
-
-	return commitHash.String(), nil
+	return p.pushWorkflow(ctx, files, commitMsg, indexFn)
 }
 
 func (p *gitProvider) registerInIndexFile(
@@ -438,7 +376,7 @@ func (p *gitProvider) registerInIndexFile(
 
 	// Append new policy and add to staging tree
 	policy := governancev1alpha1.QubmangoPolicy{
-		Alias: indexName,
+		Alias:          indexName,
 		GovernancePath: governanceFolder,
 	}
 	indexManifest.Spec.Policies = append(indexManifest.Spec.Policies, policy)
@@ -449,32 +387,64 @@ func (p *gitProvider) registerInIndexFile(
 	return nil
 }
 
-func (p *gitProvider) pushGovernanceFiles(
+func (p *gitProvider) pushWorkflow(
 	ctx context.Context,
 	files []fileToPush,
 	commitMsg string,
+	indexRegistration func(worktree *git.Worktree, gpgEntity *openpgp.Entity) error,
 ) (string, error) {
+	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
 
+	// Execute manipulations over index file, if there is any passed
+	if indexRegistration != nil {
+		if err := indexRegistration(worktree, gpgEntity); err != nil {
+			rollback()
+			return "", fmt.Errorf("index registration failed: %w", err)
+		}
+	}
+
+	// Sign and add the governance files to the governance folder in the worktree
+	if err := p.stageGovernanceFiles(worktree, gpgEntity, files); err != nil {
+		rollback()
+		return "", fmt.Errorf("stage governance files: %w", err)
+	}
+
+	// Created signed commit and push it to the remote repo
+	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, gpgEntity)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("commit and push: %w", err)
+	}
+
+	return commitHash, nil
+}
+
+func (p *gitProvider) syncAndLock(ctx context.Context) (*git.Worktree, func(), *openpgp.Entity, error) {
 	if err := p.Sync(ctx); err != nil {
-		return "", fmt.Errorf("failed to sync repository before push: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to sync repository before push: %w", err)
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	worktree, err := p.repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("could not get repository worktree: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("could not get repository worktree: %w", err)
 	}
 	gpgEntity, err := p.getGpgEntity(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("failed to load GPG signing key: %w", err)
 	}
 
-	// Function to rollback working tree to the old state, if error appears
 	headRef, err := p.repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("could not get current HEAD before commit: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("could not get current HEAD before commit: %w", err)
 	}
 	originalCommitHash := headRef.Hash()
 	rollback := func() {
@@ -484,40 +454,16 @@ func (p *gitProvider) pushGovernanceFiles(
 		})
 	}
 
-	// Stage all files
+	return worktree, rollback, gpgEntity, nil
+}
+
+func (p *gitProvider) stageGovernanceFiles(worktree *git.Worktree, gpgEntity *openpgp.Entity, files []fileToPush) error {
 	for _, f := range files {
 		if err := p.createYAMLFileWithSignatureAndAttach(worktree, gpgEntity, f.Object, f.Name, f.Folder, f.Version); err != nil {
-			rollback()
-			return "", fmt.Errorf("add file %s to worktree: %w", f.Name, err)
+			return fmt.Errorf("add file %s to worktree: %w", f.Name, err)
 		}
 	}
-
-	// Commit and push changes
-	commitOpts := &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Qubmango Governance Operator",
-			Email: "noreply@qubmango.com",
-			When:  time.Now(),
-		},
-		SignKey: gpgEntity,
-	}
-	commitHash, err := worktree.Commit(commitMsg, commitOpts)
-	if err != nil {
-		rollback()
-		return "", fmt.Errorf("failed to commit: %w", err)
-	}
-
-	pushOpts := &git.PushOptions{
-		RemoteName: "origin",
-		Auth:       p.auth,
-	}
-	err = p.repo.PushContext(ctx, pushOpts)
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		rollback()
-		return "", fmt.Errorf("failed to push commit: %w", err)
-	}
-
-	return commitHash.String(), nil
+	return nil
 }
 
 func (p *gitProvider) createYAMLFileWithSignatureAndAttach(worktree *git.Worktree, gpgEntity *openpgp.Entity, file any, fileName, inRepoFolderPath string, version int) error {
@@ -541,10 +487,10 @@ func (p *gitProvider) createYAMLFileWithSignatureAndAttach(worktree *git.Worktre
 	}
 
 	if err := p.createFileAndAddToWorktree(worktree, repoRequestFolderPath, fileNameExtended, fileBytes); err != nil {
-		return fmt.Errorf("create MSR file and to worktree: %w", err)
+		return fmt.Errorf("create %s.yaml file and add to worktree: %w", fileName, err)
 	}
 	if err := p.createFileAndAddToWorktree(worktree, repoRequestFolderPath, sigFileName, signatureBytes); err != nil {
-		return fmt.Errorf("create MSR.sig file and to worktree: %w", err)
+		return fmt.Errorf("create %s.yaml.sig file and add to worktree: %w", fileName, err)
 	}
 
 	return nil
@@ -556,14 +502,39 @@ func (p *gitProvider) createFileAndAddToWorktree(worktree *git.Worktree, repoFol
 
 	err := os.WriteFile(filePath, file, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to write MSR file: %w", err)
+		return fmt.Errorf("failed to write %s file: %w", fileName, err)
 	}
 
 	if _, err = worktree.Add(repoPath); err != nil {
-		return fmt.Errorf("failed to git add MSR file to the staging area: %w", err)
+		return fmt.Errorf("failed to git add file %s to the staging area: %w", fileName, err)
 	}
 
 	return nil
+}
+
+func (p *gitProvider) commitAndPush(ctx context.Context, worktree *git.Worktree, commitMsg string, gpgEntity *openpgp.Entity) (string, error) {
+	commitOpts := &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Qubmango Governance Operator",
+			Email: "noreply@qubmango.com",
+			When:  time.Now(),
+		},
+		SignKey: gpgEntity,
+	}
+	commitHash, err := worktree.Commit(commitMsg, commitOpts)
+	if err != nil {
+		return "", fmt.Errorf("failed to commit: %w", err)
+	}
+
+	pushOpts := &git.PushOptions{
+		RemoteName: "origin",
+		Auth:       p.auth,
+	}
+	err = p.repo.PushContext(ctx, pushOpts)
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return "", fmt.Errorf("failed to push commit: %w", err)
+	}
+	return commitHash.String(), nil
 }
 
 func (p *gitProvider) PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error) {
