@@ -85,7 +85,7 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	repoURL := mrt.Spec.GitRepository.URL
+	repoURL := mrt.Spec.GitRepository.HTTPURL
 	if repoURL == "" {
 		return nil, fmt.Errorf("repository URL is not defined in MRT spec")
 	}

@@ -22,7 +22,8 @@ import (
 
 type GitRepository struct {
 	// +required
-	URL string `json:"url,omitempty"`
+	HTTPURL string `json:"httpUrl,omitempty"`
+	SSHURL string `json:"sshUrl,omitempty"`
 }
 
 type ManifestRef struct {

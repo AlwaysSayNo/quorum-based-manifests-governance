@@ -90,7 +90,7 @@ var _ = Describe("Repository Manager", func() {
 			},
 
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -114,7 +114,7 @@ var _ = Describe("Repository Manager", func() {
 				Namespace: testNamespace.Name,
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -142,7 +142,7 @@ var _ = Describe("Repository Manager", func() {
 				Namespace: testNamespace.Name,
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{URL: "git@nonexitstinghub.com:/TestUser/test-repo.git"},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: "git@nonexitstinghub.com:/TestUser/test-repo.git"},
 			},
 		}
 
@@ -179,7 +179,7 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -206,7 +206,7 @@ var _ = Describe("Repository Manager", func() {
 				Namespace: testNamespace.Name,
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -259,7 +259,7 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -306,7 +306,7 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
@@ -372,7 +372,7 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{URL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
 			},
 		}
 
