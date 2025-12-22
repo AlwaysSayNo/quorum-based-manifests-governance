@@ -63,6 +63,7 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
+		r.logger.Error(err, "Failed to get ManifestSigningRequest")
 		return ctrl.Result{}, fmt.Errorf("fetch ManifestSigningRequest for reconcile request: %w", err)
 	}
 
@@ -73,7 +74,7 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if _, err := r.repositoryWithError(ctx, msr); err != nil {
-		logger.Error(err, "Failed on first repository fetch")
+		r.logger.Error(err, "Failed on first repository fetch")
 		return ctrl.Result{}, fmt.Errorf("init repo for ManifestSigningRequest: %w", err)
 	}
 

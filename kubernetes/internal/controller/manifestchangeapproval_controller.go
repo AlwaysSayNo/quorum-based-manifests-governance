@@ -64,6 +64,7 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
+		r.logger.Error(err, "Failed to get ManifestChangeApproval")
 		return ctrl.Result{}, fmt.Errorf("fetch ManifestChangeApproval for reconcile request: %w", err)
 	}
 
@@ -74,7 +75,7 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 	}
 	
 	if _, err := r.repositoryWithError(ctx, mca); err != nil {
-		logger.Error(err, "Failed on first repository fetch")
+		r.logger.Error(err, "Failed on first repository fetch")
 		return ctrl.Result{}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
 	}
 
