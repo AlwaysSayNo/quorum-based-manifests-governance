@@ -31,17 +31,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
-	MRTFinalizer      = "governance.nazar.grynko.com/finalizer"
-	MRTFinalizerValue = "setup-finished"
+	GovernanceFinalizer = "governance.nazar.grynko.com/finalizer"
 )
 
 var (
@@ -93,13 +91,15 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 		return resp, nil
 	}
 
-	// Finalize object, if it's being deleted
-	if r.isToFinzalize(ctx, mrt) {
+	// Finalize object, if it's being deleted.
+	// Object is being deleted, if it contains DeletionTimestamp.
+	if !mrt.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.finzalize(ctx, mrt)
 	}
 
-	// Create linked default resources, if it's a new object
-	if r.isNewMRTReconcile(mrt) {
+	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
+	// Do on creation actions.
+	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
 		return r.onMRTCreation(ctx, mrt, req)
 	}
 
@@ -122,20 +122,10 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{}, nil
 }
 
-// Return true, if MRT is being deleted.
-func (r *ManifestRequestTemplateReconciler) isToFinzalize(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) bool {
-	return !mrt.ObjectMeta.DeletionTimestamp.IsZero()
-}
-
-// isNewMRTReconcile looks for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new MRT.
-func (r *ManifestRequestTemplateReconciler) isNewMRTReconcile(mrt *governancev1alpha1.ManifestRequestTemplate) bool {
-	return !controllerutil.ContainsFinalizer(mrt, MRTFinalizer)
-}
-
 // finalize is used for object clean-up on deletion event.
 // So far, it's needed to remove the `initial` finalize annotation.
 func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (ctrl.Result, error) {
-	if !controllerutil.ContainsFinalizer(mrt, MRTFinalizer) {
+	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
 		// No custom finalizer is found. Do nothing
 		return ctrl.Result{}, nil
 	}
@@ -144,9 +134,9 @@ func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *
 	logger.Info("Successfully finalized ManifestRequestTemplate")
 
 	// Remove the custom finalizer. The object will be deleted
-	controllerutil.RemoveFinalizer(mrt, MRTFinalizer)
+	controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
-		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", MRTFinalizer, err)
+		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
 	}
 
 	return ctrl.Result{}, nil
@@ -165,7 +155,7 @@ func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mr
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("while fetching ManifestRequestTemplate after creating default resources: %w", err)
 	}
-	controllerutil.AddFinalizer(mrt, MRTFinalizer)
+	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
 	}
@@ -184,12 +174,6 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 		return fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
 	}
 
-	mrtMetaRef := governancev1alpha1.VersionedManifestRef{
-		Name:      mrt.ObjectMeta.Name,
-		Namespace: mrt.ObjectMeta.Namespace,
-		Version:   mrt.Spec.Version,
-	}
-
 	// Fetch the latest revision from the repository
 	revision, err := r.repository(ctx, mrt).GetLatestRevision(ctx)
 	if err != nil {
@@ -203,23 +187,7 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	}
 
 	// Create default MSR
-	msr := &governancev1alpha1.ManifestSigningRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      mrt.Spec.MSR.Name,
-			Namespace: mrt.Spec.MSR.Namespace,
-		},
-		Spec: governancev1alpha1.ManifestSigningRequestSpec{
-			Version:       0,
-			MRT:           *mrtMetaRef.DeepCopy(),
-			PublicKey:     mrt.Spec.PGP.PublicKey,
-			GitRepository: governancev1alpha1.GitRepository{URL: application.Spec.Source.RepoURL},
-			Location:      *mrt.Spec.Location.DeepCopy(),
-			Changes:       fileChanges,
-			Governors:     *mrt.Spec.Governors.DeepCopy(),
-			Require:       *mrt.Spec.Require.DeepCopy(),
-			Status:        governancev1alpha1.Approved,
-		},
-	}
+	msr := r.buildInitialMSR(mrt, fileChanges, revision)
 	// Set MRT as MSR owner
 	if err := ctrl.SetControllerReference(mrt, msr, r.Scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference on MSR")
@@ -232,31 +200,8 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 		}
 	}
 
-	msrMetaRef := governancev1alpha1.VersionedManifestRef{
-		Name:      msr.ObjectMeta.Name,
-		Namespace: msr.ObjectMeta.Namespace,
-		Version:   msr.Spec.Version,
-	}
-
 	// Create default MCA
-	mca := &governancev1alpha1.ManifestChangeApproval{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      mrt.Spec.MCA.Name,
-			Namespace: mrt.Spec.MCA.Namespace,
-		},
-		Spec: governancev1alpha1.ManifestChangeApprovalSpec{
-			Version:               0,
-			MRT:                   *mrtMetaRef.DeepCopy(),
-			MSR:                   *msrMetaRef.DeepCopy(),
-			PublicKey:             mrt.Spec.PGP.PublicKey,
-			GitRepository:         governancev1alpha1.GitRepository{URL: application.Spec.Source.RepoURL},
-			LastApprovedCommitSHA: revision, // revision, on which MRT should have been created
-			Location:              *mrt.Spec.Location.DeepCopy(),
-			Changes:               fileChanges,
-			Governors:             *mrt.Spec.Governors.DeepCopy(),
-			Require:               *mrt.Spec.Require.DeepCopy(),
-		},
-	}
+	mca := r.buildInitialMCA(mrt, msr, fileChanges, revision)
 	// Set MRT as MCA owner
 	if err := ctrl.SetControllerReference(mrt, mca, r.Scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference on MCA")
@@ -269,10 +214,9 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 		}
 	}
 
-	// Save initial files into the repo
-	repositoryMSR := r.createRepositoryMSR(msr)
-	repositoryMCA := r.createRepositoryMCA(mca)
-	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, &repositoryMSR, &repositoryMCA)
+	// Create entry in the index file
+	governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
+	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, governanceIndexAlias, mrt.Spec.Location.Folder)
 	if err != nil {
 		// TODO: do rollback of the files in the cluster
 		return fmt.Errorf("save initial ManifestSigningRequest and ManifestChangeApproval to repository: %w", err)
@@ -290,6 +234,80 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	}
 
 	return nil
+}
+
+func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	fileChanges []governancev1alpha1.FileChange,
+	revision string,
+) *governancev1alpha1.ManifestSigningRequest {
+
+	mrtMetaRef := governancev1alpha1.VersionedManifestRef{
+		Name:      mrt.ObjectMeta.Name,
+		Namespace: mrt.ObjectMeta.Namespace,
+		Version:   mrt.Spec.Version,
+	}
+
+	return &governancev1alpha1.ManifestSigningRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mrt.Spec.MSR.Name,
+			Namespace: mrt.Spec.MSR.Namespace,
+		},
+		Spec: governancev1alpha1.ManifestSigningRequestSpec{
+			Version:   0,
+			MRT:       *mrtMetaRef.DeepCopy(),
+			PublicKey: mrt.Spec.PGP.PublicKey,
+			GitRepository: governancev1alpha1.GitRepository{
+				SSHURL: mrt.Spec.GitRepository.SSHURL,
+			},
+			Location:  *mrt.Spec.Location.DeepCopy(),
+			Changes:   fileChanges,
+			Governors: *mrt.Spec.Governors.DeepCopy(),
+			Require:   *mrt.Spec.Require.DeepCopy(),
+			Status:    governancev1alpha1.Approved,
+		},
+	}
+}
+
+func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	msr *governancev1alpha1.ManifestSigningRequest,
+	fileChanges []governancev1alpha1.FileChange,
+	revision string,
+) *governancev1alpha1.ManifestChangeApproval {
+
+	mrtMetaRef := governancev1alpha1.VersionedManifestRef{
+		Name:      mrt.ObjectMeta.Name,
+		Namespace: mrt.ObjectMeta.Namespace,
+		Version:   mrt.Spec.Version,
+	}
+
+	msrMetaRef := governancev1alpha1.VersionedManifestRef{
+		Name:      msr.ObjectMeta.Name,
+		Namespace: msr.ObjectMeta.Namespace,
+		Version:   msr.Spec.Version,
+	}
+
+	return &governancev1alpha1.ManifestChangeApproval{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mrt.Spec.MCA.Name,
+			Namespace: mrt.Spec.MCA.Namespace,
+		},
+		Spec: governancev1alpha1.ManifestChangeApprovalSpec{
+			Version:   0,
+			MRT:       *mrtMetaRef.DeepCopy(),
+			MSR:       *msrMetaRef.DeepCopy(),
+			PublicKey: mrt.Spec.PGP.PublicKey,
+			GitRepository: governancev1alpha1.GitRepository{
+				SSHURL: mrt.Spec.GitRepository.SSHURL,
+			},
+			LastApprovedCommitSHA: revision, // revision, on which MRT should have been created
+			Location:              *mrt.Spec.Location.DeepCopy(),
+			Changes:               fileChanges,
+			Governors:             *mrt.Spec.Governors.DeepCopy(),
+			Require:               *mrt.Spec.Require.DeepCopy(),
+		},
+	}
 }
 
 // checkDependencies validates that all linked resources for an MRT exist.
@@ -477,11 +495,6 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 }
 
 func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest, revision string, changedFiles []governancev1alpha1.FileChange) (ctrl.Result, error) {
-	application, resp, err := r.getApplication(ctx, mrt)
-	if err != nil {
-		return resp, fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
-	}
-
 	mrtSpecCpy := mrt.Spec.DeepCopy()
 
 	msr.Spec.Version = msr.Spec.Version + 1
@@ -492,7 +505,7 @@ func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *
 	}
 	msr.Spec.PublicKey = mrtSpecCpy.PGP.PublicKey
 	msr.Spec.GitRepository = governancev1alpha1.GitRepository{
-		URL: application.Spec.Source.RepoURL,
+		SSHURL: mrt.Spec.GitRepository.SSHURL,
 	}
 	msr.Spec.Location = *mrtSpecCpy.Location.DeepCopy()
 	msr.Spec.Changes = changedFiles
@@ -501,36 +514,6 @@ func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *
 	msr.Spec.Status = governancev1alpha1.InProgress
 
 	return ctrl.Result{}, nil
-}
-
-func (r *ManifestRequestTemplateReconciler) createRepositoryMSR(msr *governancev1alpha1.ManifestSigningRequest) governancev1alpha1.ManifestSigningRequestManifestObject {
-	msrCopy := msr.DeepCopy()
-	return governancev1alpha1.ManifestSigningRequestManifestObject{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       msrCopy.Kind,
-			APIVersion: msrCopy.APIVersion,
-		},
-		ObjectMeta: governancev1alpha1.ManifestRef{
-			Name:      msrCopy.Name,
-			Namespace: msrCopy.Namespace,
-		},
-		Spec: msrCopy.Spec,
-	}
-}
-
-func (r *ManifestRequestTemplateReconciler) createRepositoryMCA(mca *governancev1alpha1.ManifestChangeApproval) governancev1alpha1.ManifestChangeApprovalManifestObject {
-	mcaCopy := mca.DeepCopy()
-	return governancev1alpha1.ManifestChangeApprovalManifestObject{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       mcaCopy.Kind,
-			APIVersion: mcaCopy.APIVersion,
-		},
-		ObjectMeta: governancev1alpha1.ManifestRef{
-			Name:      mcaCopy.Name,
-			Namespace: mcaCopy.Namespace,
-		},
-		Spec: mcaCopy.Spec,
-	}
 }
 
 func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(

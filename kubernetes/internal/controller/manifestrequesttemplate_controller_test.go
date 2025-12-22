@@ -256,7 +256,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
 				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
 				return updatedMRT.Finalizers
-			}, 3, interval).Should(ContainElement(MRTFinalizer))
+			}, 3, interval).Should(ContainElement(GovernanceFinalizer))
 
 			// Delete created MSR
 			By("Deleting the initialized MRT to test finalization")
@@ -387,7 +387,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 
 			// Create the MRT with finalizer
 			mrt := &defaultMRT
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// Wait, until first reconcile finished
@@ -425,7 +425,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			// Create an MRT with the finalizer and the same revision in queue as default MCA
 			mrt := &defaultMRT
 			initialCommit := defaultInitCommit
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			mrt.Status.RevisionsQueue = []string{initialCommit}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 			Expect(k8sClient.Status().Update(ctx, mrt)).Should(Succeed())
@@ -479,7 +479,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 
 			// Create an MRT with the finalizer and the old revision in the queue
 			mrt := &defaultMRT
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			mrt.Status.RevisionsQueue = []string{oldCommit}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
@@ -509,7 +509,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 
 			// Create the MRT with a finalizer and an item in the queue
 			mrt := &defaultMRT
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// Wait, until first reconcile finished
@@ -543,7 +543,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			mockRepo.EXPECT().HasRevision(gomock.Any(), revisionToTest).Return(false, nil).AnyTimes()
 
 			mrt := &defaultMRT
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// Wait, until first reconcile finished
@@ -578,7 +578,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return("", expectedErr).AnyTimes()
 
 			mrt := &defaultMRT
-			mrt.Finalizers = []string{MRTFinalizer}
+			mrt.Finalizers = []string{GovernanceFinalizer}
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
 			// Wait, until first reconcile finished

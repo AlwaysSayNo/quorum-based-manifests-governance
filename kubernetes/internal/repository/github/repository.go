@@ -302,7 +302,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
 	}
 	msg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
-	return p.pushGovernanceFiles(ctx, files, msg)
+	return p.pushWorkflow(ctx, files, msg)
 }
 
 func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
@@ -310,41 +310,16 @@ func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.Manif
 		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
 	}
 	msg := fmt.Sprintf("New ManifestChangeApproval: create manifest change approval %s with version %d", mca.ObjectMeta.Name, mca.Spec.Version)
-	return p.pushGovernanceFiles(ctx, files, msg)
+	return p.pushWorkflow(ctx, files, msg)
 }
 
-func (p *gitProvider) InitializeGovernance(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
-	indexName := msr.Spec.MRT.Namespace + ":" + msr.Spec.MRT.Name
-	files := []fileToPush{
-		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
-		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
+// InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value 
+func (p *gitProvider) InitializeGovernance(ctx context.Context, governanceIndexAlias, governanceFolder string) (string, error) {
+	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sync and lock: %w", err)
 	}
-	msg := fmt.Sprintf("New ManifestSigningRequest and ManifestChangeApproval: create manifest signing request %s and manifest change approval %s with version %d", msr.ObjectMeta.Name, mca.ObjectMeta.Name, msr.Spec.Version)
-	return p.registerInIndexFileAndPushGovernanceFiles(ctx, indexName, msr.Spec.Location.Folder, files, msg)
-}
-
-func (p *gitProvider) pushGovernanceFiles(ctx context.Context, files []fileToPush, commitMsg string) (string, error) {
-	return p.pushWorkflow(ctx, files, commitMsg, nil)
-}
-
-func (p *gitProvider) registerInIndexFileAndPushGovernanceFiles(
-	ctx context.Context,
-	indexName string,
-	governanceFolder string,
-	files []fileToPush,
-	commitMsg string) (string, error) {
-	indexFn := func(wt *git.Worktree, gpg *openpgp.Entity) error {
-		return p.registerInIndexFile(wt, gpg, indexName, governanceFolder)
-	}
-	return p.pushWorkflow(ctx, files, commitMsg, indexFn)
-}
-
-func (p *gitProvider) registerInIndexFile(
-	worktree *git.Worktree,
-	gpgEntity *openpgp.Entity,
-	indexName string,
-	governanceFolder string,
-) error {
+	defer p.mu.Unlock()
 
 	// Create index file if doesn't exist yet
 	inRepoFolderPath := filepath.Join(".qubmango", "index.yaml")
@@ -352,60 +327,59 @@ func (p *gitProvider) registerInIndexFile(
 		os.MkdirAll(filepath.Dir(inRepoFolderPath), 0644)
 		os.WriteFile(filepath.Base(inRepoFolderPath), nil, 0644)
 	} else if err != nil {
-		return fmt.Errorf("find qubmango index file: %w", err)
+		return "", fmt.Errorf("find qubmango index file: %w", err)
 	}
 
 	// Fetch index file from the local repo
 	fileBytes, err := os.ReadFile(inRepoFolderPath)
 	if err != nil {
-		return fmt.Errorf("read qubmango index file: %w", err)
+		return "", fmt.Errorf("read qubmango index file: %w", err)
 	}
 
 	var indexManifest governancev1alpha1.QubmangoIndex
 	if err := yaml.Unmarshal([]byte(fileBytes), &indexManifest); err != nil {
-		return fmt.Errorf("unmarshal qubmango index file: %w", err)
+		return "", fmt.Errorf("unmarshal qubmango index file: %w", err)
 	}
 
 	// Check, if index with such alias already exist. Alias should be unique
 	idx := slices.IndexFunc(indexManifest.Spec.Policies, func(policy governancev1alpha1.QubmangoPolicy) bool {
-		return policy.Alias == indexName
+		return policy.Alias == governanceIndexAlias
 	})
 	if idx != -1 {
-		return fmt.Errorf("index %s already exist", indexName)
+		return "", fmt.Errorf("index %s already exist", governanceIndexAlias)
 	}
 
 	// Append new policy and add to staging tree
 	policy := governancev1alpha1.QubmangoPolicy{
-		Alias:          indexName,
+		Alias:          governanceIndexAlias,
 		GovernancePath: governanceFolder,
 	}
 	indexManifest.Spec.Policies = append(indexManifest.Spec.Policies, policy)
 	if _, err = worktree.Add(inRepoFolderPath); err != nil {
-		return fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
+		return "", fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
 	}
 
-	return nil
+	// Created signed commit and push it to the remote repo
+	commitMsg := fmt.Sprintf("create entry in .governance/index.yaml file for %s", governanceIndexAlias)
+	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, gpgEntity)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("commit and push: %w", err)
+	}
+
+	return commitHash, nil
 }
 
 func (p *gitProvider) pushWorkflow(
 	ctx context.Context,
 	files []fileToPush,
 	commitMsg string,
-	indexRegistration func(worktree *git.Worktree, gpgEntity *openpgp.Entity) error,
 ) (string, error) {
 	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
 	if err != nil {
 		return "", fmt.Errorf("sync and lock: %w", err)
 	}
 	defer p.mu.Unlock()
-
-	// Execute manipulations over index file, if there is any passed
-	if indexRegistration != nil {
-		if err := indexRegistration(worktree, gpgEntity); err != nil {
-			rollback()
-			return "", fmt.Errorf("index registration failed: %w", err)
-		}
-	}
 
 	// Sign and add the governance files to the governance folder in the worktree
 	if err := p.stageGovernanceFiles(worktree, gpgEntity, files); err != nil {

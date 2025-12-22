@@ -22,7 +22,6 @@ import (
 
 type GitRepository struct {
 	// +required
-	HTTPURL string `json:"httpUrl,omitempty"`
 	SSHURL string `json:"sshUrl,omitempty"`
 }
 
