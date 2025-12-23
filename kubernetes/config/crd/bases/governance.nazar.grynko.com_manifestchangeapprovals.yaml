@@ -66,10 +66,10 @@ spec:
                 type: array
               gitRepository:
                 properties:
-                  url:
+                  sshUrl:
                     type: string
                 required:
-                - url
+                - sshUrl
                 type: object
               governors:
                 description: Required until GovernorsRef is implemented.

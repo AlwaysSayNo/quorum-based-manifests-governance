@@ -201,7 +201,6 @@ func main() {
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
 		RepoManager: repoManager,
-		Notifier:    slacknotifier.NewNotifier(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)
@@ -249,6 +248,7 @@ func main() {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 		RepoManager: repoManager,
+		Notifier:    slacknotifier.NewNotifier(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
 		os.Exit(1)

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"time"
 	"strings"
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
@@ -40,14 +41,12 @@ import (
 
 const (
 	GovernanceFinalizer = "governance.nazar.grynko.com/finalizer"
+	QubmangoOperationalFolder = ".qubmango"
+	QubmangoOperationalFile = QubmangoOperationalFolder + "/index.yaml"
 )
 
 type RepositoryManager interface {
 	GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (repomanager.GitRepository, error)
-}
-
-type Notifier interface {
-	NotifyGovernors(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest) error
 }
 
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
@@ -55,7 +54,6 @@ type ManifestRequestTemplateReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
-	Notifier    Notifier
 	logger      logr.Logger
 }
 
@@ -101,13 +99,13 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
 	// Do on creation actions.
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		return ctrl.Result{}, r.onMRTCreation(ctx, mrt, req)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, r.onMRTCreation(ctx, mrt, req)
 	}
 
 	// Check, if all linked default resources exist in the cluster
 	if err := r.checkDependencies(ctx, mrt); err != nil {
 		r.logger.Error(err, "Failed on dependency check")
-		return ctrl.Result{}, fmt.Errorf("check dependencies: %w", err)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, fmt.Errorf("check dependencies: %w", err)
 	}
 
 	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
@@ -217,7 +215,7 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 
 	// Create entry in the index file
 	governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
-	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, governanceIndexAlias, mrt.Spec.Location.Folder)
+	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, QubmangoOperationalFile, governanceIndexAlias, mrt.Spec.Location.Folder)
 	if err != nil {
 		// TODO: do rollback of the files in the cluster
 		return fmt.Errorf("save initial ManifestSigningRequest and ManifestChangeApproval to repository: %w", err)
@@ -436,68 +434,47 @@ func (r *ManifestRequestTemplateReconciler) startMSRProcess(ctx context.Context,
 		return err
 	}
 
-	updatedMSR := msr.DeepCopy()
-	if err = r.updateMSR(ctx, mrt, updatedMSR, revision, changedFiles); err != nil {
-		r.logger.Error(err, "Failed to construct new MSR object")
-		return err
-	}
+	// Created updated version of MSR with higher version
+	updatedMSR := r.getMSRWithNewVersion(ctx, mrt, msr, revision, changedFiles)
 
-	// Create MSR file and push to the Git Repository
-	repositoryMSR := r.createRepositoryMSR(updatedMSR)
-	msrCommit, err := r.repository(ctx, mrt).PushMSR(ctx, &repositoryMSR)
-	if err != nil {
-		r.logger.Error(err, "Failed to push MSR manifest to repository")
-		return err
-	}
-	r.logger.Info("Successfully pushed MSR manifest to repository")
-
-	// Update MSR spec in cluster
+	// Update MSR spec in cluster. Trigger so push of new MSR to git repository from MSR controller
 	if err := r.Update(ctx, updatedMSR); err != nil {
-		r.logger.Error(err, "Failed to update MSR spec in cluster after successful git push")
-		return fmt.Errorf("after successful MSR git push: %w", err)
+		r.logger.Error(err, "Failed to update MSR spec in cluster after successful revision processed")
+		return fmt.Errorf("after successful MSR revision processed: %w", err)
 	}
 
 	// Point to the new MSR commit and pop revision from the queue
-	mrt.Status.LastObservedCommitHash = msrCommit
-	mrt.Status.RevisionsQueue = mrt.Status.RevisionsQueue[1:]
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed to update MRT status after MSR creation")
-		return err
-	}
-	r.logger.Info("Successfully updated MRT status")
-
-	// Notify the Governors
-	if err := r.Notifier.NotifyGovernors(ctx, mrt, msr); err != nil {
-		// Non-critical error. Log it.
-		r.logger.Error(err, "Failed to send notifications to governors")
-	} else {
-		r.logger.Info("Successfully sent notifications to governors")
+	mrt.Status.LastObservedCommitHash = revision
+	if err := r.popFromRevisionQueueWithResult(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to update MSR spec in cluster after successful revision processed")
+		return fmt.Errorf("update ManifestRequestTemplate status after revision %s processed: %w", revision, err)
 	}
 
 	r.logger.Info("Finished MSR process successfully")
 	return nil
 }
 
-func (r *ManifestRequestTemplateReconciler) updateMSR(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest, revision string, changedFiles []governancev1alpha1.FileChange) error {
+func (r *ManifestRequestTemplateReconciler) getMSRWithNewVersion(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, msr *governancev1alpha1.ManifestSigningRequest, revision string, changedFiles []governancev1alpha1.FileChange) *governancev1alpha1.ManifestSigningRequest {
 	mrtSpecCpy := mrt.Spec.DeepCopy()
+	updatedMSR := msr.DeepCopy()
 
-	msr.Spec.Version = msr.Spec.Version + 1
-	msr.Spec.MRT = governancev1alpha1.VersionedManifestRef{
+	updatedMSR.Spec.Version = updatedMSR.Spec.Version + 1
+	updatedMSR.Spec.MRT = governancev1alpha1.VersionedManifestRef{
 		Name:      mrt.ObjectMeta.Name,
 		Namespace: mrt.ObjectMeta.Namespace,
 		Version:   mrt.Spec.Version,
 	}
-	msr.Spec.PublicKey = mrtSpecCpy.PGP.PublicKey
-	msr.Spec.GitRepository = governancev1alpha1.GitRepository{
+	updatedMSR.Spec.PublicKey = mrtSpecCpy.PGP.PublicKey
+	updatedMSR.Spec.GitRepository = governancev1alpha1.GitRepository{
 		SSHURL: mrt.Spec.GitRepository.SSHURL,
 	}
-	msr.Spec.Location = *mrtSpecCpy.Location.DeepCopy()
-	msr.Spec.Changes = changedFiles
-	msr.Spec.Governors = *mrtSpecCpy.Governors.DeepCopy()
-	msr.Spec.Require = *mrtSpecCpy.Require.DeepCopy()
-	msr.Spec.Status = governancev1alpha1.InProgress
+	updatedMSR.Spec.Location = *mrtSpecCpy.Location.DeepCopy()
+	updatedMSR.Spec.Changes = changedFiles
+	updatedMSR.Spec.Governors = *mrtSpecCpy.Governors.DeepCopy()
+	updatedMSR.Spec.Require = *mrtSpecCpy.Require.DeepCopy()
+	updatedMSR.Spec.Status = governancev1alpha1.InProgress
 
-	return nil
+	return updatedMSR
 }
 
 func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
@@ -522,12 +499,13 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 			continue
 		}
 
-		// Skip files inside of governanceFolder
+		// Skip files inside of governanceFolder or operational folder
 		// TODO: we suppose, that MRT is created outside of governanceFolder. Otherwise, it will be skipped.
 		// TODO: on creation check, that MSR is not created inside of governanceFolder. Or improve the logic
 		isGovernanceFile := strings.HasPrefix(filePath, governanceFolder+"/")
+		isQubmangoOperationalFile := strings.HasPrefix(filePath, QubmangoOperationalFolder+"/")
 
-		if isGovernanceFile {
+		if isGovernanceFile || isQubmangoOperationalFile {
 			continue
 		}
 

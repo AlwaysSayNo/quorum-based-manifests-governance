@@ -314,24 +314,29 @@ func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.Manif
 }
 
 // InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value 
-func (p *gitProvider) InitializeGovernance(ctx context.Context, governanceIndexAlias, governanceFolder string) (string, error) {
+func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error) {
 	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
 	if err != nil {
 		return "", fmt.Errorf("sync and lock: %w", err)
 	}
 	defer p.mu.Unlock()
 
-	// Create index file if doesn't exist yet
-	inRepoFolderPath := filepath.Join(".qubmango", "index.yaml")
-	if _, err := os.Stat(inRepoFolderPath); os.IsNotExist(err) {
-		os.MkdirAll(filepath.Dir(inRepoFolderPath), 0644)
-		os.WriteFile(filepath.Base(inRepoFolderPath), nil, 0644)
+	// Check correctness of operational file name (a yaml file with non-empty name)
+	fileName, found := strings.CutSuffix(filepath.Base(operationalFileLocation), "yaml")
+	if !found || fileName == ""  {
+		return "", fmt.Errorf("incorrect operational .yaml file name %s", filepath.Base(operationalFileLocation))
+	}
+
+	// Create index file if it doesn't exist yet
+	if _, err := os.Stat(operationalFileLocation); os.IsNotExist(err) {
+		os.MkdirAll(filepath.Dir(operationalFileLocation), 0644)
+		os.WriteFile(filepath.Base(operationalFileLocation), nil, 0644)
 	} else if err != nil {
 		return "", fmt.Errorf("find qubmango index file: %w", err)
 	}
 
-	// Fetch index file from the local repo
-	fileBytes, err := os.ReadFile(inRepoFolderPath)
+	// Fetch index file from the folder
+	fileBytes, err := os.ReadFile(operationalFileLocation)
 	if err != nil {
 		return "", fmt.Errorf("read qubmango index file: %w", err)
 	}
@@ -355,7 +360,7 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, governanceIndexA
 		GovernancePath: governanceFolder,
 	}
 	indexManifest.Spec.Policies = append(indexManifest.Spec.Policies, policy)
-	if _, err = worktree.Add(inRepoFolderPath); err != nil {
+	if _, err = worktree.Add(operationalFileLocation); err != nil {
 		return "", fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
 	}
 

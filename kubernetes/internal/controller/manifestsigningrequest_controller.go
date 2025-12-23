@@ -34,11 +34,16 @@ import (
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
+type Notifier interface {
+	NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
+}
+
 // ManifestSigningRequestReconciler reconciles a ManifestSigningRequest object
 type ManifestSigningRequestReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
+	Notifier    Notifier
 	logger      logr.Logger
 }
 
@@ -94,7 +99,7 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	// If the spec's version is newer - reconcile status
 	if msr.Spec.Version > latestHistoryVersion {
 		r.logger.Info("Detected new version in spec, updating status history", "specVersion", msr.Spec.Version, "statusVersion", latestHistoryVersion)
-		return ctrl.Result{}, r.saveNewHistoryRecord(ctx, msr)
+		return ctrl.Result{}, r.handleNewMSRChange(ctx, req, msr)
 	}
 
 	// TODO: Signature Observer logic
@@ -125,7 +130,7 @@ func (r *ManifestSigningRequestReconciler) finzalize(ctx context.Context, msr *g
 func (r *ManifestSigningRequestReconciler) onMSRCreation(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) error { // TODO: be transactional
 	r.logger.Info("Initializing new ManifestSigningRequest")
 
-	if err := r.saveInRepository(ctx, msr, req); err != nil {
+	if err := r.saveInRepository(ctx, msr); err != nil {
 		// If setup fails, we return the error to retry. We don't add the finalizer yet
 		r.logger.Error(err, "Failed to save initial ManifestSigningRequest in repository")
 		return fmt.Errorf("save initial ManifestSigningRequest in repository: %w", err)
@@ -151,7 +156,35 @@ func (r *ManifestSigningRequestReconciler) onMSRCreation(ctx context.Context, ms
 	return nil
 }
 
-func (r *ManifestSigningRequestReconciler) saveInRepository(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) error {
+func (r *ManifestSigningRequestReconciler) handleNewMSRChange(ctx context.Context, req ctrl.Request, msr *governancev1alpha1.ManifestSigningRequest) error {
+	r.logger.Info("Handle new MSR spec change")
+
+	// Save new MSR in repository
+	if err := r.saveInRepository(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to save ManifestSigningRequest in repository")
+		return fmt.Errorf("save ManifestSigningRequest in repository: %w", err)
+	}
+
+	// Add new entry to MSR history
+	if err := r.saveNewHistoryRecord(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to save history record for initial ManifestSigningRequest")
+		return fmt.Errorf("save history record for initial ManifestSigningRequest")
+	}
+	r.logger.Info("Successfully updated MRT status")
+
+	// Notify the Governors
+	if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
+		// Non-critical error. Log it.
+		r.logger.Error(err, "Failed to send notifications to governors")
+	} else {
+		r.logger.Info("Successfully sent notifications to governors")
+	}
+	
+	r.logger.Info("Finished MSR spec change")
+	return nil
+}
+
+func (r *ManifestSigningRequestReconciler) saveInRepository(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error {
 	repositoryMSR := r.createRepositoryMSR(msr)
 	if _, err := r.repository(ctx, msr).PushMSR(ctx, &repositoryMSR); err != nil {
 		r.logger.Error(err, "Failed to push initial ManifestSigningRequest in repository")
