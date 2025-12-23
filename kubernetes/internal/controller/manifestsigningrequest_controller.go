@@ -130,26 +130,26 @@ func (r *ManifestSigningRequestReconciler) finzalize(ctx context.Context, msr *g
 func (r *ManifestSigningRequestReconciler) onMSRCreation(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) error { // TODO: be transactional
 	r.logger.Info("Initializing new ManifestSigningRequest")
 
+	r.logger.Info("Start saving initial MSR in repository")
 	if err := r.saveInRepository(ctx, msr); err != nil {
 		// If setup fails, we return the error to retry. We don't add the finalizer yet
 		r.logger.Error(err, "Failed to save initial ManifestSigningRequest in repository")
 		return fmt.Errorf("save initial ManifestSigningRequest in repository: %w", err)
 	}
-
-	if err := r.saveNewHistoryRecord(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed to save history record for initial ManifestSigningRequest")
-		return fmt.Errorf("save history record for initial ManifestSigningRequest")
-	}
+	r.logger.Info("Finish saving initial MSR in repository")
 
 	// Mark MSR as set up. Take new MSR
-	msr = &governancev1alpha1.ManifestSigningRequest{}
-	if err := r.Get(ctx, req.NamespacedName, msr); err != nil {
-		return fmt.Errorf("fetch ManifestSigningRequest for reconcile request: %w", err)
-	}
+	r.logger.Info("Start setting finalizer on the MSR")
+	// Add new initial history record
+	newRecord := r.createNewMSRHistoryRecordFromSpec(&msr.Spec)
+	msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
+
+	// Add finalizer
 	controllerutil.AddFinalizer(msr, GovernanceFinalizer)
 	if err := r.Update(ctx, msr); err != nil {
 		return fmt.Errorf("add finalizer: %w", err)
 	}
+	r.logger.Info("Finish setting finalizer on the MSR")
 
 	r.logger.Info("Successfully finalized ManifestSigningRequest")
 
@@ -159,18 +159,21 @@ func (r *ManifestSigningRequestReconciler) onMSRCreation(ctx context.Context, ms
 func (r *ManifestSigningRequestReconciler) handleNewMSRChange(ctx context.Context, req ctrl.Request, msr *governancev1alpha1.ManifestSigningRequest) error {
 	r.logger.Info("Handle new MSR spec change")
 
+	r.logger.Info("Start saving initial MSR in repository")
 	// Save new MSR in repository
 	if err := r.saveInRepository(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to save ManifestSigningRequest in repository")
 		return fmt.Errorf("save ManifestSigningRequest in repository: %w", err)
 	}
+	r.logger.Info("Finish saving initial MSR in repository")
 
+	r.logger.Info("Start adding initial history record")
 	// Add new entry to MSR history
 	if err := r.saveNewHistoryRecord(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to save history record for initial ManifestSigningRequest")
 		return fmt.Errorf("save history record for initial ManifestSigningRequest")
 	}
-	r.logger.Info("Successfully updated MRT status")
+	r.logger.Info("Finish adding initial history record")
 
 	// Notify the Governors
 	if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {

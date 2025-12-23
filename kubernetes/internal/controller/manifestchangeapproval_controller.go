@@ -124,26 +124,26 @@ func (r *ManifestChangeApprovalReconciler) finzalize(ctx context.Context, mca *g
 func (r *ManifestChangeApprovalReconciler) onMCACreation(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) error { // TODO: be transactional
 	r.logger.Info("Initializing new ManifestChangeApproval")
 
+	r.logger.Info("Start saving initial MCA in repository")
 	if err := r.saveInRepository(ctx, mca, req); err != nil {
 		// If setup fails, we return the error to retry. We don't add the finalizer yet
 		r.logger.Error(err, "Failed to save initial ManifestChangeApproval in repository")
 		return fmt.Errorf("save initial ManifestChangeApproval in repository: %w", err)
 	}
-
-	if err := r.saveNewHistoryRecord(ctx, mca); err != nil {
-		r.logger.Error(err, "Failed to save history record for initial ManifestChangeApproval")
-		return fmt.Errorf("save history record for initial ManifestChangeApproval")
-	}
+	r.logger.Info("Finish saving initial MCA in repository")
 
 	// Mark MCA as set up. Take new MCA
-	mca = &governancev1alpha1.ManifestChangeApproval{}
-	if err := r.Get(ctx, req.NamespacedName, mca); err != nil {
-		return fmt.Errorf("fetch ManifestChangeApproval for reconcile request: %w", err)
-	}
+	r.logger.Info("Start setting finalizer on the MCA")
+	// Add new initial history record
+	newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
+	mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
+
+	// Add finalizer
 	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
 	if err := r.Update(ctx, mca); err != nil {
 		return fmt.Errorf("add finalizer: %w", err)
 	}
+	r.logger.Info("Finish setting finalizer on the MCA")
 
 	r.logger.Info("Successfully finalized ManifestChangeApproval")
 

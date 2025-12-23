@@ -99,7 +99,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
 	// Do on creation actions.
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, r.onMRTCreation(ctx, mrt, req)
+		return ctrl.Result{}, r.onMRTCreation(ctx, mrt, req)
 	}
 
 	// Check, if all linked default resources exist in the cluster
@@ -144,45 +144,48 @@ func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *
 func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) error {
 	r.logger.Info("Initializing new ManifestRequestTemplate")
 
-	if err := r.createLinkedDefaultResources(ctx, mrt, req); err != nil {
+	r.logger.Info("Start creating default linked resources")
+	initialCommitHash, err := r.createLinkedDefaultResources(ctx, mrt, req)
+	if err != nil {
 		// If setup fails, we return the error to retry. We don't add the finalizer yet
 		return fmt.Errorf("create default linked resources: %w", err)
 	}
+	r.logger.Info("Finish creating default linked resources")
 
 	// Mark MRT as set up. Take new MRT
-	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
-		r.logger.Error(err, "Failed to get ManifestRequestTemplate")
-		return fmt.Errorf("while fetching ManifestRequestTemplate after creating default resources: %w", err)
-	}
+	r.logger.Info("Start setting finalizer on the MRT")
+	// Add new initial history record
 	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
+	mrt.Status.LastObservedCommitHash = initialCommitHash
 	if err := r.Update(ctx, mrt); err != nil {
 		return fmt.Errorf("add finalizer: %w", err)
 	}
+	r.logger.Info("Finish setting finalizer on the MRT")
 
 	r.logger.Info("Successfully finalized ManifestRequestTemplate")
 
 	return nil
 }
 
-// createLinkedDefaultResources performs one-time setup to create linked default resources associated with this MRT.
-func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) error {
+// createLinkedDefaultResources performs one-time setup to create linked default resources associated with this MRT. Return initial commit back
+func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) (string, error) {
 	r.logger.Info("Creating dependent MSR and MCA resources")
 
 	application, err := r.getApplication(ctx, mrt)
 	if err != nil {
-		return fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
+		return "", fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
 	}
 
 	// Fetch the latest revision from the repository
 	revision, err := r.repository(ctx, mrt).GetLatestRevision(ctx)
 	if err != nil {
-		return fmt.Errorf("fetch latest commit from the repository: %w", err)
+		return "", fmt.Errorf("fetch latest commit from the repository: %w", err)
 	}
 
 	// Fetch all changed files in the repository, that where created before governance process
 	fileChanges, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision, application.Spec.Source.Path)
 	if err != nil {
-		return fmt.Errorf("fetch changes between init commit and %s: %w", revision, err)
+		return "", fmt.Errorf("fetch changes between init commit and %s: %w", revision, err)
 	}
 
 	// Create default MSR
@@ -190,12 +193,12 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	// Set MRT as MSR owner
 	if err := ctrl.SetControllerReference(mrt, msr, r.Scheme); err != nil {
 		r.logger.Error(err, "Failed to set owner reference on MSR")
-		return fmt.Errorf("while setting controllerReference for ManifestSigningRequest: %w", err)
+		return "", fmt.Errorf("while setting controllerReference for ManifestSigningRequest: %w", err)
 	}
 	if err := r.Create(ctx, msr); err != nil {
 		if !errors.IsAlreadyExists(err) {
 			r.logger.Error(err, "Failed to create initial MSR")
-			return fmt.Errorf("while creating default ManifestSigningRequest: %w", err)
+			return "", fmt.Errorf("while creating default ManifestSigningRequest: %w", err)
 		}
 	}
 
@@ -204,12 +207,12 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	// Set MRT as MCA owner
 	if err := ctrl.SetControllerReference(mrt, mca, r.Scheme); err != nil {
 		r.logger.Error(err, "Failed to set owner reference on MCA")
-		return fmt.Errorf("while setting controllerReference for ManifestChangeApproval: %w", err)
+		return "", fmt.Errorf("while setting controllerReference for ManifestChangeApproval: %w", err)
 	}
 	if err := r.Create(ctx, mca); err != nil {
 		if !errors.IsAlreadyExists(err) {
 			r.logger.Error(err, "Failed to create initial MCA")
-			return fmt.Errorf("while creating default ManifestChangeApproval: %w", err)
+			return "", fmt.Errorf("while creating default ManifestChangeApproval: %w", err)
 		}
 	}
 
@@ -218,21 +221,10 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx con
 	commitHash, err := r.repository(ctx, mrt).InitializeGovernance(ctx, QubmangoOperationalFile, governanceIndexAlias, mrt.Spec.Location.Folder)
 	if err != nil {
 		// TODO: do rollback of the files in the cluster
-		return fmt.Errorf("save initial ManifestSigningRequest and ManifestChangeApproval to repository: %w", err)
+		return "", fmt.Errorf("save initial ManifestSigningRequest and ManifestChangeApproval to repository: %w", err)
 	}
 
-	// Update MRT
-	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
-		r.logger.Error(err, "Failed to get ManifestRequestTemplate")
-		return fmt.Errorf("while fetching ManifestRequestTemplate after save: %w", err)
-	}
-	mrt.Status.LastObservedCommitHash = commitHash
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed to update initial MRT status")
-		return fmt.Errorf("while updating initial ManifestRequestTemplate status: %w", err)
-	}
-
-	return nil
+	return commitHash, nil
 }
 
 func (r *ManifestRequestTemplateReconciler) buildInitialMSR(

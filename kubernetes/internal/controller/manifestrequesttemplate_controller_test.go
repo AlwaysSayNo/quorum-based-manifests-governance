@@ -18,7 +18,7 @@ package controller_test
 
 import (
 	"errors"
-	// "fmt"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -291,85 +291,83 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		})
 
 		// TODO: somehow it breaks some tests
-		// It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
-		// 	// SETUP
-		// 	// Mock manager and repository calls
-		// 	mockLatestRevision := ""
-		// 	mockChangedFiles := []governancev1alpha1.FileChange{
-		// 		{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
-		// 	}
+		It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
+			// SETUP
+			// Mock manager and repository calls
+			mockLatestRevision := ""
+			mockChangedFiles := []governancev1alpha1.FileChange{
+				{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
+			}
 
-		// 	// Without AnyTimes
-		// 	mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
-		// 	mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(mockLatestRevision, nil).AnyTimes()
-		// 	mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", mockLatestRevision, "app-manifests").Return(mockChangedFiles, nil).AnyTimes()
+			// Without AnyTimes
+			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
+			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(mockLatestRevision, nil).AnyTimes()
+			mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", mockLatestRevision, "app-manifests").Return(mockChangedFiles, nil).AnyTimes()
+			mockRepo.EXPECT().InitializeGovernance(gomock.Any(), ".qubmango/index.yaml", gomock.Any(), gomock.Any()).Return("abc123def456", nil).AnyTimes()
 
-		// 	// Create Application before MRT
-		// 	app := &defaultApp
-		// 	Expect(k8sClient.Create(ctx, app)).Should(Succeed())
+			// Create Application before MRT
+			app := &defaultApp
+			Expect(k8sClient.Create(ctx, app)).Should(Succeed())
 
-		// 	// Create MRT
-		// 	mrt := &defaultMRT
-		// 	Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+			// Create MRT
+			mrt := &defaultMRT
+			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
-		// 	// ACT + ASSERT
-		// 	// Check MRT exists
-		// 	By("ensuring the finalizer is added")
-		// 	Eventually(func() []string {
-		// 		updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-		// 		_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
-		// 		return updatedMRT.Finalizers
-		// 	}, timeout, interval).Should(ContainElement(MRTFinalizer))
+			// ACT + ASSERT
+			// Check MRT exists
+			By("ensuring the finalizer is added")
+			Eventually(func() []string {
+				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+				return updatedMRT.Finalizers
+			}, timeout, interval).Should(ContainElement(GovernanceFinalizer))
 
-		// 	// Check MSR exists
-		// 	By("ensuring the default MSR is created")
-		// 	createdMSR := &governancev1alpha1.ManifestSigningRequest{}
-		// 	Eventually(func() error {
-		// 		return k8sClient.Get(ctx, types.NamespacedName{Name: MSRName, Namespace: governanceNamespace.Name}, createdMSR)
-		// 	}, timeout, interval).Should(Succeed())
-		// 	Expect(createdMSR.Spec.Changes).To(HaveLen(1))
-		// 	Expect(createdMSR.Spec.Changes[0].Name).To(Equal("my-app"))
-		// 	Expect(createdMSR.OwnerReferences).To(HaveLen(1), "MSR should be owned by the MRT")
-		// 	Expect(createdMSR.OwnerReferences[0].Name).To(Equal(MRTName))
-		// 	Expect(createdMSR.Spec.Version).To(Equal(0)) // expect version 0
-		// 	Expect(createdMSR.Spec.MRT.Name).To(Equal(MRTName))
-		// 	Expect(createdMSR.Spec.MRT.Namespace).To(Equal(governanceNamespace.Name))
-		// 	Expect(createdMSR.Spec.MRT.Version).To(Equal(defaultMRT.Spec.Version))
-		// 	Expect(createdMSR.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
-		// 	Expect(createdMSR.Spec.GitRepository.URL).To(Equal(TestRepoURL))
-		// 	Expect(createdMSR.Spec.Status).To(Equal(governancev1alpha1.Approved))
-		// 	Expect(createdMSR.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
-		// 	Expect(createdMSR.Spec.Require).To(Equal(defaultMRT.Spec.Require))
-		// 	Expect(createdMSR.Status.RequestHistory).To(HaveLen(1))
+			// Check MSR exists
+			By("ensuring the default MSR is created")
+			createdMSR := &governancev1alpha1.ManifestSigningRequest{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: MSRName, Namespace: governanceNamespace.Name}, createdMSR)
+			}, timeout, interval).Should(Succeed())
+			Expect(createdMSR.Spec.Changes).To(HaveLen(1))
+			Expect(createdMSR.Spec.Changes[0].Name).To(Equal("my-app"))
+			Expect(createdMSR.OwnerReferences).To(HaveLen(1), "MSR should be owned by the MRT")
+			Expect(createdMSR.OwnerReferences[0].Name).To(Equal(MRTName))
+			Expect(createdMSR.Spec.Version).To(Equal(0)) // expect version 0
+			Expect(createdMSR.Spec.MRT.Name).To(Equal(MRTName))
+			Expect(createdMSR.Spec.MRT.Namespace).To(Equal(governanceNamespace.Name))
+			Expect(createdMSR.Spec.MRT.Version).To(Equal(defaultMRT.Spec.Version))
+			Expect(createdMSR.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
+			Expect(createdMSR.Spec.GitRepository.SSHURL).To(Equal(TestRepoURL))
+			Expect(createdMSR.Spec.Status).To(Equal(governancev1alpha1.Approved))
+			Expect(createdMSR.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
+			Expect(createdMSR.Spec.Require).To(Equal(defaultMRT.Spec.Require))
 
-		// 	// Check MCA exists
-		// 	By("ensuring the default MCA is created")
-		// 	createdMCA := &governancev1alpha1.ManifestChangeApproval{}
-		// 	Eventually(func() error {
-		// 		return k8sClient.Get(ctx, types.NamespacedName{Name: MCAName, Namespace: governanceNamespace.Name}, createdMCA)
-		// 	}, timeout, interval).Should(Succeed())
-		// 	By(fmt.Sprintf("%#v\n", createdMCA.Spec))
-		// 	By(fmt.Sprintf("%#v\n", createdMCA.Status))
-		// 	Expect(createdMCA.Status.LastApprovedCommitSHA).To(Equal(mockLatestRevision))
-		// 	Expect(createdMCA.OwnerReferences).To(HaveLen(1), "MCA should be owned by the MRT")
-		// 	Expect(createdMCA.Spec.MRT).To(Equal(createdMSR.Spec.MRT))
-		// 	Expect(createdMCA.Spec.MSR.Name).To(Equal(MSRName))
-		// 	Expect(createdMCA.Spec.MSR.Namespace).To(Equal(governanceNamespace.Name))
-		// 	Expect(createdMCA.Spec.MSR.Version).To(Equal(0))
-		// 	Expect(createdMCA.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
-		// 	Expect(createdMCA.Spec.GitRepository.URL).To(Equal(TestRepoURL))
-		// 	Expect(createdMCA.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
-		// 	Expect(createdMCA.Spec.Require).To(Equal(defaultMRT.Spec.Require))
-		// 	Expect(createdMCA.Spec.Changes).To(Equal(createdMSR.Spec.Changes))
-		// 	Expect(createdMCA.Status.ApprovalHistory).To(HaveLen(1))
+			// Check MCA exists
+			By("ensuring the default MCA is created")
+			createdMCA := &governancev1alpha1.ManifestChangeApproval{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: MCAName, Namespace: governanceNamespace.Name}, createdMCA)
+			}, timeout, interval).Should(Succeed())
+			By(fmt.Sprintf("%#v\n", createdMCA.Spec))
+			By(fmt.Sprintf("%#v\n", createdMCA.Status))
+			Expect(createdMCA.OwnerReferences).To(HaveLen(1), "MCA should be owned by the MRT")
+			Expect(createdMCA.Spec.MRT).To(Equal(createdMSR.Spec.MRT))
+			Expect(createdMCA.Spec.MSR.Name).To(Equal(MSRName))
+			Expect(createdMCA.Spec.MSR.Namespace).To(Equal(governanceNamespace.Name))
+			Expect(createdMCA.Spec.MSR.Version).To(Equal(0))
+			Expect(createdMCA.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
+			Expect(createdMCA.Spec.GitRepository.SSHURL).To(Equal(TestRepoURL))
+			Expect(createdMCA.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
+			Expect(createdMCA.Spec.Require).To(Equal(defaultMRT.Spec.Require))
+			Expect(createdMCA.Spec.Changes).To(Equal(createdMSR.Spec.Changes))
 
-		// 	// Check MRT is updated
-		// 	By("ensuring the MRT status is updated")
-		// 	updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-		// 	Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
-		// 	Expect(updatedMRT.Status.LastObservedCommitHash).To(Equal(mockLatestRevision))
-		// 	Expect(updatedMRT.Status.LastMSRVersion).To(Equal(0)) // expect version 0
-		// })
+			// Check MRT is updated
+			By("ensuring the MRT status is updated")
+			updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+			Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
+			Expect(updatedMRT.Status.LastObservedCommitHash).To(Equal(mockLatestRevision))
+			Expect(updatedMRT.Status.LastMSRVersion).To(Equal(0)) // expect version 0
+		})
 
 		It("should fail reconciliation if the repository provider cannot be initialized", func() {
 			// SETUP
