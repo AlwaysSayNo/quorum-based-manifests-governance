@@ -313,7 +313,7 @@ func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.Manif
 	return p.pushWorkflow(ctx, files, msg)
 }
 
-// InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value 
+// InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value
 func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error) {
 	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
 	if err != nil {
@@ -323,7 +323,7 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 
 	// Check correctness of operational file name (a yaml file with non-empty name)
 	fileName, found := strings.CutSuffix(filepath.Base(operationalFileLocation), "yaml")
-	if !found || fileName == ""  {
+	if !found || fileName == "" {
 		return "", fmt.Errorf("incorrect operational .yaml file name %s", filepath.Base(operationalFileLocation))
 	}
 

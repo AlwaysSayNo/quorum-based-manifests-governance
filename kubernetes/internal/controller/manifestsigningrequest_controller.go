@@ -179,7 +179,7 @@ func (r *ManifestSigningRequestReconciler) handleNewMSRChange(ctx context.Contex
 	} else {
 		r.logger.Info("Successfully sent notifications to governors")
 	}
-	
+
 	r.logger.Info("Finished MSR spec change")
 	return nil
 }

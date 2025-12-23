@@ -1,8 +1,7 @@
-package repository
+package repository_test
 
 import (
 	"context"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -11,59 +10,45 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/ssh"
 
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	managermocks "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/mocks"
 )
-
-type dummyGitFactory struct{}
-
-func (d *dummyGitFactory) IdentifyProvider(repoURL string) bool {
-	return strings.Contains(repoURL, "testhub.com")
-}
-func (d *dummyGitFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error) {
-	return &dummyGitRepo{}, nil
-}
-
-type dummyGitRepo struct{}
-
-func (d *dummyGitRepo) Sync(ctx context.Context) error { return nil }
-func (d *dummyGitRepo) HasRevision(ctx context.Context, commit string) (bool, error) {
-	return true, nil
-}
-func (d *dummyGitRepo) GetLatestRevision(ctx context.Context) (string, error) { return "rev", nil }
-func (d *dummyGitRepo) GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error) {
-	return nil, nil
-}
-func (d *dummyGitRepo) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error) {
-	return "", nil
-}
-func (d *dummyGitRepo) PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error) {
-	return "", nil
-}
 
 var _ = Describe("Repository Manager", func() {
 
 	const (
 		MRTName                    = "test-mrt"
-		ArgoCDApplicationName      = "test-argocd-application"
-		ArgoCDApplicationNamespace = "argocd"
 		SSHSecretName              = "test-git-creds"
 		PGPSecretName              = "test-pgp-cred-name"
 		TestRepoURL                = "git@testhub.com:TestUser/test-repo.git"
 	)
 
 	var (
-		ctx           context.Context
-		testNamespace *corev1.Namespace
-		manager       *Manager
+		ctx             context.Context
+		mockCtrl        *gomock.Controller
+		mockRepoFactory *managermocks.MockGitRepositoryFactory
+		mockRepo        *managermocks.MockGitRepository
+		testNamespace   *corev1.Namespace
+		repoManager     *manager.Manager
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
+
+		// Setup
+		mockCtrl = gomock.NewController(GinkgoT())
+		mockRepoFactory = managermocks.NewMockGitRepositoryFactory(mockCtrl)
+		mockRepo = managermocks.NewMockGitRepository(mockCtrl)
+
+		mockRepoFactory.EXPECT().IdentifyProvider(gomock.Any()).Return(true).AnyTimes()
+		mockRepoFactory.EXPECT().New(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
 
 		testNamespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -72,7 +57,7 @@ var _ = Describe("Repository Manager", func() {
 		}
 		Expect(k8sClient.Create(ctx, testNamespace)).Should(Succeed())
 
-		manager = NewManager(k8sClient, GinkgoT().TempDir())
+		repoManager = manager.NewManager(k8sClient, GinkgoT().TempDir())
 	})
 
 	AfterEach(func() {
@@ -81,7 +66,7 @@ var _ = Describe("Repository Manager", func() {
 	})
 
 	It("should fail if RepoURL is empty", func() {
-		// --- SETUP ---
+		// SETUP
 		// Create a dummy MRT resource
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
@@ -90,81 +75,81 @@ var _ = Describe("Repository Manager", func() {
 			},
 
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: ""},
 			},
 		}
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("repository URL is not defined in MRT spec"))
 		Expect(provider).Should(BeNil())
 	})
 
 	It("should fail if provider list is empty", func() {
-		// --- SETUP ---
+		// SETUP
 
-		// Create MRT referencing that Application
+		// Create MRT
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      MRTName,
 				Namespace: testNamespace.Name,
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
-		// Ensure manager has no providers → providerExists will be false
-		manager.providers = nil
+		// Ensure manager has no providers -> providerExists will be false
+		// manager.providers = nil
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("no supported git provider for URL"))
 		Expect(provider).Should(BeNil())
 	})
 
-	It("should fail if provider does not exist for the given RepoURL", func() {
-		// --- SETUP ---
+	It("should fail if pgpSecrets information is nil", func() {
+		// SETUP
 
-		// Create MRT referencing that Application
+		// Inject dummy provider
+		repoManager.Register(mockRepoFactory)
+
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      MRTName,
 				Namespace: testNamespace.Name,
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: "git@nonexitstinghub.com:/TestUser/test-repo.git"},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
-		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+		// ACT
 
-		// --- ACT ---
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
-
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("no supported git provider for URL"))
+		Expect(err.Error()).To(ContainSubstring("pgp information is nil"))
 		Expect(provider).Should(BeNil())
 	})
 
 	It("should fail if pgpSecrets resource does not exist", func() {
-		// --- SETUP ---
+		// SETUP
 
 		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+		repoManager.Register(mockRepoFactory)
 
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
@@ -179,45 +164,18 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("failed to fetch pgp secret"))
-		Expect(provider).Should(BeNil())
-	})
-
-	It("should fail if pgpSecrets information is nil", func() {
-		// --- SETUP ---
-
-		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
-
-		mrt := &governancev1alpha1.ManifestRequestTemplate{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      MRTName,
-				Namespace: testNamespace.Name,
-			},
-			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
-			},
-		}
-
-		// --- ACT ---
-
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
-
-		// --- VERIFY ---
-
-		Expect(err).Should(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("pgp information is nil"))
 		Expect(provider).Should(BeNil())
 	})
 
@@ -238,7 +196,7 @@ var _ = Describe("Repository Manager", func() {
 		Expect(k8sClient.Create(ctx, pgpSecret)).Should(Succeed())
 
 		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+		repoManager.Register(mockRepoFactory)
 
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
@@ -259,15 +217,15 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("failed to fetch git secret"))
@@ -291,7 +249,7 @@ var _ = Describe("Repository Manager", func() {
 		Expect(k8sClient.Create(ctx, pgpSecret)).Should(Succeed())
 
 		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+		repoManager.Register(mockRepoFactory)
 
 		mrt := &governancev1alpha1.ManifestRequestTemplate{
 			ObjectMeta: metav1.ObjectMeta{
@@ -306,23 +264,23 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
 
 		Expect(err).Should(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("ssh information is nil"))
 		Expect(provider).Should(BeNil())
 	})
 
-	It("should correctly initialize a provider using secrets from the cluster", func() {
-		// --- SETUP ---
+	It("should fail if provider does not exist for the given RepoURL", func() {
+		// SETUP
 
 		// Create SSH secret
 		privateKey, _, err := generateTestSSHKey()
@@ -372,23 +330,94 @@ var _ = Describe("Repository Manager", func() {
 					},
 					PublicKey: "FAKE_PGP_KEY",
 				},
-				GitRepository: governancev1alpha1.GitRepository{HTTPURL: TestRepoURL},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
 			},
 		}
 
 		// Inject dummy provider
-		manager.providers = []GitRepositoryFactory{&dummyGitFactory{}}
+		mockRepoFactory = managermocks.NewMockGitRepositoryFactory(mockCtrl)
+		mockRepoFactory.EXPECT().IdentifyProvider(gomock.Any()).Return(false).AnyTimes()
+		repoManager.Register(mockRepoFactory)
 
-		// --- ACT ---
+		// ACT
 
-		provider, err := manager.GetProviderForMRT(ctx, mrt)
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
 
-		// --- VERIFY ---
+		// VERIFY
+
+		Expect(err).Should(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no supported git provider for URL"))
+		Expect(provider).Should(BeNil())
+	})
+
+	It("should correctly initialize a provider using secrets from the cluster", func() {
+		// SETUP
+
+		// Create SSH secret
+		privateKey, _, err := generateTestSSHKey()
+		Expect(err).NotTo(HaveOccurred())
+		sshSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      SSHSecretName,
+				Namespace: testNamespace.Name,
+			},
+			StringData: map[string]string{
+				"ssh-privatekey": privateKey,
+				"passphrase":     "",
+			},
+		}
+		Expect(k8sClient.Create(ctx, sshSecret)).Should(Succeed())
+
+		// Create PGP secret
+		pgpSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      PGPSecretName,
+				Namespace: testNamespace.Name,
+			},
+			StringData: map[string]string{
+				"privateKey": "FAKE_PGP_KEY",
+				"passphrase": "FAKE_PASSPHRASE",
+			},
+		}
+		Expect(k8sClient.Create(ctx, pgpSecret)).Should(Succeed())
+
+		// Create MRT
+		mrt := &governancev1alpha1.ManifestRequestTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      MRTName,
+				Namespace: testNamespace.Name,
+			},
+			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
+				SSH: &governancev1alpha1.SSHPrivateKeySecret{
+					SecretsRef: governancev1alpha1.ManifestRef{
+						Name:      SSHSecretName,
+						Namespace: testNamespace.Name,
+					},
+				},
+				PGP: &governancev1alpha1.PGPPrivateKeySecret{
+					SecretsRef: governancev1alpha1.ManifestRef{
+						Name:      PGPSecretName,
+						Namespace: testNamespace.Name,
+					},
+					PublicKey: "FAKE_PGP_KEY",
+				},
+				GitRepository: governancev1alpha1.GitRepository{SSHURL: TestRepoURL},
+			},
+		}
+
+		// Inject dummy provider
+		repoManager.Register(mockRepoFactory)
+
+		// ACT
+
+		provider, err := repoManager.GetProviderForMRT(ctx, mrt)
+
+		// VERIFY
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(provider).NotTo(BeNil())
 
-		_, ok := provider.(*dummyGitRepo)
+		_, ok := provider.(*managermocks.MockGitRepository)
 		Expect(ok).To(BeTrue())
 	})
 })

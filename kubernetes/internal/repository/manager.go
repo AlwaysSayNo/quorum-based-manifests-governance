@@ -42,7 +42,7 @@ type GitRepository interface {
 	// PushMCA commits and pushes the generated MCA manifest to the correct folder in the repo along with its signature.
 	PushMCA(ctx context.Context, msr *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
 
-	// InitializeGovernance creates an entry in the operationalFileLocation .yaml file with governanceIndexAlias as key and governanceFolder as value 
+	// InitializeGovernance creates an entry in the operationalFileLocation .yaml file with governanceIndexAlias as key and governanceFolder as value
 	InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error)
 
 	// PushSignature commits and pushes a governor's signature to the repository.

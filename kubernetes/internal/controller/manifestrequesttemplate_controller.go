@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"time"
 	"strings"
+	"time"
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
@@ -40,9 +40,9 @@ import (
 )
 
 const (
-	GovernanceFinalizer = "governance.nazar.grynko.com/finalizer"
+	GovernanceFinalizer       = "governance.nazar.grynko.com/finalizer"
 	QubmangoOperationalFolder = ".qubmango"
-	QubmangoOperationalFile = QubmangoOperationalFolder + "/index.yaml"
+	QubmangoOperationalFile   = QubmangoOperationalFolder + "/index.yaml"
 )
 
 type RepositoryManager interface {

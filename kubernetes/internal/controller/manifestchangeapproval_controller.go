@@ -73,7 +73,7 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 	if !mca.ObjectMeta.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, r.finzalize(ctx, mca)
 	}
-	
+
 	if _, err := r.repositoryWithError(ctx, mca); err != nil {
 		r.logger.Error(err, "Failed on first repository fetch")
 		return ctrl.Result{}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
@@ -104,7 +104,7 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 // finalize is used for object clean-up on deletion event.
 // So far, it's needed to remove the `initial` finalize annotation.
 func (r *ManifestChangeApprovalReconciler) finzalize(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
-if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
+	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
 		// No custom finalizer is found. Do nothing
 		return nil
 	}
