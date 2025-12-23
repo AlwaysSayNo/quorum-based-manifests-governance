@@ -641,12 +641,13 @@ var _ = Describe("gitProvider GetChangedFiles Method", func() {
 
 var _ = Describe("gitProvider PushMSR Method", func() {
 	var (
-		remotePath    string
-		workspacePath string
-		provider      *gitProvider
-		localPath     string
-		ctx           context.Context
-		dummyMSR      *governancev1alpha1.ManifestSigningRequest
+		remotePath         string
+		workspacePath      string
+		provider           *gitProvider
+		localPath          string
+		ctx                context.Context
+		dummyMSR           *governancev1alpha1.ManifestSigningRequest
+		dummyRepositoryMSR *governancev1alpha1.ManifestSigningRequestManifestObject
 	)
 
 	// Set up a fresh git environment folders and a new provider instance
@@ -662,11 +663,22 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		}
 
 		dummyMSR = &governancev1alpha1.ManifestSigningRequest{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-msr"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-msr", Namespace: "test-ns"},
 			Spec: governancev1alpha1.ManifestSigningRequestSpec{
+				Version:  1,
 				Location: governancev1alpha1.Location{Folder: "governance"},
 			},
 		}
+
+		dummyRepositoryMSR = &governancev1alpha1.ManifestSigningRequestManifestObject{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       dummyMSR.Kind,
+				APIVersion: dummyMSR.APIVersion,
+			},
+			ObjectMeta: governancev1alpha1.ManifestRef{Name: dummyMSR.Name, Namespace: dummyMSR.Namespace},
+			Spec:       *dummyMSR.Spec.DeepCopy(),
+		}
+
 		// Governance folder in the workspace for writing files
 		Expect(os.MkdirAll(filepath.Join(workspacePath, "governance"), 0755)).To(Succeed())
 	})
@@ -748,7 +760,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 	// 		provider.pgpSecrets.Passphrase = "wrong-password"
 
 	// 		// ACT
-	// 		commit, err := provider.PushMSR(ctx, dummyMSR)
+	// 		commit, err := provider.PushMSR(ctx, dummyRepositoryMSR)
 
 	// 		// VERIFY
 	// 		Expect(err).To(HaveOccurred())
@@ -761,21 +773,9 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		It("should successfully create, sign, commit, and push the MSR and signature files", func() {
 			// SETUP
 			provider.pgpSecrets.PrivateKey = testNonEncryptedPgpPrivateKey
-			msrCopy := dummyMSR.DeepCopy()
-			repoObj := &governancev1alpha1.ManifestSigningRequestManifestObject{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       msrCopy.Kind,
-					APIVersion: msrCopy.APIVersion,
-				},
-				ObjectMeta: governancev1alpha1.ManifestRef{
-					Name:      msrCopy.Name,
-					Namespace: msrCopy.Namespace,
-				},
-				Spec: msrCopy.Spec,
-			}
 
 			// ACT
-			pushedCommitHash, err := provider.PushMSR(ctx, repoObj)
+			pushedCommitHash, err := provider.PushMSR(ctx, dummyRepositoryMSR)
 
 			// VERIFY
 			Expect(err).NotTo(HaveOccurred())
@@ -793,8 +793,8 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 			tree, err := commitObj.Tree()
 			Expect(err).NotTo(HaveOccurred())
 
-			msrPath := filepath.Join("governance", "v_0", "test-msr.yaml")
-			sigPath := filepath.Join("governance", "v_0", "test-msr.yaml.sig")
+			msrPath := filepath.Join("governance", "v_1", "test-msr.yaml")
+			sigPath := filepath.Join("governance", "v_1", "test-msr.yaml.sig")
 
 			_, err = tree.File(msrPath)
 			Expect(err).NotTo(HaveOccurred(), "MSR file should exist in the commit")
@@ -831,6 +831,127 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 			latestRevision, err := provider.GetLatestRevision(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(latestRevision).To(Equal(pushedCommitHash))
+		})
+	})
+})
+
+var _ = Describe("gitProvider InitializeGovernance Method", func() {
+	var (
+		remotePath    string
+		workspacePath string
+		provider      *gitProvider
+		localPath     string
+		ctx           context.Context
+	)
+
+	BeforeEach(func() {
+		remotePath, workspacePath = setupTestRepo()
+		localPath = GinkgoT().TempDir()
+		ctx = log.IntoContext(context.Background(), GinkgoLogr)
+
+		provider = &gitProvider{
+			remoteURL: remotePath,
+			localPath: localPath,
+			logger:    GinkgoLogr,
+		}
+		provider.pgpSecrets.PrivateKey = testNonEncryptedPgpPrivateKey
+	})
+
+	const indexFilePath = ".qubmango/index.yaml"
+
+	DescribeTable("with an invalid operational file location",
+		func(location string, expectedError string) {
+			// ACT
+			_, err := provider.InitializeGovernance(ctx, location, "my-alias", "governance/my-app")
+
+			// VERIFY
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(expectedError))
+		},
+		Entry("when the path is just a directory", ".qubmango/", "incorrect operational .yaml file name"),
+		Entry("when the file has a non-yaml extension", ".qubmango/index.txt", "incorrect operational .yaml file name"),
+	)
+
+	Context("when the index file exists and the alias is already taken", func() {
+		It("should return an error", func() {
+			// SETUP
+			// Pre-populate the workspace with an index file containing the alias
+			initialIndexContent := "{apiVersion: governance.nazar.grynko.com/v1alpha1, kind: QubmangoIndex, spec: {policies: [{alias: my-alias, governancePath: /some/old/path}]}}"
+			workspaceRepo, err := git.PlainOpen(workspacePath)
+			Expect(err).NotTo(HaveOccurred())
+			worktree, err := workspaceRepo.Worktree()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(os.MkdirAll(filepath.Join(workspacePath, ".qubmango"), 0755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(workspacePath, indexFilePath), []byte(initialIndexContent), 0644)).To(Succeed())
+
+			_, err = worktree.Add(indexFilePath)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = worktree.Commit("Add initial index", &git.CommitOptions{Author: &object.Signature{Name: "T"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(workspaceRepo.Push(&git.PushOptions{})).To(Succeed())
+
+			// ACT
+			_, err = provider.InitializeGovernance(ctx, indexFilePath, "my-alias", "governance/my-app")
+
+			// VERIFY
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("index my-alias already exist"))
+		})
+	})
+
+	Context("when the index file does not exist", func() {
+		It("should create the file, add the first policy, commit, and push", func() {
+			// SETUP
+			commitHash, err := provider.InitializeGovernance(ctx, indexFilePath, "my-alias", "governance/my-app")
+
+			// VERIFY
+			Expect(err).NotTo(HaveOccurred())
+			Expect(commitHash).NotTo(BeEmpty())
+
+			// Verify the content of the file on the remote
+			remoteRepo, err := git.PlainOpen(remotePath)
+			Expect(err).NotTo(HaveOccurred())
+			commitObj, err := remoteRepo.CommitObject(plumbing.NewHash(commitHash))
+			Expect(err).NotTo(HaveOccurred())
+			file, err := commitObj.File(indexFilePath)
+			Expect(err).NotTo(HaveOccurred())
+
+			content, err := file.Contents()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(content).To(ContainSubstring("alias: my-alias"))
+			Expect(content).To(ContainSubstring("governancePath: governance/my-app"))
+		})
+	})
+
+	Context("when the index file already exists", func() {
+		It("should add a new policy to the existing list, commit, and push", func() {
+			// SETUP
+			// Create the initial file with one entry
+			_, err := provider.InitializeGovernance(ctx, indexFilePath, "alias1", "governance/app1")
+			Expect(err).NotTo(HaveOccurred())
+
+			// ACT
+			// Call it again to add a second entry
+			commitHash, err := provider.InitializeGovernance(ctx, indexFilePath, "alias2", "governance/app2")
+
+			// VERIFY
+			Expect(err).NotTo(HaveOccurred())
+			Expect(commitHash).NotTo(BeEmpty())
+
+			// Verify the content of the file on the remote
+			remoteRepo, err := git.PlainOpen(remotePath)
+			Expect(err).NotTo(HaveOccurred())
+			commitObj, err := remoteRepo.CommitObject(plumbing.NewHash(commitHash))
+			Expect(err).NotTo(HaveOccurred())
+			file, err := commitObj.File(indexFilePath)
+			Expect(err).NotTo(HaveOccurred())
+
+			content, err := file.Contents()
+			Expect(err).NotTo(HaveOccurred())
+			// Check that both the old and new aliases are present
+			Expect(content).To(ContainSubstring("alias: alias1"))
+			Expect(content).To(ContainSubstring("alias: alias2"))
 		})
 	})
 })

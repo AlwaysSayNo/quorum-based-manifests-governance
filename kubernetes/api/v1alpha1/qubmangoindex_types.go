@@ -22,15 +22,15 @@ import (
 
 type QubmangoPolicy struct {
 	// +required
-	Alias string `json:"alias,omitempty"`
+	Alias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 	// +required
-	GovernancePath string `json:"governancePath,omitempty"`
+	GovernancePath string `json:"governancePath,omitempty" yaml:"governancePath,omitempty"`
 }
 
 // QubmangoIndexSpec defines the desired state of QubmangoIndex
 type QubmangoIndexSpec struct {
 	// +optional
-	Policies []QubmangoPolicy `json:"policies"`
+	Policies []QubmangoPolicy `json:"policies" yaml:"policies"`
 }
 
 // QubmangoIndexStatus defines the observed state of QubmangoIndex.
@@ -44,7 +44,7 @@ type QubmangoIndexStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -52,28 +52,28 @@ type QubmangoIndexStatus struct {
 
 // QubmangoIndex is the Schema for the qubmangoindices API
 type QubmangoIndex struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero" yaml:"metadata"`
 
 	// spec defines the desired state of QubmangoIndex
 	// +required
-	Spec QubmangoIndexSpec `json:"spec"`
+	Spec QubmangoIndexSpec `json:"spec" yaml:"spec"`
 
 	// status defines the observed state of QubmangoIndex
 	// +optional
-	Status QubmangoIndexStatus `json:"status,omitzero"`
+	Status QubmangoIndexStatus `json:"status,omitzero" yaml:"status"`
 }
 
 // +kubebuilder:object:root=true
 
 // QubmangoIndexList contains a list of QubmangoIndex
 type QubmangoIndexList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []QubmangoIndex `json:"items"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero" yaml:"metadata"`
+	Items           []QubmangoIndex `json:"items" yaml:"items"`
 }
 
 func init() {

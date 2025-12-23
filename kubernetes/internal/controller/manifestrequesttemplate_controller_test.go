@@ -46,14 +46,13 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		MCAName     = "test-mca"
 		timeout     = time.Second * 10
 		interval    = time.Millisecond * 250
-		TestRepoURL = "https://testhub.com/TestUser/test-repo.git"
+		TestRepoURL = "git@testhub.com:TestUser/test-repo.git"
 	)
 
 	var (
 		mockCtrl            *gomock.Controller
 		mockRepoManager     *controllermocks.MockRepositoryManager
 		mockRepo            *managermocks.MockGitRepository
-		mockNotifier        *controllermocks.MockNotifier
 		governanceNamespace *corev1.Namespace
 		argoCDNamespace     *corev1.Namespace
 		defaultMRT          governancev1alpha1.ManifestRequestTemplate
@@ -70,7 +69,6 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		mockRepoManager = controllermocks.NewMockRepositoryManager(mockCtrl)
 		mockRepo = managermocks.NewMockGitRepository(mockCtrl)
 		mrtReconciler.RepoManager = mockRepoManager
-		mrtReconciler.Notifier = mockNotifier
 
 		defaultInitCommit = "abc123def456"
 		defaultRepoChanges = []governancev1alpha1.FileChange{
@@ -102,6 +100,9 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			},
 			Spec: governancev1alpha1.ManifestRequestTemplateSpec{
 				Version: 1,
+				GitRepository: governancev1alpha1.GitRepository{
+					SSHURL: TestRepoURL,
+				},
 				PGP: &governancev1alpha1.PGPPrivateKeySecret{
 					PublicKey: "FAKE_PGP_KEY",
 					SecretsRef: governancev1alpha1.ManifestRef{
@@ -163,7 +164,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				},
 				PublicKey: defaultMRT.Spec.PGP.PublicKey,
 				GitRepository: governancev1alpha1.GitRepository{
-					URL: defaultApp.Spec.Source.RepoURL,
+					SSHURL: defaultApp.Spec.Source.RepoURL,
 				},
 				Location:  *defaultMRT.Spec.Location.DeepCopy(),
 				Changes:   defaultRepoChanges,
@@ -203,7 +204,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				},
 				PublicKey: defaultMRT.Spec.PGP.PublicKey,
 				GitRepository: governancev1alpha1.GitRepository{
-					URL: defaultApp.Spec.Source.RepoURL,
+					SSHURL: defaultApp.Spec.Source.RepoURL,
 				},
 				LastApprovedCommitSHA: defaultInitCommit,
 				Location:              *defaultMRT.Spec.Location.DeepCopy(),
@@ -234,13 +235,11 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 			mrtKey := types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}
 
 			// Mock manager and repository calls
-			mockLatestRevision := defaultInitCommit
-			mockChangedFiles := defaultRepoChanges
-
 			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
 
-			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(mockLatestRevision, nil).AnyTimes()
-			mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", mockLatestRevision, gomock.Any()).Return(mockChangedFiles, nil).AnyTimes()
+			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(defaultInitCommit, nil).AnyTimes()
+			mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", defaultInitCommit, gomock.Any()).Return(defaultRepoChanges, nil).AnyTimes()
+			mockRepo.EXPECT().InitializeGovernance(gomock.Any(), ".qubmango/index.yaml", gomock.Any(), gomock.Any()).Return("abc123def456", nil).AnyTimes()
 
 			// Create Application before MRT
 			app := &defaultApp
@@ -273,7 +272,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		It("should fail initialization if the referenced Argo CD Application does not exist", func() {
 			// SETUP
 
-			// Don't setup the Application
+			// Don't setup the Applicationabc123def456
 
 			mrt := &defaultMRT
 			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
@@ -295,7 +294,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		// It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
 		// 	// SETUP
 		// 	// Mock manager and repository calls
-		// 	mockLatestRevision := "abc123def456"
+		// 	mockLatestRevision := ""
 		// 	mockChangedFiles := []governancev1alpha1.FileChange{
 		// 		{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
 		// 	}

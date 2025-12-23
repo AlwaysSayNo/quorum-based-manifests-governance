@@ -376,6 +376,7 @@ func (r *ManifestRequestTemplateReconciler) handleNewRevisionCommit(ctx context.
 	latestRevision, err := r.repository(ctx, mrt).GetLatestRevision(ctx)
 	if err != nil {
 		r.logger.Error(err, "Failed to fetch last revision from repository", "revision", revision)
+		return fmt.Errorf("fetch latest revision from repository: %w", err)
 	}
 	if latestRevision != revision {
 		if latestRevision != mrt.Status.LastObservedCommitHash {

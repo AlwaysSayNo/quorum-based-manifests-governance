@@ -24,10 +24,10 @@ import (
 var _ = Describe("Repository Manager", func() {
 
 	const (
-		MRTName                    = "test-mrt"
-		SSHSecretName              = "test-git-creds"
-		PGPSecretName              = "test-pgp-cred-name"
-		TestRepoURL                = "git@testhub.com:TestUser/test-repo.git"
+		MRTName       = "test-mrt"
+		SSHSecretName = "test-git-creds"
+		PGPSecretName = "test-pgp-cred-name"
+		TestRepoURL   = "git@testhub.com:TestUser/test-repo.git"
 	)
 
 	var (

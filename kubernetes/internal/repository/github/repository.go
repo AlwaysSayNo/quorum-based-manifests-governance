@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
@@ -321,33 +322,52 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 	}
 	defer p.mu.Unlock()
 
+	fullOperationalFilePath := filepath.Join(p.localPath, operationalFileLocation)
+
 	// Check correctness of operational file name (a yaml file with non-empty name)
-	fileName, found := strings.CutSuffix(filepath.Base(operationalFileLocation), "yaml")
-	if !found || fileName == "" {
-		return "", fmt.Errorf("incorrect operational .yaml file name %s", filepath.Base(operationalFileLocation))
+	fileName := filepath.Base(fullOperationalFilePath)
+	if !strings.HasSuffix(fileName, ".yaml") || fileName == ".yaml" {
+		return "", fmt.Errorf("incorrect operational .yaml file name %s", fileName)
 	}
 
-	// Create index file if it doesn't exist yet
-	if _, err := os.Stat(operationalFileLocation); os.IsNotExist(err) {
-		os.MkdirAll(filepath.Dir(operationalFileLocation), 0644)
-		os.WriteFile(filepath.Base(operationalFileLocation), nil, 0644)
+	var indexFile governancev1alpha1.QubmangoIndex
+	// Check if index file exists
+	if _, err := os.Stat(fullOperationalFilePath); os.IsNotExist(err) {
+		// File doesn't exist. We will create a new indexFile in memory
+		indexFile = governancev1alpha1.QubmangoIndex{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: governancev1alpha1.GroupVersion.String(),
+				Kind:       "QubmangoIndex",
+			},
+		}
+
+		// Create a bare file for index
+		os.MkdirAll(filepath.Dir(fullOperationalFilePath), 0644)
+		os.WriteFile(fullOperationalFilePath, nil, 0644)
+
+		// Create file with empty content
+		updatedFileBytes, err := yaml.Marshal(indexFile)
+		if err != nil {
+			return "", fmt.Errorf("marshal initial index file: %w", err)
+		}
+		if err := os.WriteFile(fullOperationalFilePath, updatedFileBytes, 0644); err != nil {
+			return "", fmt.Errorf("write initial index file: %w", err)
+		}
 	} else if err != nil {
-		return "", fmt.Errorf("find qubmango index file: %w", err)
-	}
-
-	// Fetch index file from the folder
-	fileBytes, err := os.ReadFile(operationalFileLocation)
-	if err != nil {
-		return "", fmt.Errorf("read qubmango index file: %w", err)
-	}
-
-	var indexManifest governancev1alpha1.QubmangoIndex
-	if err := yaml.Unmarshal([]byte(fileBytes), &indexManifest); err != nil {
-		return "", fmt.Errorf("unmarshal qubmango index file: %w", err)
+		return "", fmt.Errorf("stat qubmango index file: %w", err)
+	} else {
+		// File exists - read and unmarshal
+		fileBytes, err := os.ReadFile(fullOperationalFilePath)
+		if err != nil {
+			return "", fmt.Errorf("read qubmango index file: %w", err)
+		}
+		if err := yaml.Unmarshal(fileBytes, &indexFile); err != nil {
+			return "", fmt.Errorf("unmarshal qubmango index file: %w", err)
+		}
 	}
 
 	// Check, if index with such alias already exist. Alias should be unique
-	idx := slices.IndexFunc(indexManifest.Spec.Policies, func(policy governancev1alpha1.QubmangoPolicy) bool {
+	idx := slices.IndexFunc(indexFile.Spec.Policies, func(policy governancev1alpha1.QubmangoPolicy) bool {
 		return policy.Alias == governanceIndexAlias
 	})
 	if idx != -1 {
@@ -359,7 +379,19 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 		Alias:          governanceIndexAlias,
 		GovernancePath: governanceFolder,
 	}
-	indexManifest.Spec.Policies = append(indexManifest.Spec.Policies, policy)
+	indexFile.Spec.Policies = append(indexFile.Spec.Policies, policy)
+
+	// Write back indexFile to filesystem
+	updatedFileBytes, err := yaml.Marshal(indexFile)
+	if err != nil {
+		return "", fmt.Errorf("marshal updated index file: %w", err)
+	}
+
+	if err := os.WriteFile(fullOperationalFilePath, updatedFileBytes, 0644); err != nil {
+		return "", fmt.Errorf("write updated index file: %w", err)
+	}
+
+	// Add the modified index file to the staging tree
 	if _, err = worktree.Add(operationalFileLocation); err != nil {
 		return "", fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
 	}
