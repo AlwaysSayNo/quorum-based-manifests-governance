@@ -27,6 +27,7 @@ import (
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -83,50 +84,28 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Fetch the MRT instance
 	mrt := &governancev1alpha1.ManifestRequestTemplate{}
 	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		r.logger.Error(err, "Failed to get ManifestRequestTemplate")
-		return ctrl.Result{}, fmt.Errorf("fetch ManifestRequestTemplate for reconcile request: %w", err)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Finalize object, if it's being deleted.
-	// Object is being deleted, if it contains DeletionTimestamp.
+	// Handle deletion
 	if !mrt.ObjectMeta.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finzalize(ctx, mrt)
+		return r.reconcileDelete(ctx, mrt)
 	}
 
-	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
-	// Do on creation actions.
+	// Handle initialization
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		return ctrl.Result{}, r.onMRTCreation(ctx, mrt, req)
+		return r.reconcileCreate(ctx, mrt, req)
 	}
 
-	// Check, if all linked default resources exist in the cluster
-	if err := r.checkDependencies(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed on dependency check")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, fmt.Errorf("check dependencies: %w", err)
-	}
-
-	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed on first repository fetch")
-		return ctrl.Result{}, fmt.Errorf("init repo for ManifestRequestTemplate: %w", err)
-	}
-
-	// Check, if there is any revision in the queue for review
-	if len(mrt.Status.RevisionsQueue) > 0 {
-		return ctrl.Result{}, r.handleNewRevisionCommit(ctx, req, mrt)
-	}
-
-	return ctrl.Result{}, nil
+	// Handle normal reconciliation
+	return r.reconcileNormal(ctx, mrt, req)
 }
 
-// finalize is used for object clean-up on deletion event.
-// So far, it's needed to remove the `initial` finalize annotation.
-func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) error {
+// reconcileDelete handles the cleanup logic when an MRT is being deleted.
+func (r *ManifestRequestTemplateReconciler) reconcileDelete(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
 		// No custom finalizer is found. Do nothing
-		return nil
+		return ctrl.Result{}, nil
 	}
 
 	// No real clean-up logic is needed
@@ -135,45 +114,112 @@ func (r *ManifestRequestTemplateReconciler) finzalize(ctx context.Context, mrt *
 	// Remove the custom finalizer. The object will be deleted
 	controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
-		return fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
+		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
 	}
 
-	return nil
+	return ctrl.Result{}, nil
 }
 
-func (r ManifestRequestTemplateReconciler) onMRTCreation(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) error {
+// reconcileCreate handles the logic for a newly created MRT that has not been initialized.
+func (r ManifestRequestTemplateReconciler) reconcileCreate(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) (ctrl.Result, error) {
 	r.logger.Info("Initializing new ManifestRequestTemplate")
 
+	// Check if MRT is being initialized
+	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Initialization is already in progress. Waiting")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	// Acquire the lock
+	r.logger.Info("Setting Progressing=True to begin initialization")
+	meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionTrue,
+		Reason:  "CreatingInitialState",
+		Message: "Creating default linked resources and performing initial Git commit",
+	})
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to set Progressing condition")
+		// Retry if we can't set the lock.
+		return ctrl.Result{}, err
+	}
+
+	// Initialization logic
 	r.logger.Info("Start creating default linked resources")
-	initialCommitHash, err := r.createLinkedDefaultResources(ctx, mrt, req)
+	initialCommitHash, err := r.createLinkedDefaultResources(ctx, mrt)
 	if err != nil {
-		// If setup fails, we return the error to retry. We don't add the finalizer yet
-		return fmt.Errorf("create default linked resources: %w", err)
+		r.logger.Error(err, "Failed during initialization.")
+		// Release lock with status failed
+		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Progressing,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+		// Also mark Available as false
+		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+
+		freshMRT := &governancev1alpha1.ManifestRequestTemplate{}
+		_ = r.Get(ctx, req.NamespacedName, freshMRT)
+		freshMRT.Status.Conditions = mrt.Status.Conditions
+		_ = r.Status().Update(ctx, freshMRT)
+
+		return ctrl.Result{}, fmt.Errorf("create default linked resources: %w", err)
 	}
 	r.logger.Info("Finish creating default linked resources")
 
 	// Mark MRT as set up. Take new MRT
 	r.logger.Info("Start setting finalizer on the MRT")
-	// Add new initial history record
-	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
-	mrt.Status.LastObservedCommitHash = initialCommitHash
-	if err := r.Update(ctx, mrt); err != nil {
-		return fmt.Errorf("add finalizer: %w", err)
+	latestMRT := &governancev1alpha1.ManifestRequestTemplate{}
+	if err := r.Get(ctx, req.NamespacedName, latestMRT); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to re-fetch MRT before finalization: %w", err)
+	}
+
+	// Add new initial history record and finalizer
+	controllerutil.AddFinalizer(latestMRT, GovernanceFinalizer)
+	latestMRT.Status.LastObservedCommitHash = initialCommitHash
+
+	// Update status conditions to reflect success
+	meta.SetStatusCondition(&latestMRT.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionFalse,
+		Reason:  "InitializationSuccessful",
+		Message: "Initial state successfully committed to Git and cluster",
+	})
+	meta.SetStatusCondition(&latestMRT.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Available,
+		Status:  metav1.ConditionTrue,
+		Reason:  "SetupComplete",
+		Message: "Governance is active for this template",
+	})
+
+	// Update status
+	if err := r.Update(ctx, latestMRT); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
 	}
 	r.logger.Info("Finish setting finalizer on the MRT")
 
 	r.logger.Info("Successfully finalized ManifestRequestTemplate")
-
-	return nil
+	return ctrl.Result{}, nil
 }
 
 // createLinkedDefaultResources performs one-time setup to create linked default resources associated with this MRT. Return initial commit back
-func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) (string, error) {
+func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (string, error) {
 	r.logger.Info("Creating dependent MSR and MCA resources")
 
 	application, err := r.getApplication(ctx, mrt)
 	if err != nil {
 		return "", fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
+	}
+
+	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed on first repository fetch")
+		return "", fmt.Errorf("init repo for ManifestRequestTemplate: %w", err)
 	}
 
 	// Fetch the latest revision from the repository
@@ -299,6 +345,62 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 			Require:               *mrt.Spec.Require.DeepCopy(),
 		},
 	}
+}
+
+// reconcileNormal handles the main business logic for an initialized MRT.
+func (r *ManifestRequestTemplateReconciler) reconcileNormal(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, req ctrl.Request) (ctrl.Result, error) {
+	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Waiting for ongoing operation to complete.")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	// Check dependencies
+	if err := r.checkDependencies(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed on dependency check. Requeuing.")
+		// Update status to Available=False
+		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "DependenciesMissing",
+			Message: err.Error(),
+		})
+		_ = r.Status().Update(ctx, mrt)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Check repository connection
+	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to connect to repository.")
+		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "DependenciesMissing",
+			Message: err.Error(),
+		})
+		_ = r.Status().Update(ctx, mrt)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("init repo for ManifestRequestTemplate: %w", err)
+	}
+
+	var err error = nil 
+	if len(mrt.Status.RevisionsQueue) > 0 {
+		// handleNewRevisionCommit should return a Result and an Error
+		err = r.handleNewRevisionCommit(ctx, req, mrt)
+	}
+
+	// All dependencies are met, no new revisions. Mark as Available=True.
+	if err == nil && !meta.IsStatusConditionTrue(mrt.Status.Conditions, "Available") {
+		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionTrue,
+			Reason:  "Ready",
+			Message: "All dependencies are met and controller is ready.",
+		})
+		if err := r.Status().Update(ctx, mrt); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update status condition to Available: %w", err)
+		}
+	}
+
+	return ctrl.Result{}, err
 }
 
 // checkDependencies validates that all linked resources for an MRT exist.

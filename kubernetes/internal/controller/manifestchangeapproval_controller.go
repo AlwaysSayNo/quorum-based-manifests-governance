@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,34 +55,164 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/finalizers,verbs=update
 func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger = logf.FromContext(ctx).WithValues("name", req.Name, "namespace", req.Namespace)
+	r.logger = logf.FromContext(ctx).WithValues("ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestChangeApproval")
 
 	// Fetch the MCA instance
 	mca := &governancev1alpha1.ManifestChangeApproval{}
 	if err := r.Get(ctx, req.NamespacedName, mca); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		r.logger.Error(err, "Failed to get ManifestChangeApproval")
-		return ctrl.Result{}, fmt.Errorf("fetch ManifestChangeApproval for reconcile request: %w", err)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Finalize object, if it's being deleted.
-	// Object is being deleted, if it contains DeletionTimestamp.
+	// Handle deletion
 	if !mca.ObjectMeta.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finzalize(ctx, mca)
+		return r.reconcileDelete(ctx, mca)
 	}
 
-	if _, err := r.repositoryWithError(ctx, mca); err != nil {
-		r.logger.Error(err, "Failed on first repository fetch")
-		return ctrl.Result{}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
-	}
-
-	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
-	// Do on creation actions.
+	// Handle initialization
 	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
-		return ctrl.Result{}, r.onMCACreation(ctx, mca, req)
+		return r.reconcileCreate(ctx, mca, req)
+	}
+
+	// Handle normal reconciliation
+	return r.reconcileNormal(ctx, mca, req)
+}
+
+// reconcileCreate handles the logic for a newly created MCA that has not been initialized.
+func (r *ManifestChangeApprovalReconciler) reconcileDelete(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
+		// No custom finalizer is found. Do nothing
+		return ctrl.Result{}, nil
+	}
+
+	// No real clean-up logic is needed
+	r.logger.Info("Successfully finalized ManifestChangeApproval")
+
+	// Remove the custom finalizer. The object will be deleted
+	controllerutil.RemoveFinalizer(mca, GovernanceFinalizer)
+	if err := r.Update(ctx, mca); err != nil {
+		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileCreate handles the logic for a newly created MCA that has not been initialized.
+func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) (ctrl.Result, error) { // TODO: be transactional
+	r.logger.Info("Initializing new ManifestChangeApproval")
+
+	// Check if MCA is being initialized
+	if meta.IsStatusConditionTrue(mca.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Initialization is already in progress. Waiting")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	// Acquire the lock
+	r.logger.Info("Setting Progressing=True to begin initialization")
+	meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionTrue,
+		Reason:  "CreatingInitialState",
+		Message: "Creating default history entry and performing initial Git commit",
+	})
+	if err := r.Status().Update(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to set Progressing condition")
+		return ctrl.Result{}, err
+	}
+
+	// Check repository connection
+	if _, err := r.repositoryWithError(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to connect to repository.")
+		// Release lock with status failed
+		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Progressing,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+		// Also mark Available as false
+		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+
+		freshMCA := &governancev1alpha1.ManifestChangeApproval{}
+		_ = r.Get(ctx, req.NamespacedName, freshMCA)
+		freshMCA.Status.Conditions = mca.Status.Conditions
+		_ = r.Status().Update(ctx, freshMCA)
+
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
+	}
+
+	r.logger.Info("Start saving initial MCA in repository")
+	if err := r.saveInRepository(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to save initial ManifestChangeApproval in repository")
+		// Release lock with status failed
+		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Progressing,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+		// Also mark Available as false
+		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+
+		freshMCA := &governancev1alpha1.ManifestChangeApproval{}
+		_ = r.Get(ctx, req.NamespacedName, freshMCA)
+		freshMCA.Status.Conditions = mca.Status.Conditions
+		_ = r.Status().Update(ctx, freshMCA)
+
+		return ctrl.Result{}, fmt.Errorf("save initial ManifestChangeApproval in repository: %w", err)
+	}
+	r.logger.Info("Finish saving initial MCA in repository")
+
+	// Mark MCA as set up. Take new MCA
+	r.logger.Info("Start setting finalizer on the MCA")
+	latestMCA := &governancev1alpha1.ManifestChangeApproval{}
+	if err := r.Get(ctx, req.NamespacedName, latestMCA); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to re-fetch MCA before finalization: %w", err)
+	}
+
+	// Add new initial history record
+	newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
+	latestMCA.Status.ApprovalHistory = append(latestMCA.Status.ApprovalHistory, newRecord)
+	// Add finalizer
+	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
+
+	// Update status conditions to reflect success
+	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionFalse,
+		Reason:  "InitializationSuccessful",
+		Message: "Initial state successfully committed to Git and cluster",
+	})
+	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Available,
+		Status:  metav1.ConditionTrue,
+		Reason:  "SetupComplete",
+		Message: "Governance is active for this MCA",
+	})
+
+	if err := r.Update(ctx, mca); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
+	}
+	r.logger.Info("Finish setting finalizer on the MCA")
+
+	r.logger.Info("Successfully finalized ManifestChangeApproval")
+	return ctrl.Result{}, nil
+}
+
+func (r *ManifestChangeApprovalReconciler) reconcileNormal(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) (ctrl.Result, error) {
+	if meta.IsStatusConditionTrue(mca.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Waiting for ongoing operation to complete.")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
 	// Get the latest history record version
@@ -101,56 +231,7 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 	return ctrl.Result{}, nil
 }
 
-// finalize is used for object clean-up on deletion event.
-// So far, it's needed to remove the `initial` finalize annotation.
-func (r *ManifestChangeApprovalReconciler) finzalize(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
-	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
-		// No custom finalizer is found. Do nothing
-		return nil
-	}
-
-	// No real clean-up logic is needed
-	r.logger.Info("Successfully finalized ManifestChangeApproval")
-
-	// Remove the custom finalizer. The object will be deleted
-	controllerutil.RemoveFinalizer(mca, GovernanceFinalizer)
-	if err := r.Update(ctx, mca); err != nil {
-		return fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
-	}
-
-	return nil
-}
-
-func (r *ManifestChangeApprovalReconciler) onMCACreation(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) error { // TODO: be transactional
-	r.logger.Info("Initializing new ManifestChangeApproval")
-
-	r.logger.Info("Start saving initial MCA in repository")
-	if err := r.saveInRepository(ctx, mca, req); err != nil {
-		// If setup fails, we return the error to retry. We don't add the finalizer yet
-		r.logger.Error(err, "Failed to save initial ManifestChangeApproval in repository")
-		return fmt.Errorf("save initial ManifestChangeApproval in repository: %w", err)
-	}
-	r.logger.Info("Finish saving initial MCA in repository")
-
-	// Mark MCA as set up. Take new MCA
-	r.logger.Info("Start setting finalizer on the MCA")
-	// Add new initial history record
-	newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
-	mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
-
-	// Add finalizer
-	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
-	if err := r.Update(ctx, mca); err != nil {
-		return fmt.Errorf("add finalizer: %w", err)
-	}
-	r.logger.Info("Finish setting finalizer on the MCA")
-
-	r.logger.Info("Successfully finalized ManifestChangeApproval")
-
-	return nil
-}
-
-func (r *ManifestChangeApprovalReconciler) saveInRepository(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) error {
+func (r *ManifestChangeApprovalReconciler) saveInRepository(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
 	repositoryMCA := r.createRepositoryMCA(mca)
 	if _, err := r.repository(ctx, mca).PushMCA(ctx, &repositoryMCA); err != nil {
 		r.logger.Error(err, "Failed to push initial ManifestChangeApproval in repository")

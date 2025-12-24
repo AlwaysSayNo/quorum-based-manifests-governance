@@ -29,6 +29,7 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
@@ -70,6 +71,16 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	} else if mrt == nil {
 		logger.Info("No governing MRT found for Application", "application", application.Name, "namespace", application.Namespace)
 		return admission.Allowed("No governing MRT found, allow by default")
+	}
+
+	// Check MRT availability
+	if meta.IsStatusConditionFalse(mrt.Status.Conditions, governancev1alpha1.Available) {
+		logger.Info("MRT is currently unavailable. Denying sync", "mrt", mrt.Name)
+		return admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently unavailable", mrt.Name))
+	}
+	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
+		logger.Info("MRT is currently being in progress. Denying sync to prevent race condition.", "mrt", mrt.Name)
+		return admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently being progress", mrt.Name))
 	}
 
 	// Take revision commit hash from Application

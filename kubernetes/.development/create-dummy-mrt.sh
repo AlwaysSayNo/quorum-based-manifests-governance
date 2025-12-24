@@ -33,7 +33,7 @@ spec:
   version: 1
   
   gitRepository:
-    url: #{REPO_URL}#
+    sshUrl: #{REPO_URL}#
 
   pgp:
     publicKey: |

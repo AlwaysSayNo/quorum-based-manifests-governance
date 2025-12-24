@@ -264,6 +264,12 @@ type ManifestRequestTemplateList struct {
 	Items           []ManifestRequestTemplate `json:"items"`
 }
 
+const (
+	Available   = "Available"
+	Progressing = "Progressing"
+	Degraded    = "Degraded"
+)
+
 func init() {
 	SchemeBuilder.Register(&ManifestRequestTemplate{}, &ManifestRequestTemplateList{})
 }

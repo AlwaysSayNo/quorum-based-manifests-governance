@@ -19,9 +19,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,28 +66,161 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	// Fetch the MSR instance
 	msr := &governancev1alpha1.ManifestSigningRequest{}
 	if err := r.Get(ctx, req.NamespacedName, msr); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		r.logger.Error(err, "Failed to get ManifestSigningRequest")
-		return ctrl.Result{}, fmt.Errorf("fetch ManifestSigningRequest for reconcile request: %w", err)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Finalize object, if it's being deleted.
-	// Object is being deleted, if it contains DeletionTimestamp.
+	// Handle deletion
 	if !msr.ObjectMeta.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finzalize(ctx, msr)
+		return r.reconcileDelete(ctx, msr)
 	}
 
-	if _, err := r.repositoryWithError(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed on first repository fetch")
-		return ctrl.Result{}, fmt.Errorf("init repo for ManifestSigningRequest: %w", err)
-	}
-
-	// Check for `initial` finalize annotation. If the finalizer isn't set yet, then it's a new resource.
-	// Do on creation actions.
+	// Handle initialization
 	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
-		return ctrl.Result{}, r.onMSRCreation(ctx, msr, req)
+		return r.reconcileCreate(ctx, msr, req)
+	}
+
+	// Handle normal reconciliation
+	return r.reconcileNormal(ctx, msr, req)
+}
+
+// reconcileDelete handles the cleanup logic when an MSR is being deleted.
+func (r *ManifestSigningRequestReconciler) reconcileDelete(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
+		// No custom finalizer is found. Do nothing
+		return ctrl.Result{}, nil
+	}
+
+	// No real clean-up logic is needed
+	r.logger.Info("Successfully finalized ManifestSigningRequest")
+
+	// Remove the custom finalizer. The object will be deleted
+	controllerutil.RemoveFinalizer(msr, GovernanceFinalizer)
+	if err := r.Update(ctx, msr); err != nil {
+		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileCreate handles the logic for a newly created MSR that has not been initialized.
+func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) (ctrl.Result, error) { // TODO: be transactional
+	r.logger.Info("Initializing new ManifestSigningRequest")
+
+	// Check if MSR is being initialized
+	if meta.IsStatusConditionTrue(msr.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Initialization is already in progress. Waiting")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	// Acquire the lock
+	r.logger.Info("Setting Progressing=True to begin initialization")
+	meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionTrue,
+		Reason:  "CreatingInitialState",
+		Message: "Creating default history entry and performing initial Git commit",
+	})
+	if err := r.Status().Update(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to set Progressing condition")
+		return ctrl.Result{}, err
+	}
+
+	// Check repository connection
+	if _, err := r.repositoryWithError(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to connect to repository.")
+		// Release lock with status failed
+		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Progressing,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+		// Also mark Available as false
+		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+
+		freshMSR := &governancev1alpha1.ManifestSigningRequest{}
+		_ = r.Get(ctx, req.NamespacedName, freshMSR)
+		freshMSR.Status.Conditions = msr.Status.Conditions
+		_ = r.Status().Update(ctx, freshMSR)
+
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("init repo for ManifestSigningRequest: %w", err)
+	}
+
+	// Initialization logic
+	r.logger.Info("Start saving initial MSR in repository")
+	if err := r.saveInRepository(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to save initial ManifestSigningRequest in repository")
+		// Release lock with status failed
+		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Progressing,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+		// Also mark Available as false
+		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
+			Type:    governancev1alpha1.Available,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InitializationFailed",
+			Message: err.Error(),
+		})
+
+		freshMSR := &governancev1alpha1.ManifestSigningRequest{}
+		_ = r.Get(ctx, req.NamespacedName, freshMSR)
+		freshMSR.Status.Conditions = msr.Status.Conditions
+		_ = r.Status().Update(ctx, freshMSR)
+
+		return ctrl.Result{}, fmt.Errorf("save initial ManifestSigningRequest in repository: %w", err)
+	}
+	r.logger.Info("Finish saving initial MSR in repository")
+
+	// Mark MSR as set up. Take new MSR
+	r.logger.Info("Start setting finalizer on the MSR")
+	latestMSR := &governancev1alpha1.ManifestSigningRequest{}
+	if err := r.Get(ctx, req.NamespacedName, latestMSR); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to re-fetch MSR before finalization: %w", err)
+	}
+
+	// Add new initial history record
+	newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
+	latestMSR.Status.RequestHistory = append(latestMSR.Status.RequestHistory, newRecord)
+	// Add finalizer
+	controllerutil.AddFinalizer(latestMSR, GovernanceFinalizer)
+
+	// Update status conditions to reflect success
+	meta.SetStatusCondition(&latestMSR.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Progressing,
+		Status:  metav1.ConditionFalse,
+		Reason:  "InitializationSuccessful",
+		Message: "Initial state successfully committed to Git and cluster",
+	})
+	meta.SetStatusCondition(&latestMSR.Status.Conditions, metav1.Condition{
+		Type:    governancev1alpha1.Available,
+		Status:  metav1.ConditionTrue,
+		Reason:  "SetupComplete",
+		Message: "Governance is active for this template",
+	})
+
+	// Update status
+	if err := r.Update(ctx, latestMSR); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
+	}
+	r.logger.Info("Finish setting finalizer on the MSR")
+
+	r.logger.Info("Successfully finalized ManifestSigningRequest")
+	return ctrl.Result{}, nil
+}
+
+func (r *ManifestSigningRequestReconciler) reconcileNormal(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) (ctrl.Result, error) {
+	// Check if initialization is still marked as progressing, which shouldn't happen here but is a good safeguard.
+	if meta.IsStatusConditionTrue(msr.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.Info("Waiting for ongoing operation to complete.")
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
 	// Get the latest history record version
@@ -99,7 +233,7 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	// If the spec's version is newer - reconcile status
 	if msr.Spec.Version > latestHistoryVersion {
 		r.logger.Info("Detected new version in spec, updating status history", "specVersion", msr.Spec.Version, "statusVersion", latestHistoryVersion)
-		return ctrl.Result{}, r.handleNewMSRChange(ctx, req, msr)
+		return ctrl.Result{}, r.handleNewMSRChange(ctx, msr)
 	}
 
 	// TODO: Signature Observer logic
@@ -107,73 +241,24 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	return ctrl.Result{}, nil
 }
 
-// finalize is used for object clean-up on deletion event.
-// So far, it's needed to remove the `initial` finalize annotation.
-func (r *ManifestSigningRequestReconciler) finzalize(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error {
-	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
-		// No custom finalizer is found. Do nothing
-		return nil
-	}
-
-	// No real clean-up logic is needed
-	r.logger.Info("Successfully finalized ManifestSigningRequest")
-
-	// Remove the custom finalizer. The object will be deleted
-	controllerutil.RemoveFinalizer(msr, GovernanceFinalizer)
-	if err := r.Update(ctx, msr); err != nil {
-		return fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
-	}
-
-	return nil
-}
-
-func (r *ManifestSigningRequestReconciler) onMSRCreation(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, req ctrl.Request) error { // TODO: be transactional
-	r.logger.Info("Initializing new ManifestSigningRequest")
-
-	r.logger.Info("Start saving initial MSR in repository")
-	if err := r.saveInRepository(ctx, msr); err != nil {
-		// If setup fails, we return the error to retry. We don't add the finalizer yet
-		r.logger.Error(err, "Failed to save initial ManifestSigningRequest in repository")
-		return fmt.Errorf("save initial ManifestSigningRequest in repository: %w", err)
-	}
-	r.logger.Info("Finish saving initial MSR in repository")
-
-	// Mark MSR as set up. Take new MSR
-	r.logger.Info("Start setting finalizer on the MSR")
-	// Add new initial history record
-	newRecord := r.createNewMSRHistoryRecordFromSpec(&msr.Spec)
-	msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
-
-	// Add finalizer
-	controllerutil.AddFinalizer(msr, GovernanceFinalizer)
-	if err := r.Update(ctx, msr); err != nil {
-		return fmt.Errorf("add finalizer: %w", err)
-	}
-	r.logger.Info("Finish setting finalizer on the MSR")
-
-	r.logger.Info("Successfully finalized ManifestSigningRequest")
-
-	return nil
-}
-
-func (r *ManifestSigningRequestReconciler) handleNewMSRChange(ctx context.Context, req ctrl.Request, msr *governancev1alpha1.ManifestSigningRequest) error {
+func (r *ManifestSigningRequestReconciler) handleNewMSRChange(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error {
 	r.logger.Info("Handle new MSR spec change")
 
-	r.logger.Info("Start saving initial MSR in repository")
+	r.logger.Info("Start saving new MSR in repository")
 	// Save new MSR in repository
 	if err := r.saveInRepository(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to save ManifestSigningRequest in repository")
 		return fmt.Errorf("save ManifestSigningRequest in repository: %w", err)
 	}
-	r.logger.Info("Finish saving initial MSR in repository")
+	r.logger.Info("Finish saving new MSR in repository")
 
-	r.logger.Info("Start adding initial history record")
+	r.logger.Info("Start adding new history record")
 	// Add new entry to MSR history
 	if err := r.saveNewHistoryRecord(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed to save history record for initial ManifestSigningRequest")
-		return fmt.Errorf("save history record for initial ManifestSigningRequest")
+		r.logger.Error(err, "Failed to save history record for new ManifestSigningRequest")
+		return fmt.Errorf("save history record for new ManifestSigningRequest")
 	}
-	r.logger.Info("Finish adding initial history record")
+	r.logger.Info("Finish adding new history record")
 
 	// Notify the Governors
 	if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
@@ -214,7 +299,7 @@ func (r *ManifestSigningRequestReconciler) createRepositoryMSR(msr *governancev1
 
 func (r *ManifestSigningRequestReconciler) saveNewHistoryRecord(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error {
 	// Append a new history record
-	newRecord := r.createNewMSRHistoryRecordFromSpec(&msr.Spec)
+	newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
 	msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
 
 	// Save the change
@@ -227,16 +312,16 @@ func (r *ManifestSigningRequestReconciler) saveNewHistoryRecord(ctx context.Cont
 	return nil
 }
 
-func (r *ManifestSigningRequestReconciler) createNewMSRHistoryRecordFromSpec(spec *governancev1alpha1.ManifestSigningRequestSpec) governancev1alpha1.ManifestSigningRequestHistoryRecord {
+func (r *ManifestSigningRequestReconciler) createNewMSRHistoryRecordFromSpec(msr *governancev1alpha1.ManifestSigningRequest) governancev1alpha1.ManifestSigningRequestHistoryRecord {
+	msrCopy := msr.DeepCopy()
+
 	return governancev1alpha1.ManifestSigningRequestHistoryRecord{
-		Version:   spec.Version,
-		Changes:   spec.Changes,
-		Governors: spec.Governors,
-		Require:   spec.Require,
-		Approves: governancev1alpha1.ApproverList{
-			Members: []governancev1alpha1.Governor{},
-		},
-		Status: spec.Status,
+		Version:   msrCopy.Spec.Version,
+		Changes:   msrCopy.Spec.Changes,
+		Governors: msrCopy.Spec.Governors,
+		Require:   msrCopy.Spec.Require,
+		Approves:  msr.Status.Approves,
+		Status:    msrCopy.Spec.Status,
 	}
 }
 
