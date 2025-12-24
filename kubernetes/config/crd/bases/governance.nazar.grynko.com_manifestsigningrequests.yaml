@@ -399,8 +399,6 @@ spec:
                   - version
                   type: object
                 type: array
-            required:
-            - requestHistory
             type: object
         required:
         - spec

@@ -60,7 +60,7 @@ func (r *ManifestSigningRequestReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests/finalizers,verbs=update
 func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger = logf.FromContext(ctx).WithValues("name", req.Name, "namespace", req.Namespace)
+	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestSigningRequest", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestSigningRequest")
 
 	// Fetch the MSR instance
@@ -195,7 +195,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, 
 	// Update status conditions to reflect success
 	meta.SetStatusCondition(&latestMSR.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionFalse,
+		Status:  metav1.ConditionTrue,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})

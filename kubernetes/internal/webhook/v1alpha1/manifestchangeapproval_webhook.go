@@ -56,7 +56,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	// 	return admission.Allowed("Change approved by Manifest Change Approval")
 	// }
 
-	logger = logf.FromContext(ctx).WithValues("user", req.UserInfo.Username)
+	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo.Username)
 
 	// Get Application resource for request
 	application, resp, ok := v.getApplication(ctx, req)

@@ -55,7 +55,7 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/finalizers,verbs=update
 func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger = logf.FromContext(ctx).WithValues("ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
+	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestChangeApproval")
 
 	// Fetch the MCA instance
@@ -189,7 +189,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, 
 	// Update status conditions to reflect success
 	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionFalse,
+		Status:  metav1.ConditionTrue,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})

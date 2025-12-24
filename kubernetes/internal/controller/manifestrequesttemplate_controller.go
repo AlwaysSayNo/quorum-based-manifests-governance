@@ -77,7 +77,7 @@ func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) e
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestrequesttemplates/finalizers,verbs=update
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger = log.FromContext(ctx).WithValues("name", req.Name, "namespace", req.Namespace)
+	r.logger = log.FromContext(ctx).WithValues("controller", "ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
 
 	r.logger.Info("Reconciling ManifestRequestTemplate")
 
@@ -187,7 +187,7 @@ func (r ManifestRequestTemplateReconciler) reconcileCreate(ctx context.Context, 
 	// Update status conditions to reflect success
 	meta.SetStatusCondition(&latestMRT.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionFalse,
+		Status:  metav1.ConditionTrue,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})
@@ -381,7 +381,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileNormal(ctx context.Context,
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("init repo for ManifestRequestTemplate: %w", err)
 	}
 
-	var err error = nil 
+	var err error = nil
 	if len(mrt.Status.RevisionsQueue) > 0 {
 		// handleNewRevisionCommit should return a Result and an Error
 		err = r.handleNewRevisionCommit(ctx, req, mrt)

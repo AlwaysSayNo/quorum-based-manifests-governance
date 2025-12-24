@@ -129,7 +129,7 @@ type ManifestSigningRequestSpec struct {
 // ManifestSigningRequestStatus defines the observed state of ManifestSigningRequest.
 type ManifestSigningRequestStatus struct {
 
-	// +required
+	// +optional
 	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty"`
 
 	// +optional
