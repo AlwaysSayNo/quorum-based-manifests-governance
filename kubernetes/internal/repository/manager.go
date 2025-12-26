@@ -43,7 +43,11 @@ type GitRepository interface {
 	PushMCA(ctx context.Context, msr *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error)
 
 	// InitializeGovernance creates an entry in the operationalFileLocation .yaml file with governanceIndexAlias as key and governanceFolder as value
-	InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error)
+	InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, bool, error)
+
+	// RemoveFromIndexFile removes entry from qubmango index file.
+	// Second parameter reflects, whether entry presented in the file before deleting (true if existed). If error occurred - default false.
+	RemoveFromIndexFile(ctx context.Context, operationalFileLocation, governanceIndexAlias string) (string, bool, error)
 
 	// PushSignature commits and pushes a governor's signature to the repository.
 	// This would be used by your CLI/API server.

@@ -314,11 +314,14 @@ func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.Manif
 	return p.pushWorkflow(ctx, files, msg)
 }
 
-// InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value
-func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error) {
+func (p *gitProvider) RemoveFromIndexFile(
+	ctx context.Context,
+	operationalFileLocation,
+	governanceIndexAlias string,
+) (string, bool, error) {
 	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
 	if err != nil {
-		return "", fmt.Errorf("sync and lock: %w", err)
+		return "", false, fmt.Errorf("sync and lock: %w", err)
 	}
 	defer p.mu.Unlock()
 
@@ -327,7 +330,81 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 	// Check correctness of operational file name (a yaml file with non-empty name)
 	fileName := filepath.Base(fullOperationalFilePath)
 	if !strings.HasSuffix(fileName, ".yaml") || fileName == ".yaml" {
-		return "", fmt.Errorf("incorrect operational .yaml file name %s", fileName)
+		return "", false, fmt.Errorf("incorrect operational .yaml file name %s", fileName)
+	}
+
+	if _, err := os.Stat(fullOperationalFilePath); os.IsNotExist(err) {
+		return "", false, fmt.Errorf("index file doesn't exist in %s", fullOperationalFilePath)
+	}
+
+	// File exists - read and unmarshal
+	fileBytes, err := os.ReadFile(fullOperationalFilePath)
+	if err != nil {
+		return "", false, fmt.Errorf("read qubmango index file: %w", err)
+	}
+
+	var indexFile governancev1alpha1.QubmangoIndex
+	if err := yaml.Unmarshal(fileBytes, &indexFile); err != nil {
+		return "", false, fmt.Errorf("unmarshal qubmango index file: %w", err)
+	}
+
+	// Check, if index with such alias already exist. Alias should be unique
+	idx := slices.IndexFunc(indexFile.Spec.Policies, func(policy governancev1alpha1.QubmangoPolicy) bool {
+		return policy.Alias == governanceIndexAlias
+	})
+	if idx == -1 {
+		// Index didn't exist - do nothing and return false (no index existed before).
+		return "", false, nil
+	}
+
+	// Remove existing policy.
+	indexFile.Spec.Policies = append(indexFile.Spec.Policies[:idx], indexFile.Spec.Policies[idx+1:]...)
+
+	// Write back indexFile to filesystem
+	updatedFileBytes, err := yaml.Marshal(indexFile)
+	if err != nil {
+		return "", false, fmt.Errorf("marshal updated index file: %w", err)
+	}
+
+	if err := os.WriteFile(fullOperationalFilePath, updatedFileBytes, 0644); err != nil {
+		return "", false, fmt.Errorf("write updated index file: %w", err)
+	}
+
+	// Add the modified index file to the staging tree
+	if _, err = worktree.Add(operationalFileLocation); err != nil {
+		return "", false, fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
+	}
+
+	// Created signed commit and push it to the remote repo
+	commitMsg := fmt.Sprintf("create entry in .governance/index.yaml file for %s", governanceIndexAlias)
+	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, gpgEntity)
+	if err != nil {
+		rollback()
+		return "", false, fmt.Errorf("commit and push: %w", err)
+	}
+
+	return commitHash, true, nil
+}
+
+// InitializeGovernance creates an entry in the .qubmangi/index.yaml file with governanceIndexAlias as key and folder as value
+// Second parameter returns, whether index is new (true), of existed before (false). If it's false - first parameter is empty string, but err == nil.
+// If err != nil, default second parameter value is false.
+func (p *gitProvider) InitializeGovernance(
+	ctx context.Context,
+	operationalFileLocation, governanceIndexAlias, governanceFolder string,
+) (string, bool, error) {
+	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	fullOperationalFilePath := filepath.Join(p.localPath, operationalFileLocation)
+
+	// Check correctness of operational file name (a yaml file with non-empty name)
+	fileName := filepath.Base(fullOperationalFilePath)
+	if !strings.HasSuffix(fileName, ".yaml") || fileName == ".yaml" {
+		return "", false, fmt.Errorf("incorrect operational .yaml file name %s", fileName)
 	}
 
 	var indexFile governancev1alpha1.QubmangoIndex
@@ -344,25 +421,16 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 		// Create a bare file for index
 		os.MkdirAll(filepath.Dir(fullOperationalFilePath), 0644)
 		os.WriteFile(fullOperationalFilePath, nil, 0644)
-
-		// Create file with empty content
-		updatedFileBytes, err := yaml.Marshal(indexFile)
-		if err != nil {
-			return "", fmt.Errorf("marshal initial index file: %w", err)
-		}
-		if err := os.WriteFile(fullOperationalFilePath, updatedFileBytes, 0644); err != nil {
-			return "", fmt.Errorf("write initial index file: %w", err)
-		}
 	} else if err != nil {
-		return "", fmt.Errorf("stat qubmango index file: %w", err)
+		return "", false, fmt.Errorf("stat qubmango index file: %w", err)
 	} else {
 		// File exists - read and unmarshal
 		fileBytes, err := os.ReadFile(fullOperationalFilePath)
 		if err != nil {
-			return "", fmt.Errorf("read qubmango index file: %w", err)
+			return "", false, fmt.Errorf("read qubmango index file: %w", err)
 		}
 		if err := yaml.Unmarshal(fileBytes, &indexFile); err != nil {
-			return "", fmt.Errorf("unmarshal qubmango index file: %w", err)
+			return "", false, fmt.Errorf("unmarshal qubmango index file: %w", err)
 		}
 	}
 
@@ -371,7 +439,8 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 		return policy.Alias == governanceIndexAlias
 	})
 	if idx != -1 {
-		return "", fmt.Errorf("index %s already exist", governanceIndexAlias)
+		// Index already exists - do nothing and return false (no new index was created).
+		return "", false, nil
 	}
 
 	// Append new policy and add to staging tree
@@ -384,16 +453,16 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 	// Write back indexFile to filesystem
 	updatedFileBytes, err := yaml.Marshal(indexFile)
 	if err != nil {
-		return "", fmt.Errorf("marshal updated index file: %w", err)
+		return "", false, fmt.Errorf("marshal updated index file: %w", err)
 	}
 
 	if err := os.WriteFile(fullOperationalFilePath, updatedFileBytes, 0644); err != nil {
-		return "", fmt.Errorf("write updated index file: %w", err)
+		return "", false, fmt.Errorf("write updated index file: %w", err)
 	}
 
 	// Add the modified index file to the staging tree
 	if _, err = worktree.Add(operationalFileLocation); err != nil {
-		return "", fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
+		return "", false, fmt.Errorf("failed to git add qubmango index file to the staging area: %w", err)
 	}
 
 	// Created signed commit and push it to the remote repo
@@ -401,10 +470,10 @@ func (p *gitProvider) InitializeGovernance(ctx context.Context, operationalFileL
 	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, gpgEntity)
 	if err != nil {
 		rollback()
-		return "", fmt.Errorf("commit and push: %w", err)
+		return "", false, fmt.Errorf("commit and push: %w", err)
 	}
 
-	return commitHash, nil
+	return commitHash, true, nil
 }
 
 func (p *gitProvider) pushWorkflow(

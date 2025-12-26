@@ -20,6 +20,36 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Define the states as constants for type safety
+type ActionState string
+
+const (
+	// EmptyActionState indicates a free state.
+	EmptyActionState ActionState = ""
+	// StateInitGitGovernanceInitialization indicates the controller is pushing the initial commit.
+	StateInitGitGovernanceInitialization ActionState = "StateInitGitGovernanceInitialization"
+	// InitStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.
+	InitStateCreateDefaultClusterResources ActionState = "InitStateCreateDefaultClusterResources"
+	// StateInitSetFinalizer indicates the controller is adding the finalizer.
+	StateInitSetFinalizer ActionState = "StateInitSetFinalizer"
+
+	// Deletion states
+	StateDeletionInProgress ActionState = "StateDeletionInProgress"
+
+	// Normal operation states
+	StateCheckingDependencies ActionState = "StateCheckingDependencies"
+	StateProcessingRevision   ActionState = "StateProcessingRevision"
+)
+
+type RevisionProcessingState string
+
+const (
+	StateRevisionEmpty          RevisionProcessingState = ""
+	StateRevisionPreflightCheck RevisionProcessingState = "StateRevisionPreflightCheck"
+	StateRevisionUpdateMSRSpec  RevisionProcessingState = "StateRevisionUpdateMSR"
+	StateRevisionAfterMSRUpdate RevisionProcessingState = "StateRevisionAfterMSRUpdate"
+)
+
 type GitRepository struct {
 	// +required
 	SSHURL string `json:"sshUrl,omitempty"`
@@ -233,6 +263,14 @@ type ManifestRequestTemplateStatus struct {
 
 	// LastAcceptedMSRVersion is the version of the last accepted MSR resource
 	LastAcceptedMSRVersion int `json:"lastAcceptedMSR,omitempty"`
+
+	// ActionState tracks the progress of the main reconcile.
+	// +optional
+	ActionState ActionState `json:"actionState,omitempty"`
+
+	// RevisionProcessingState tracks the progress of the revision processing.
+	// +optional
+	RevisionProcessingState RevisionProcessingState `json:"revisionProcessingStep,omitempty"`
 }
 
 // +kubebuilder:object:root=true

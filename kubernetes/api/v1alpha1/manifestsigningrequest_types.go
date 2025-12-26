@@ -95,6 +95,9 @@ type ManifestSigningRequestSpec struct {
 	// +required
 	Version int `json:"version"`
 
+	// +required
+	CommitSHA string `json:"commitSha"`
+
 	// +optional
 	MRT VersionedManifestRef `json:"mrt"`
 
