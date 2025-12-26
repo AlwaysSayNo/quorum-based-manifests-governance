@@ -59,6 +59,8 @@ func (r *ManifestSigningRequestReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+
 func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestSigningRequest", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestSigningRequest")
@@ -128,7 +130,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, 
 	// Check repository connection
 	if _, err := r.repositoryWithError(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to connect to repository.")
-		// Release lock with status failed
+		// Release lock with reason failed
 		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
 			Type:    governancev1alpha1.Progressing,
 			Status:  metav1.ConditionFalse,
@@ -155,7 +157,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, 
 	r.logger.Info("Start saving initial MSR in repository")
 	if err := r.saveInRepository(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to save initial ManifestSigningRequest in repository")
-		// Release lock with status failed
+		// Release lock with reason failed
 		meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
 			Type:    governancev1alpha1.Progressing,
 			Status:  metav1.ConditionFalse,
@@ -195,7 +197,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, 
 	// Update status conditions to reflect success
 	meta.SetStatusCondition(&latestMSR.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionTrue,
+		Status:  metav1.ConditionFalse,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})
@@ -207,6 +209,10 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(ctx context.Context, 
 	})
 
 	// Update status
+	if err := r.Status().Update(ctx, latestMSR); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
+	}
+	controllerutil.AddFinalizer(latestMSR, GovernanceFinalizer)
 	if err := r.Update(ctx, latestMSR); err != nil {
 		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
 	}

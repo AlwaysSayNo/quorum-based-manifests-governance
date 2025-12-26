@@ -75,7 +75,11 @@ func (r *ManifestRequestTemplateReconciler) SetupWithManager(mgr ctrl.Manager) e
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestrequesttemplates/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestrequesttemplates/finalizers,verbs=update
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=argoproj.io,resources=applications,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = log.FromContext(ctx).WithValues("controller", "ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
 
@@ -149,7 +153,7 @@ func (r ManifestRequestTemplateReconciler) reconcileCreate(ctx context.Context, 
 	initialCommitHash, err := r.createLinkedDefaultResources(ctx, mrt)
 	if err != nil {
 		r.logger.Error(err, "Failed during initialization.")
-		// Release lock with status failed
+		// Release lock with reason failed
 		meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
 			Type:    governancev1alpha1.Progressing,
 			Status:  metav1.ConditionFalse,
@@ -175,23 +179,19 @@ func (r ManifestRequestTemplateReconciler) reconcileCreate(ctx context.Context, 
 
 	// Mark MRT as set up. Take new MRT
 	r.logger.Info("Start setting finalizer on the MRT")
-	latestMRT := &governancev1alpha1.ManifestRequestTemplate{}
-	if err := r.Get(ctx, req.NamespacedName, latestMRT); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to re-fetch MRT before finalization: %w", err)
-	}
 
 	// Add new initial history record and finalizer
-	controllerutil.AddFinalizer(latestMRT, GovernanceFinalizer)
-	latestMRT.Status.LastObservedCommitHash = initialCommitHash
+	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
+	mrt.Status.LastObservedCommitHash = initialCommitHash
 
 	// Update status conditions to reflect success
-	meta.SetStatusCondition(&latestMRT.Status.Conditions, metav1.Condition{
+	meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionTrue,
+		Status:  metav1.ConditionFalse,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})
-	meta.SetStatusCondition(&latestMRT.Status.Conditions, metav1.Condition{
+	meta.SetStatusCondition(&mrt.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Available,
 		Status:  metav1.ConditionTrue,
 		Reason:  "SetupComplete",
@@ -199,7 +199,11 @@ func (r ManifestRequestTemplateReconciler) reconcileCreate(ctx context.Context, 
 	})
 
 	// Update status
-	if err := r.Update(ctx, latestMRT); err != nil {
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
+	}
+	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
+	if err := r.Update(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
 	}
 	r.logger.Info("Finish setting finalizer on the MRT")

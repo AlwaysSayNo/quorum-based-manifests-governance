@@ -31,7 +31,9 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	controller "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,7 +58,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	// 	return admission.Allowed("Change approved by Manifest Change Approval")
 	// }
 
-	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo.Username)
+	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo)
 
 	// Get Application resource for request
 	application, resp, ok := v.getApplication(ctx, req)
@@ -74,13 +76,8 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	}
 
 	// Check MRT availability
-	if meta.IsStatusConditionFalse(mrt.Status.Conditions, governancev1alpha1.Available) {
-		logger.Info("MRT is currently unavailable. Denying sync", "mrt", mrt.Name)
-		return admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently unavailable", mrt.Name))
-	}
-	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
-		logger.Info("MRT is currently being in progress. Denying sync to prevent race condition.", "mrt", mrt.Name)
-		return admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently being progress", mrt.Name))
+	if ok, resp = v.canModifyMRT(ctx, mrt); !ok {
+		return *resp
 	}
 
 	// Take revision commit hash from Application
@@ -134,6 +131,26 @@ func (v *ManifestChangeApprovalCustomValidator) getApplication(ctx context.Conte
 	} else {
 		return v.getApplicationFromApplicationRequest(ctx, req)
 	}
+}
+
+func (v *ManifestChangeApprovalCustomValidator) canModifyMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (bool, *admission.Response) {
+	var resp admission.Response
+	allow := true
+	if meta.IsStatusConditionFalse(mrt.Status.Conditions, governancev1alpha1.Available) {
+		logger.Info("MRT is currently unavailable. Denying sync", "mrt", mrt.Name)
+		allow = false
+		resp = admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently unavailable", mrt.Name))
+	} else if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
+		logger.Info("MRT is currently being in progress. Denying sync to prevent race condition.", "mrt", mrt.Name)
+		allow = false
+		resp = admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently being progress", mrt.Name))
+	} else if !controllerutil.ContainsFinalizer(mrt, controller.GovernanceFinalizer) {
+		logger.Info(fmt.Sprintf("MRT doesn't have required finalizer %s yet", controller.GovernanceFinalizer))
+		allow = false
+		resp = admission.Denied(fmt.Sprintf("MRT doesn't have required finalizer %s yet", controller.GovernanceFinalizer))
+	}
+
+	return allow, &resp
 }
 
 func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplicationRequest(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {

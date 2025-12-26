@@ -115,6 +115,10 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet webhook-certs ## Run a controller from your host.
+	# Generate the special kubeconfig
+	task dev:dev:generate-kubeconfig -- KUBECONFIG_PATH=./config/local/kubeconfig.local
+	# Run Go process with the KUBECONFIG env var set.
+	KUBECONFIG=./config/local/kubeconfig.local
 	go run ./cmd/main.go
 
 # This target will be called by 'run' to ensure certs are ready for local execution.

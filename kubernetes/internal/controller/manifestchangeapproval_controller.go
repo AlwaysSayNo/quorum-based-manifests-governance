@@ -51,9 +51,11 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Complete(r)
 }
 
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapproval/finalizers,verbs=update
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+
 func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestChangeApproval")
@@ -123,7 +125,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, 
 	// Check repository connection
 	if _, err := r.repositoryWithError(ctx, mca); err != nil {
 		r.logger.Error(err, "Failed to connect to repository.")
-		// Release lock with status failed
+		// Release lock with reason failed
 		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
 			Type:    governancev1alpha1.Progressing,
 			Status:  metav1.ConditionFalse,
@@ -149,7 +151,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, 
 	r.logger.Info("Start saving initial MCA in repository")
 	if err := r.saveInRepository(ctx, mca); err != nil {
 		r.logger.Error(err, "Failed to save initial ManifestChangeApproval in repository")
-		// Release lock with status failed
+		// Release lock with reason failed
 		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
 			Type:    governancev1alpha1.Progressing,
 			Status:  metav1.ConditionFalse,
@@ -189,7 +191,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, 
 	// Update status conditions to reflect success
 	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
 		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionTrue,
+		Status:  metav1.ConditionFalse,
 		Reason:  "InitializationSuccessful",
 		Message: "Initial state successfully committed to Git and cluster",
 	})
@@ -200,6 +202,10 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, 
 		Message: "Governance is active for this MCA",
 	})
 
+	if err := r.Status().Update(ctx, mca); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
+	}
+	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
 	if err := r.Update(ctx, mca); err != nil {
 		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
 	}
