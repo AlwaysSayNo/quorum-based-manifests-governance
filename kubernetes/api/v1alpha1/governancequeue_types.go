@@ -29,6 +29,8 @@ type EventReference struct {
 
 // GovernanceQueueSpec defines the desired state of GovernanceQueue
 type GovernanceQueueSpec struct {
+	// +required
+	MRT ManifestRef `json:"mrt,omitempty"`
 }
 
 // GovernanceQueueStatus defines the observed state of GovernanceQueue.

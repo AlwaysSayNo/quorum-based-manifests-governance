@@ -255,6 +255,10 @@ type ManifestRequestTemplateStatus struct {
 	// +optional
 	RevisionsQueue []string `json:"revisionsQueue,omitempty"`
 
+	// RevisionsQueueRef is the reference to the dedicated queue CRD.
+	// +required
+	RevisionQueueRef ManifestRef `json:"revisionQueueRef,omitempty"`
+
 	// LastObservedCommitHash is the last observed commit hash from the git repository
 	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
 

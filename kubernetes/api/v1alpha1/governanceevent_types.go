@@ -30,16 +30,15 @@ const (
 
 // NewRevisionPayload holds the data for a NewRevision event.
 type NewRevisionPayload struct {
-	CommitSHA          string            `json:"commitSHA"`
-	ArgoCDApplication  ArgoCDApplication `json:"argoCDApplication,omitempty"`
-	ArgoCDAppName      string            `json:"argoCDAppName"`
-	ArgoCDAppNamespace string            `json:"argoCDAppNamespace"`
+	CommitSHA string `json:"commitSHA"`
 }
 
 // GovernanceEventSpec defines the desired state of GovernanceEvent
 type GovernanceEventSpec struct {
 	// Type indicates the kind of event this is.
 	Type EventType `json:"type"`
+
+	MRT ManifestRef `json:"mrt,omitempty"`
 
 	// NewRevision holds the payload if the event type is NewRevision.
 	// +optional
