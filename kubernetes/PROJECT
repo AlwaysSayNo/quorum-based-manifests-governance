@@ -50,4 +50,21 @@ resources:
   kind: QubmangoIndex
   path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: GovernanceQueue
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: nazar.grynko.com
+  group: governance
+  kind: GovernanceEvent
+  path: github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1
+  version: v1alpha1
 version: "3"

@@ -25,6 +25,7 @@ rules:
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
+  - governancequeues
   - manifestchangeapprovals
   - manifestrequesttemplates
   - manifestsigningrequests
@@ -40,6 +41,7 @@ rules:
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
+  - governancequeues/finalizers
   - manifestchangeapprovals/finalizers
   - manifestrequesttemplates/finalizers
   - manifestsigningrequests/finalizers
@@ -49,6 +51,7 @@ rules:
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
+  - governancequeues/status
   - manifestchangeapprovals/status
   - manifestrequesttemplates/status
   - manifestsigningrequests/status

@@ -208,6 +208,9 @@ spec:
           status:
             description: status defines the observed state of ManifestRequestTemplate
             properties:
+              actionState:
+                description: ActionState tracks the progress of the main reconcile.
+                type: string
               conditions:
                 description: |-
                   conditions represent the current state of the ManifestRequestTemplate resource.
@@ -288,6 +291,10 @@ spec:
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
                   from the git repository
+                type: string
+              revisionProcessingStep:
+                description: RevisionProcessingState tracks the progress of the revision
+                  processing.
                 type: string
               revisionsQueue:
                 description: RevisionsQueue is the list of commit SHAs waiting for

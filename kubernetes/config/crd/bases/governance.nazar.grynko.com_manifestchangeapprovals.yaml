@@ -64,6 +64,8 @@ spec:
                   - status
                   type: object
                 type: array
+              commitSha:
+                type: string
               gitRepository:
                 properties:
                   sshUrl:
@@ -184,6 +186,7 @@ spec:
                 type: integer
             required:
             - changes
+            - commitSha
             - gitRepository
             - governors
             - location

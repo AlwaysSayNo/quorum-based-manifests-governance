@@ -36,6 +36,12 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the kubernetes itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- governanceevent_admin_role.yaml
+- governanceevent_editor_role.yaml
+- governanceevent_viewer_role.yaml
+- governancequeue_admin_role.yaml
+- governancequeue_editor_role.yaml
+- governancequeue_viewer_role.yaml
 - qubmangoindex_admin_role.yaml
 - qubmangoindex_editor_role.yaml
 - qubmangoindex_viewer_role.yaml

@@ -142,12 +142,13 @@ func (mr *MockGitRepositoryMockRecorder) HasRevision(ctx, commit any) *gomock.Ca
 }
 
 // InitializeGovernance mocks base method.
-func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, error) {
+func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "InitializeGovernance", ctx, operationalFileLocation, governanceIndexAlias, governanceFolder)
 	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // InitializeGovernance indicates an expected call of InitializeGovernance.
@@ -199,6 +200,22 @@ func (m *MockGitRepository) PushSignature(ctx context.Context, msr *v1alpha1.Man
 func (mr *MockGitRepositoryMockRecorder) PushSignature(ctx, msr, governorAlias, signatureData any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushSignature", reflect.TypeOf((*MockGitRepository)(nil).PushSignature), ctx, msr, governorAlias, signatureData)
+}
+
+// RemoveFromIndexFile mocks base method.
+func (m *MockGitRepository) RemoveFromIndexFile(ctx context.Context, operationalFileLocation, governanceIndexAlias string) (string, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveFromIndexFile", ctx, operationalFileLocation, governanceIndexAlias)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// RemoveFromIndexFile indicates an expected call of RemoveFromIndexFile.
+func (mr *MockGitRepositoryMockRecorder) RemoveFromIndexFile(ctx, operationalFileLocation, governanceIndexAlias any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveFromIndexFile", reflect.TypeOf((*MockGitRepository)(nil).RemoveFromIndexFile), ctx, operationalFileLocation, governanceIndexAlias)
 }
 
 // Sync mocks base method.
