@@ -98,11 +98,11 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	// Handle initialization
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		return r.reconcileCreate(ctx, mrt, req)
+		return r.reconcileCreate(ctx, mrt)
 	}
 
 	// Handle normal reconciliation
-	return r.reconcileNormal(ctx, mrt, req)
+	return r.reconcileNormal(ctx, mrt)
 }
 
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
@@ -159,7 +159,6 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
-	req ctrl.Request,
 ) (ctrl.Result, error) {
 	r.logger.Info("Reconciling new ManifestRequestTemplate", "currentState", mrt.Status.ActionState)
 
@@ -461,7 +460,6 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 func (r *ManifestRequestTemplateReconciler) reconcileNormal(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
-	req ctrl.Request,
 ) (ctrl.Result, error) {
 	// Check an active Lock.
 	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
