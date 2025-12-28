@@ -40,6 +40,13 @@ type Notifier interface {
 	NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
 }
 
+// StateHandler defines a function that performs work within a state and returns the next state
+type StateHandler func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error)
+
+// ReconcileStateHandler defines a function that performs work within a reconcile state
+// and returns the next reconcile state
+type ReconcileStateHandler func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRReconcileNewMSRSpecState, error)
+
 // ManifestSigningRequestReconciler reconciles a ManifestSigningRequest object
 type ManifestSigningRequestReconciler struct {
 	client.Client
@@ -63,81 +70,92 @@ func (r *ManifestSigningRequestReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestsigningrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
+// Reconcile orchestrates the reconciliation flow for ManifestSigningRequest.
+// It handles three main paths:
+// 1. Deletion: Remove finalizer and cleanup
+// 2. Initialization: Create, push to Git, update history, set finalizer
+// 3. Normal: Process new versions and respond to signature events
 func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestSigningRequest", "name", req.Name, "namespace", req.Namespace)
-	r.logger.Info("Reconciling ManifestSigningRequest")
+	r.logger.Info("Starting reconciliation", "msr", req.NamespacedName)
 
 	// Fetch the MSR instance
 	msr := &governancev1alpha1.ManifestSigningRequest{}
 	if err := r.Get(ctx, req.NamespacedName, msr); err != nil {
-		r.logger.Info("DEBUG: MSR not found")
+		r.logger.V(2).Info("MSR not found, may have been deleted", "err", err)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// Handle deletion
 	if !msr.ObjectMeta.DeletionTimestamp.IsZero() {
-		r.logger.Info("DEBUG: MSR reconcileDelete")
+		r.logger.Info("MSR is marked for deletion", "actionState", msr.Status.ActionState)
 		return r.reconcileDelete(ctx, msr)
 	}
 
-	// Release lock if hold too long
+	// Release lock if hold too long (deadlock prevention)
 	if r.isLockForMoreThan(msr, 30*time.Second) {
-		r.logger.Info("DEBUG: MSR removeProgressing")
+		r.logger.Info("Lock held too long, releasing to prevent deadlock", "actionState", msr.Status.ActionState, "lockDuration", "30s")
 		return ctrl.Result{Requeue: true}, r.releaseLockWithFailure(ctx, msr, msr.Status.ActionState, fmt.Errorf("lock acquired for too long"))
 	}
 
-	// Handle initialization
+	// Handle initialization (before finalizer is set)
 	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
-		r.logger.Info("DEBUG: MSR reconcileCreate")
+		r.logger.Info("MSR not initialized, starting initialization flow", "actionState", msr.Status.ActionState)
 		return r.reconcileCreate(ctx, msr, req)
 	}
 
-	// Handle normal reconciliation
-	r.logger.Info("DEBUG: MSR reconcileNormal")
+	// Handle normal reconciliation (after initialization)
+	r.logger.Info("MSR initialized, processing normal reconciliation", "actionState", msr.Status.ActionState)
 	return r.reconcileNormal(ctx, msr, req)
 }
 
-// reconcileDelete handles the cleanup logic when an MSR is being deleted.
+// reconcileDelete handles cleanup when MSR is marked for deletion.
+// It removes the finalizer, allowing Kubernetes to delete the resource.
 func (r *ManifestSigningRequestReconciler) reconcileDelete(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
-		// No custom finalizer is found. Do nothing
+		// No custom finalizer found, nothing to clean up
+		r.logger.V(2).Info("No finalizer found, deletion already in progress")
 		return ctrl.Result{}, nil
 	}
 
-	// No real clean-up logic is needed
-	r.logger.Info("Finalizing ManifestSigningRequest", "currentState", msr.Status.ActionState)
+	r.logger.Info("Processing MSR deletion", "actionState", msr.Status.ActionState)
 
 	switch msr.Status.ActionState {
 	default:
-		// Any state means we need to start the deletion process.
+		// Any state means we start the deletion process
 		return r.handleStateDeletion(ctx, msr)
 	}
 }
 
-// handleStateDeletion removes entry for current MSR from index file and finalizer from this resource.
+// handleStateDeletion removes the finalizer from MSR to complete deletion.
+// State: any → MSREmptyActionState
 func (r *ManifestSigningRequestReconciler) handleStateDeletion(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Skip lock acquiring.
+	r.logger.Info("Starting finalizer removal", "currentState", msr.Status.ActionState)
 
-	// Remove the finalizer from MSR.
-	r.logger.Info("Start removing finalizer.")
+	// Remove the finalizer from MSR
 	controllerutil.RemoveFinalizer(msr, GovernanceFinalizer)
 	if err := r.Update(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to remove finalizer")
 		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRStateDeletionInProgress, err)
 		return ctrl.Result{}, fmt.Errorf("remove finalizer from MSRStateDeletionInProgress: %w", err)
 	}
-	r.logger.Info("Finish removing finalizer.")
 
-	r.logger.Info("Successfully deleted ManifestSigningRequest.")
+	r.logger.Info("Finalizer removed successfully")
 	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSREmptyActionState)
+	if err != nil {
+		r.logger.Error(err, "Failed to release lock after deletion")
+	}
 	return ctrl.Result{}, err
 }
 
+// isLockForMoreThan checks if the Progressing lock has been held for longer than the specified duration.
+// Used for deadlock detection and prevention.
 func (r *ManifestSigningRequestReconciler) isLockForMoreThan(
 	msr *governancev1alpha1.ManifestSigningRequest,
 	duration time.Duration,
@@ -146,145 +164,119 @@ func (r *ManifestSigningRequestReconciler) isLockForMoreThan(
 	return condition != nil && condition.Status == metav1.ConditionTrue && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
 }
 
-// reconcileCreate handles the logic for a newly created MSR that has not been initialized.
+// reconcileCreate handles initialization of a new MSR.
+// It progresses through these states:
+// 1. MSRStateGitPushMSR: Push initial MSR manifest to Git
+// 2. MSRStateUpdateAfterGitPush: Update in-cluster history after push
+// 3. MSRStateInitSetFinalizer: Set finalizer to complete initialization
 func (r *ManifestSigningRequestReconciler) reconcileCreate(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 	req ctrl.Request,
 ) (ctrl.Result, error) {
-	r.logger.Info("Reconciling new ManifestSigningRequest", "currentState", msr.Status.ActionState)
+	r.logger.Info("Initializing new MSR", "actionState", msr.Status.ActionState)
 
-	// Check, if there is any available git repository provider
+	// Check if there is any available git repository provider
 	if _, err := r.repositoryWithError(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed on first repository fetch")
+		r.logger.Error(err, "Repository provider unavailable, cannot proceed with initialization")
 		return ctrl.Result{}, fmt.Errorf("init repo for ManifestSigningRequest: %w", err)
 	}
 
 	switch msr.Status.ActionState {
 	case governancev1alpha1.MSREmptyActionState, governancev1alpha1.MSRStateGitPushMSR:
 		// 1. Create an initial MSR file in governance folder in Git repository.
-		r.logger.Info("handleStateGitCommit")
+		r.logger.Info("Pushing initial MSR to Git repository")
 		return r.handleStateGitCommit(ctx, msr)
 	case governancev1alpha1.MSRStateUpdateAfterGitPush:
-		// 2. Update information in-cluster MST (add history record) after Git repository push.
-		r.logger.Info("handleUpdateAfterGitPush")
+		// 2. Update information in-cluster MSR (add history record) after Git repository push.
+		r.logger.Info("Updating MSR after initial Git push")
 		return r.handleUpdateAfterGitPush(ctx, msr)
 	case governancev1alpha1.MSRStateInitSetFinalizer:
-		// 3. Confirm MSR initialization, by setting the GovernanceFinalizer.
-		r.logger.Info("handleStateFinalizer")
+		// 3. Confirm MSR initialization by setting the GovernanceFinalizer.
+		r.logger.Info("Setting finalizer to complete initialization")
 		return r.handleStateFinalizer(ctx, msr)
 	default:
-		// Any unknown ActionState in MSR during initialization - error.
-		r.logger.Info(fmt.Sprintf("Unknown initialization state: %s", string(msr.Status.ActionState)))
-		return ctrl.Result{}, fmt.Errorf("unknown initialization state: %s", string(msr.Status.ActionState))
+		err := fmt.Errorf("unknown initialization state: %s", string(msr.Status.ActionState))
+		r.logger.Error(err, "Invalid state for initialization")
+		return ctrl.Result{}, err
 	}
 }
 
-// handleStateGitCommit is responsible for managing lock and pushing MSR manifest to Git repository.
+// handleStateGitCommit pushes the initial MSR manifest to the Git repository.
+// State: MSRStateGitPushMSR → MSRStateUpdateAfterGitPush
 func (r *ManifestSigningRequestReconciler) handleStateGitCommit(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, msr, governancev1alpha1.MSRStateGitPushMSR, "Pushing MSR manifest to Git repository"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
-
-	// Save MSR in Git repository.
-	r.logger.Info("Start saving MSR in Git repository")
-	if err := r.saveInRepository(ctx, msr); err != nil {
-		err = fmt.Errorf("save MSR in Git repository: %w", err)
-		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRStateGitPushMSR, err)
-		return ctrl.Result{}, err
-	}
-	r.logger.Info("Finish saving initial MSR in Git repository")
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSRStateUpdateAfterGitPush)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleStateGitCommit")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleStateGitCommit")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withLock(ctx, msr, governancev1alpha1.MSRStateGitPushMSR, "Pushing MSR manifest to Git repository",
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
+			r.logger.Info("Saving initial MSR to Git repository", "msr", msr.Name, "namespace", msr.Namespace)
+			if err := r.saveInRepository(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to save MSR to repository")
+				return "", fmt.Errorf("save MSR in Git repository: %w", err)
+			}
+			r.logger.Info("MSR saved to repository successfully")
+			return governancev1alpha1.MSRStateUpdateAfterGitPush, nil
+		},
+	)
 }
 
-// handleUpdateAfterGitPush is responsible for managing lock and updating in-cluster MSR information after Git push.
+// handleUpdateAfterGitPush updates the in-cluster MSR status with history after Git push.
+// State: MSRStateUpdateAfterGitPush → MSRStateInitSetFinalizer
 func (r *ManifestSigningRequestReconciler) handleUpdateAfterGitPush(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, msr, governancev1alpha1.MSRStateUpdateAfterGitPush, "Updating in-cluster MSR information after Git push"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
-
-	// Update MSR information after Git push.
-	r.logger.Info("Start updating MSR after Git repository push")
-	// Add new initial history record
-	newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
-	msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
-	if err := r.Status().Update(ctx, msr); err != nil {
-		err = fmt.Errorf("update MSR information after Git push: %w", err)
-		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRStateUpdateAfterGitPush, err)
-		return ctrl.Result{}, err
-	}
-	r.logger.Info("Finish updating MSR after Git repository push")
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSRStateInitSetFinalizer)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleUpdateAfterGitPush")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleUpdateAfterGitPush")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withLock(ctx, msr, governancev1alpha1.MSRStateUpdateAfterGitPush, "Updating in-cluster MSR information after Git push",
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
+			r.logger.Info("Adding history record after Git push", "version", msr.Spec.Version, "historyCount", len(msr.Status.RequestHistory)+1)
+			newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
+			msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
+			if err := r.Status().Update(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to update MSR with history record", "version", newRecord.Version)
+				return "", fmt.Errorf("update MSR information after Git push: %w", err)
+			}
+			r.logger.Info("MSR history updated successfully")
+			return governancev1alpha1.MSRStateInitSetFinalizer, nil
+		},
+	)
 }
 
-// handleStateFinalizer is responsible for managing lock and setting the GovernanceFinalizer on MSR.
+// handleStateFinalizer sets the GovernanceFinalizer on the MSR to complete initialization.
+// State: MSRStateInitSetFinalizer → MSREmptyActionState
 func (r *ManifestSigningRequestReconciler) handleStateFinalizer(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, msr, governancev1alpha1.MSRStateInitSetFinalizer, "Setting the GovernanceFinalizer on MSR"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
-
-	// Set the GovernanceFinalizer on MSR.
-	r.logger.Info("Start setting the GovernanceFinalizer on MSR")
-
-	controllerutil.AddFinalizer(msr, GovernanceFinalizer)
-	if err := r.Update(ctx, msr); err != nil {
-		err = fmt.Errorf("add finalizer in initialization: %w", err)
-		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRStateInitSetFinalizer, err)
-		return ctrl.Result{}, err
-	}
-
-	r.logger.Info("Finish setting the GovernanceFinalizer on MSR")
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSREmptyActionState)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleStateFinalizer")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleStateFinalizer")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withLock(ctx, msr, governancev1alpha1.MSRStateInitSetFinalizer, "Setting the GovernanceFinalizer on MSR",
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
+			r.logger.Info("Adding GovernanceFinalizer to complete initialization")
+			controllerutil.AddFinalizer(msr, GovernanceFinalizer)
+			if err := r.Update(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to add finalizer")
+				return "", fmt.Errorf("add finalizer in initialization: %w", err)
+			}
+			r.logger.Info("Initialization complete, finalizer added")
+			return governancev1alpha1.MSREmptyActionState, nil
+		},
+	)
 }
 
+// reconcileNormal handles reconciliation for initialized MSR resources.
+// It processes new versions detected in the Spec and orchestrates the reconciliation state machine.
+// If Spec.Version > latest history version, transitions to MSRReconcileNewMSRSpec state.
 func (r *ManifestSigningRequestReconciler) reconcileNormal(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 	req ctrl.Request,
 ) (ctrl.Result, error) {
-	// Check an active Lock.
+	// Check for active lock
 	if meta.IsStatusConditionTrue(msr.Status.Conditions, governancev1alpha1.Progressing) {
-		r.logger.Info("Waiting for ongoing operation to complete.", "operation", msr.Status.ActionState)
+		r.logger.V(2).Info("Waiting for ongoing operation to complete", "actionState", msr.Status.ActionState)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	// If ActionState is empty, we need to decide what action to do.
+	// If ActionState is empty, we need to decide what action to do
 	if msr.Status.ActionState == governancev1alpha1.MSREmptyActionState {
 		// Get the latest history record version
 		latestHistoryVersion := -1
@@ -295,183 +287,147 @@ func (r *ManifestSigningRequestReconciler) reconcileNormal(
 
 		// If the spec's version is newer - reconcile status
 		if msr.Spec.Version > latestHistoryVersion {
-			r.logger.Info("Detected new version in spec. Transitioning to MSRReconcileNewMSRSpec state.", "specVersion", msr.Spec.Version, "statusVersion", latestHistoryVersion)
+			r.logger.Info("New version detected in spec, starting reconciliation", "specVersion", msr.Spec.Version, "latestVersion", latestHistoryVersion)
 			return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec)
 		}
+
+		// No new version detected
+		r.logger.V(3).Info("No new version to process", "specVersion", msr.Spec.Version, "latestVersion", latestHistoryVersion)
 	}
 
-	// TODO: Signature Observer logic
-	// Execute action.
+	// Execute action based on current ActionState
 	switch msr.Status.ActionState {
 	case governancev1alpha1.MSRReconcileNewMSRSpec:
+		r.logger.V(2).Info("Processing new MSR spec")
 		return r.handleReconcileNewMSRSpec(ctx, msr)
 	default:
-		// If the state is unknown - set to EmptyState.
+		// If the state is unknown - reset to EmptyState
+		r.logger.V(2).Info("Unknown action state, resetting", "actionState", msr.Status.ActionState)
 		return ctrl.Result{}, r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSREmptyActionState)
 	}
 }
 
-// handleReconcileNewMSRSpec is responsible for managing lock and processing new MSR Spec.
+// handleReconcileNewMSRSpec orchestrates processing of a new MSR Spec version.
+// State: MSRReconcileNewMSRSpec with sub-states:
+// 1. MSRReconcileStateGitPushMSR: Push updated MSR to Git
+// 2. MSRReconcileRStateUpdateAfterGitPush: Add history record
+// 3. MSRReconcileRStateNotifyGovernors: Notify governors
+// Final state: MSREmptyActionState
 func (r *ManifestSigningRequestReconciler) handleReconcileNewMSRSpec(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Acquire Lock.
-	if lockAcquired, err := r.acquireLock(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, "Processing new MSR Spec"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
+	r.logger.Info("Starting reconciliation of new MSR spec", "version", msr.Spec.Version, "reconcileState", msr.Status.ReconcileState)
+
+	// Acquire Lock
+	lockAcquired, err := r.acquireLock(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, "Processing new MSR Spec")
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("Lock already held, requeuing", "reconcileState", msr.Status.ReconcileState)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 	}
 
-	// Check repository connection exists.
+	// Check repository connection exists
 	if _, err := r.repositoryWithError(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed to connect to repository.")
-		err = fmt.Errorf("check repository: %w", err)
-		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, err)
+		r.logger.Error(err, "Repository unavailable for spec reconciliation")
+		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, fmt.Errorf("check repository: %w", err))
 		return ctrl.Result{}, err
 	}
 
-	// Dispatch to the correct revision sub-state handler.
-	var result ctrl.Result
-	var err error
-
-	// In case of failure, let the main handler release the lock.
+	// Dispatch to the correct reconcile sub-state handler
+	// Each handler manages its own ReconcileState transition and lock release
+	r.logger.V(2).Info("Dispatching to reconcile sub-state handler", "reconcileState", msr.Status.ReconcileState)
 	switch msr.Status.ReconcileState {
 	case governancev1alpha1.MSRReconcileStateRevisionEmpty, governancev1alpha1.MSRReconcileStateGitPushMSR:
-		// 1.
-		r.logger.Info("DEBUG: handleReconcileNewMSRSpec#handleMSRReconcileStateGitCommit")
-		result, err = r.handleMSRReconcileStateGitCommit(ctx, msr)
+		return r.handleMSRReconcileStateGitCommit(ctx, msr)
 	case governancev1alpha1.MSRReconcileRStateUpdateAfterGitPush:
-		// 2. Update the MSR Spec with data from new revision (changed files, revision hash, etc.).
-		r.logger.Info("DEBUG: handleReconcileNewMSRSpec#handleSubStateUpdateMSR")
-		result, err = r.handleMSRReconcileStateUpdateAfterGitPush(ctx, msr)
+		return r.handleMSRReconcileStateUpdateAfterGitPush(ctx, msr)
 	case governancev1alpha1.MSRReconcileRStateNotifyGovernors:
-		// 2. Update the MSR Spec with data from new revision (changed files, revision hash, etc.).
-		r.logger.Info("DEBUG: handleReconcileNewMSRSpec#handleMSRReconcileStateNotifyGovernors")
-		result, err = r.handleMSRReconcileStateNotifyGovernors(ctx, msr)
+		return r.handleMSRReconcileStateNotifyGovernors(ctx, msr)
 	default:
-		// Any unknown ReconcileState during state processing - error.
-		r.logger.Info(fmt.Sprintf("Unknown ReconcileState state: %s", string(msr.Status.ReconcileState)))
-		return ctrl.Result{}, fmt.Errorf("unknown ReconcileState state: %s", string(msr.Status.ReconcileState))
-
-	}
-
-	// If any step failed, we release the lock but keep the meta-state.
-	if err != nil {
-		r.logger.Info("DEBUG: handleReconcileNewMSRSpec: error after sub state call")
+		err := fmt.Errorf("unknown ReconcileState: %s", string(msr.Status.ReconcileState))
+		r.logger.Error(err, "Invalid reconcile state")
 		_ = r.releaseLockWithFailure(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, err)
-		return result, err
+		return ctrl.Result{}, err
 	}
-
-	r.logger.Info("DEBUG: handleReconcileNewMSRSpec: successfull sub state call")
-	return result, nil
 }
 
-// handleMSRReconcileStateGitCommit is responsible for releasing lock and pushing MSR manifest to Git repository.
+// handleMSRReconcileStateGitCommit pushes the updated MSR manifest to Git repository.
+// Sub-state: MSRReconcileStateGitPushMSR → MSRReconcileRStateUpdateAfterGitPush
 func (r *ManifestSigningRequestReconciler) handleMSRReconcileStateGitCommit(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-	// Save MSR in Git repository.
-	r.logger.Info("Start saving MSR in Git repository")
-	if err := r.saveInRepository(ctx, msr); err != nil {
-		err = fmt.Errorf("save MSR in Git repository: %w", err)
-		return ctrl.Result{}, err
-	}
-	r.logger.Info("Finish saving initial MSR in Git repository")
-
-	// Revision passes. Transition ReconcileState to MSRReconcileRStateUpdateAfterGitPush.
-	msr.Status.ReconcileState = governancev1alpha1.MSRReconcileRStateUpdateAfterGitPush
-	if err := r.Status().Update(ctx, msr); err != nil {
-		r.logger.Error(err, "Failure while updating ReconcileState")
-		err = fmt.Errorf("update ReconcileState: %w", err)
-		return ctrl.Result{}, err
-	}
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessful handleMSRReconcileStateGitCommit")
-	} else {
-		r.logger.Info("DEBUG: Successful handleMSRReconcileStateGitCommit")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withReconcileLock(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, governancev1alpha1.MSRReconcileNewMSRSpec,
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRReconcileNewMSRSpecState, error) {
+			r.logger.Info("Pushing updated MSR manifest to Git repository", "version", msr.Spec.Version)
+			if err := r.saveInRepository(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to push MSR to repository", "version", msr.Spec.Version)
+				return "", fmt.Errorf("save MSR in Git repository: %w", err)
+			}
+			r.logger.Info("MSR pushed to repository, transitioning to update state", "version", msr.Spec.Version)
+			return governancev1alpha1.MSRReconcileRStateUpdateAfterGitPush, nil
+		},
+	)
 }
 
-// handleMSRReconcileStateUpdateAfterGitPush is responsible for releasing lock and updating in-cluster MSR information after Git push.
+// handleMSRReconcileStateUpdateAfterGitPush adds a history record after Git push.
+// Sub-state: MSRReconcileRStateUpdateAfterGitPush → MSRReconcileRStateNotifyGovernors
 func (r *ManifestSigningRequestReconciler) handleMSRReconcileStateUpdateAfterGitPush(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-
-	// Update MSR information after Git push.
-	r.logger.Info("Start updating MSR after Git repository push")
-	// Add new initial history record
-	newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
-	msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
-	// Update MSRReconcile state
-	msr.Status.ReconcileState = governancev1alpha1.MSRReconcileRStateNotifyGovernors
-
-	if err := r.Status().Update(ctx, msr); err != nil {
-		r.logger.Error(err, "Failure while updating ReconcileState")
-		err = fmt.Errorf("update MSR information after Git push: %w", err)
-		return ctrl.Result{}, err
-	}
-	r.logger.Info("Finish updating MSR after Git repository push")
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleMSRReconcileStateUpdateAfterGitPush")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleMSRReconcileStateUpdateAfterGitPush")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withReconcileLock(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, governancev1alpha1.MSRReconcileNewMSRSpec,
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRReconcileNewMSRSpecState, error) {
+			r.logger.Info("Adding reconciliation history record", "version", msr.Spec.Version)
+			newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
+			msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
+			if err := r.Status().Update(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to add history record", "version", newRecord.Version)
+				return "", fmt.Errorf("update MSR information after Git push: %w", err)
+			}
+			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "historyCount", len(msr.Status.RequestHistory))
+			return governancev1alpha1.MSRReconcileRStateNotifyGovernors, nil
+		},
+	)
 }
 
-// handleMSRReconcileStateNotifyGovernors is responsible for releasing lock and sending notification to governors.
+// handleMSRReconcileStateNotifyGovernors sends notifications to governors about the new MSR version.
+// Sub-state: MSRReconcileRStateNotifyGovernors → MSRReconcileStateRevisionEmpty (final)
+// Transitions ActionState back to MSREmptyActionState, completing the reconciliation cycle.
 func (r *ManifestSigningRequestReconciler) handleMSRReconcileStateNotifyGovernors(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {
-
-	// Send notification to governors.
-	r.logger.Info("Start sending notification to governors")
-
-	// Notify the Governors
-	if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed to send notifications to governors")
-		err := fmt.Errorf("send notification to governors")
-		return ctrl.Result{}, err
-	}
-
-	// Update MSRReconcile state
-	msr.Status.ReconcileState = governancev1alpha1.MSRReconcileRStateNotifyGovernors
-	if err := r.Status().Update(ctx, msr); err != nil {
-		err = fmt.Errorf("update MSR information after Git push: %w", err)
-		return ctrl.Result{}, err
-	}
-	r.logger.Info("Finish sending notification to governors")
-
-	err := r.releaseLockAndSetNextState(ctx, msr, governancev1alpha1.MSREmptyActionState)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleMSRReconcileStateNotifyGovernors")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleMSRReconcileStateNotifyGovernors")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withReconcileLock(ctx, msr, governancev1alpha1.MSRReconcileNewMSRSpec, governancev1alpha1.MSREmptyActionState,
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRReconcileNewMSRSpecState, error) {
+			r.logger.Info("Sending notifications to governors", "version", msr.Spec.Version, "requireSignatures", msr.Spec.Require)
+			if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
+				r.logger.Error(err, "Failed to send notifications to governors", "version", msr.Spec.Version)
+				return "", fmt.Errorf("send notification to governors: %w", err)
+			}
+			r.logger.Info("Notifications sent successfully, spec reconciliation complete", "version", msr.Spec.Version)
+			return governancev1alpha1.MSRReconcileStateRevisionEmpty, nil
+		},
+	)
 }
 
+// saveInRepository pushes the MSR manifest to the configured Git repository.
+// It creates a repository-friendly representation and returns the commit reference.
 func (r *ManifestSigningRequestReconciler) saveInRepository(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) error {
 	repositoryMSR := r.createRepositoryMSR(msr)
 	if _, err := r.repository(ctx, msr).PushMSR(ctx, &repositoryMSR); err != nil {
-		r.logger.Error(err, "Failed to push initial ManifestSigningRequest in repository")
+		r.logger.Error(err, "Failed to push MSR to repository", "msr", msr.Name, "namespace", msr.Namespace)
 		return fmt.Errorf("push initial ManifestSigningRequest to repository: %w", err)
 	}
 
 	return nil
 }
 
+// createRepositoryMSR transforms the MSR into a repository-compatible manifest object.
+// It preserves the metadata and spec for storage in Git.
 func (r *ManifestSigningRequestReconciler) createRepositoryMSR(
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) governancev1alpha1.ManifestSigningRequestManifestObject {
@@ -489,6 +445,8 @@ func (r *ManifestSigningRequestReconciler) createRepositoryMSR(
 	}
 }
 
+// saveNewHistoryRecord creates and appends a new history record from the current spec.
+// It updates the status with the new record, preserving the entire history.
 func (r *ManifestSigningRequestReconciler) saveNewHistoryRecord(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
@@ -499,14 +457,16 @@ func (r *ManifestSigningRequestReconciler) saveNewHistoryRecord(
 
 	// Save the change
 	if err := r.Status().Update(ctx, msr); err != nil {
-		r.logger.Error(err, "Failed to update MSR status with new history record")
+		r.logger.Error(err, "Failed to update MSR status with new history record", "version", newRecord.Version)
 		return fmt.Errorf("update ManifestSigningRequest status with new history record: %w", err)
 	}
 
-	r.logger.Info("Successfully added new MSR record to status")
+	r.logger.V(2).Info("New history record added", "version", newRecord.Version, "historyCount", len(msr.Status.RequestHistory))
 	return nil
 }
 
+// createNewMSRHistoryRecordFromSpec creates a history record from the current MSR spec.
+// It captures the version, changes, governors, signature requirements, and current approval status.
 func (r *ManifestSigningRequestReconciler) createNewMSRHistoryRecordFromSpec(
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) governancev1alpha1.ManifestSigningRequestHistoryRecord {
@@ -522,7 +482,80 @@ func (r *ManifestSigningRequestReconciler) createNewMSRHistoryRecordFromSpec(
 	}
 }
 
-// acquireLock sets in cluster MSR ActionState and Condition.Progressing to True, if it isn't set yet.
+// withLock wraps state handler logic with lock acquisition and release.
+// It provides a clean abstraction for ActionState transitions:
+// 1. Acquires lock with re-fetch to prevent conflicts
+// 2. Executes the handler function
+// 3. On success: releases lock and transitions to nextState
+// 4. On failure: releases lock with failure reason and returns error
+// This eliminates boilerplate and ensures consistent lock management.
+func (r *ManifestSigningRequestReconciler) withLock(
+	ctx context.Context,
+	msr *governancev1alpha1.ManifestSigningRequest,
+	state governancev1alpha1.MSRActionState,
+	message string,
+	handler StateHandler,
+) (ctrl.Result, error) {
+	lockAcquired, err := r.acquireLock(ctx, msr, state, message)
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("lock was already acquired, requeuing", "state", state)
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+	}
+
+	nextState, err := handler(ctx, msr)
+	if err != nil {
+		r.logger.Error(err, "Handler failed, releasing lock with failure", "state", state)
+		_ = r.releaseLockWithFailure(ctx, msr, state, err)
+		return ctrl.Result{}, err
+	}
+
+	r.logger.V(2).Info("Handler succeeded, transitioning state", "from", state, "to", nextState)
+	releasErr := r.releaseLockAndSetNextState(ctx, msr, nextState)
+	return ctrl.Result{Requeue: true}, releasErr
+}
+
+// withReconcileLock wraps reconcile sub-state handler logic.
+// Assumes the outer lock (ActionState) is already held by the parent handler.
+// It provides a clean abstraction for ReconcileState transitions:
+// 1. Executes the handler function
+// 2. On success: updates ReconcileState, releases lock with nextActionState, and requeues
+// 3. On failure: releases lock with failure reason and returns error
+// The nextActionState parameter allows specifying what ActionState to transition to,
+// enabling the last handler to transition back to Empty.
+func (r *ManifestSigningRequestReconciler) withReconcileLock(
+	ctx context.Context,
+	msr *governancev1alpha1.ManifestSigningRequest,
+	parentState governancev1alpha1.MSRActionState,
+	nextActionState governancev1alpha1.MSRActionState,
+	handler ReconcileStateHandler,
+) (ctrl.Result, error) {
+	nextReconcileState, err := handler(ctx, msr)
+	if err != nil {
+		r.logger.Error(err, "Reconcile handler failed, releasing lock", "parentState", parentState, "currentReconcileState", msr.Status.ReconcileState)
+		_ = r.releaseLockWithFailure(ctx, msr, parentState, err)
+		return ctrl.Result{}, err
+	}
+
+	// Update ReconcileState
+	r.logger.V(2).Info("Updating ReconcileState", "from", msr.Status.ReconcileState, "to", nextReconcileState)
+	msr.Status.ReconcileState = nextReconcileState
+	if err := r.Status().Update(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to update ReconcileState", "newState", nextReconcileState)
+		_ = r.releaseLockWithFailure(ctx, msr, parentState, fmt.Errorf("update ReconcileState: %w", err))
+		return ctrl.Result{}, err
+	}
+
+	// Transition ActionState to nextActionState and requeue
+	releasErr := r.releaseLockAndSetNextState(ctx, msr, nextActionState)
+	if releasErr == nil {
+		r.logger.V(2).Info("Reconcile sub-state completed, requeuing", "nextReconcileState", nextReconcileState, "nextActionState", nextActionState)
+	}
+	return ctrl.Result{Requeue: true}, releasErr
+}
+
+// acquireLock attempts to acquire an exclusive lock for the given state.
+// It re-fetches the MSR to avoid "object modified" conflicts.
+// Returns (true, nil) if lock was acquired, (false, nil) if already held, (false, err) on error.
 func (r *ManifestSigningRequestReconciler) acquireLock(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
@@ -531,61 +564,80 @@ func (r *ManifestSigningRequestReconciler) acquireLock(
 ) (bool, error) {
 	// Re-fetch is crucial to avoid "object modified" errors
 	if err := r.Get(ctx, client.ObjectKeyFromObject(msr), msr); err != nil {
+		r.logger.Error(err, "Failed to re-fetch MSR for lock acquisition", "state", newState)
 		return false, fmt.Errorf("fetch fresh ManifestSigningRequest: %w", err)
 	}
 
-	// Check, if Condition.Progressing was already set.
+	// Check if Condition.Progressing was already set for this state
 	if msr.Status.ActionState == newState && meta.IsStatusConditionTrue(msr.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.V(3).Info("Lock already held for this state", "state", newState)
 		return false, nil
 	}
 
-	// Set ActionState.
+	// Set ActionState and Progressing condition
 	msr.Status.ActionState = newState
 	meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
 		Type: governancev1alpha1.Progressing, Status: metav1.ConditionTrue, Reason: string(newState), Message: message,
 	})
 
-	// Save new Status changes.
+	// Save the lock
 	if err := r.Status().Update(ctx, msr); err != nil {
 		r.logger.Error(err, "Failed to acquire lock", "state", newState)
 		return false, fmt.Errorf("update ManifestSigningRequest after lock acquired: %w", err)
 	}
+
+	r.logger.V(2).Info("Lock acquired", "state", newState, "message", message)
 	return true, nil
 }
 
+// releaseLockWithFailure releases the lock and sets the reason to StepFailed.
+// It preserves the ActionState for retry.
 func (r *ManifestSigningRequestReconciler) releaseLockWithFailure(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 	nextState governancev1alpha1.MSRActionState,
 	cause error,
 ) error {
+	r.logger.V(2).Info("Releasing lock due to failure", "state", nextState, "error", cause.Error())
 	return r.releaseLockAbstract(ctx, msr, nextState, "StepFailed", fmt.Sprintf("Error occurred: %v", cause))
 }
 
+// releaseLockAndSetNextState releases the lock and transitions to the next state.
+// It sets the reason to StepComplete indicating successful completion.
 func (r *ManifestSigningRequestReconciler) releaseLockAndSetNextState(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 	nextState governancev1alpha1.MSRActionState,
 ) error {
+	r.logger.V(2).Info("Releasing lock and transitioning state", "nextState", nextState)
 	return r.releaseLockAbstract(ctx, msr, nextState, "StepComplete", "Step completed, proceeding to next state")
 }
 
+// releaseLockAbstract is the internal implementation for lock release.
+// It updates the Progressing condition to False and transitions ActionState.
 func (r *ManifestSigningRequestReconciler) releaseLockAbstract(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 	nextState governancev1alpha1.MSRActionState,
 	reason, message string,
 ) error {
-	// The passed 'msr' should already be the latest version. Don't do Get.
-
+	// The passed 'msr' should already be the latest version
 	msr.Status.ActionState = nextState
 	meta.SetStatusCondition(&msr.Status.Conditions, metav1.Condition{
 		Type: governancev1alpha1.Progressing, Status: metav1.ConditionFalse, Reason: reason, Message: message,
 	})
 
-	return r.Status().Update(ctx, msr)
+	if err := r.Status().Update(ctx, msr); err != nil {
+		r.logger.Error(err, "Failed to release lock", "nextState", nextState, "reason", reason)
+		return err
+	}
+
+	r.logger.V(3).Info("Lock released", "nextState", nextState, "reason", reason)
+	return nil
 }
 
+// getExistingMRTForMSR retrieves the ManifestRequestTemplate referenced by the MSR.
+// Returns an error if the MRT cannot be found.
 func (r *ManifestSigningRequestReconciler) getExistingMRTForMSR(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
@@ -597,12 +649,15 @@ func (r *ManifestSigningRequestReconciler) getExistingMRTForMSR(
 
 	mrt := &governancev1alpha1.ManifestRequestTemplate{}
 	if err := r.Get(ctx, mrtKey, mrt); err != nil {
+		r.logger.V(2).Info("ManifestRequestTemplate not found", "mrt", mrtKey)
 		return nil, fmt.Errorf("fetch ManifestRequestTemplate for ManifestSigningRequest: %w", err)
 	}
 
 	return mrt, nil
 }
 
+// repositoryWithError retrieves the Git repository provider for the MSR's MRT.
+// Returns an error if the MRT cannot be found or no provider is available.
 func (r *ManifestSigningRequestReconciler) repositoryWithError(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
@@ -615,6 +670,8 @@ func (r *ManifestSigningRequestReconciler) repositoryWithError(
 	return r.RepoManager.GetProviderForMRT(ctx, mrt)
 }
 
+// repository retrieves the Git repository provider for the MSR.
+// This version ignores errors and is used where the MRT is guaranteed to exist.
 func (r *ManifestSigningRequestReconciler) repository(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
