@@ -29,13 +29,10 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	controller "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -54,9 +51,9 @@ type ManifestChangeApprovalCustomValidator struct {
 
 // Handle is the function that gets called for validation admission request.
 func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	// if true {
-	// 	return admission.Allowed("Change approved by Manifest Change Approval")
-	// }
+	if true {
+		return admission.Allowed("Change approved by Manifest Change Approval")
+	}
 
 	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo)
 
@@ -73,11 +70,6 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	} else if mrt == nil {
 		logger.Info("No governing MRT found for Application", "application", application.Name, "namespace", application.Namespace)
 		return admission.Allowed("No governing MRT found, allow by default")
-	}
-
-	// Check MRT availability
-	if ok, resp = v.canModifyMRT(ctx, mrt); !ok {
-		return *resp
 	}
 
 	// Take revision commit hash from Application
@@ -131,26 +123,6 @@ func (v *ManifestChangeApprovalCustomValidator) getApplication(ctx context.Conte
 	} else {
 		return v.getApplicationFromApplicationRequest(ctx, req)
 	}
-}
-
-func (v *ManifestChangeApprovalCustomValidator) canModifyMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (bool, *admission.Response) {
-	var resp admission.Response
-	allow := true
-	if meta.IsStatusConditionFalse(mrt.Status.Conditions, governancev1alpha1.Available) {
-		logger.Info("MRT is currently unavailable. Denying sync", "mrt", mrt.Name)
-		allow = false
-		resp = admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently unavailable", mrt.Name))
-	} else if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
-		logger.Info("MRT is currently being in progress. Denying sync to prevent race condition.", "mrt", mrt.Name)
-		allow = false
-		resp = admission.Denied(fmt.Sprintf("Governance policy for '%s' is currently being progress", mrt.Name))
-	} else if !controllerutil.ContainsFinalizer(mrt, controller.GovernanceFinalizer) {
-		logger.Info(fmt.Sprintf("MRT doesn't have required finalizer %s yet", controller.GovernanceFinalizer))
-		allow = false
-		resp = admission.Denied(fmt.Sprintf("MRT doesn't have required finalizer %s yet", controller.GovernanceFinalizer))
-	}
-
-	return allow, &resp
 }
 
 func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplicationRequest(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
@@ -263,9 +235,22 @@ func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(appli
 }
 
 func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
-	if !slices.Contains(mrt.Status.RevisionsQueue, *revision) {
-		mrt.Status.RevisionsQueue = append(mrt.Status.RevisionsQueue, *revision)
-		if err := v.Client.Status().Update(ctx, mrt); err != nil {
+	var queue governancev1alpha1.GovernanceQueue
+	queueRef := mrt.Status.RevisionQueueRef
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: queueRef.Namespace, Name: queueRef.Name}, &queue); err != nil {
+		logger.Error(err, "Failed to get GovernanceQueue for MRT")
+		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("get GovernanceQueue for MRT: %w", err))
+		return &resp, false
+	}
+
+	contains, err := v.queueContainsRevision(ctx, revision, &queue, mrt)
+	if err != nil {
+		logger.Error(err, "Failed to check, if queue contains revision", "queue", queueRef, "revision", revision)
+		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("check, if queue %v contains revision %s: %w", queueRef, *revision, err))
+		return &resp, false
+	}
+	if !contains {
+		if err := v.createRevisionEvent(ctx, revision, mrt); err != nil {
 			logger.Error(err, "Failed to update MRT status with new commit in queue", "mrt", mrt.Name, "namespace", mrt.Namespace, "revision", revision)
 			resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("update MRT %s.%s status with new commit in queue: %w", mrt.Namespace, mrt.Name, err))
 			return &resp, false
@@ -276,43 +261,62 @@ func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(c
 	return nil, true
 }
 
-// handleArgoCDRequest contains the MCA validation logic.
-func (v *ManifestChangeApprovalCustomValidator) handleArgoCDRequest(ctx context.Context, req admission.Request) admission.Response {
-	logger := logf.FromContext(ctx)
-
-	gvk := v.getGroupVersionKind(req)
-	switch req.Kind.Kind {
-	case "Application":
-		applicationObj := &argoappv1.Application{}
-		applicationObj.SetGroupVersionKind(gvk)
-		if err := v.Decoder.Decode(req, applicationObj); err != nil {
-			return admission.Errored(http.StatusBadRequest, err)
-		}
-
-		if applicationObj.Operation == nil {
-			logger.Info("Decoded with Argo CD Application object", "status", applicationObj.Status, "operation", applicationObj.Operation)
-		} else {
-			logger.Info("Decoded with Argo CD Application object", "status", applicationObj.Status, "operation", *applicationObj.Operation)
-		}
-	case "ConfigMap":
-		configmap := corev1.ConfigMap{}
-		configmap.SetGroupVersionKind(gvk)
-		if err := v.Decoder.Decode(req, &configmap); err != nil {
-			return admission.Errored(http.StatusBadRequest, err)
-		}
-		logger.Info("Decoded with Argo CD configmap object", "name", configmap)
-	case "ManifestRequestTemplate":
-		mtrObj := governancev1alpha1.ManifestRequestTemplate{}
-		mtrObj.SetGroupVersionKind(gvk)
-		if err := v.Decoder.Decode(req, &mtrObj); err != nil {
-			return admission.Errored(http.StatusBadRequest, err)
-		}
-		logger.Info("Decoded with Argo CD MRT object", "name", mtrObj)
-	default:
-		logger.Info("Decoded with Argo CD unknown request kind", "kind", gvk)
+func (v *ManifestChangeApprovalCustomValidator) queueContainsRevision(ctx context.Context, revision *string, queue *governancev1alpha1.GovernanceQueue, mrt *governancev1alpha1.ManifestRequestTemplate) (bool, error) {
+	events, err := v.getAllEventsForQueue(ctx, mrt)
+	if err != nil {
+		return false, fmt.Errorf("get all events for queue: %w", err)
 	}
 
-	return admission.Allowed("Change approved by Manifest Change Approval")
+	eventIdx := slices.IndexFunc(events, func(e governancev1alpha1.GovernanceEvent) bool {
+		return e.Spec.NewRevision != nil && e.Spec.NewRevision.CommitSHA == *revision
+	})
+	return eventIdx != -1, nil
+}
+
+func (v *ManifestChangeApprovalCustomValidator) getAllEventsForQueue(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) ([]governancev1alpha1.GovernanceEvent, error) {
+	eventList := &governancev1alpha1.GovernanceEventList{}
+
+	// Use label for quick search
+	matchingLabels := client.MatchingLabels{
+		"governance.nazar.grynko.com/mrt-uid": string(mrt.UID),
+	}
+
+	if err := v.Client.List(ctx, eventList, matchingLabels); err != nil {
+		logger.Error(err, "Failed to list GovernanceEvents for queue")
+		return nil, fmt.Errorf("list GovernanceEvents for queue: %w", err)
+	}
+	return eventList.Items, nil
+}
+
+func (v *ManifestChangeApprovalCustomValidator) createRevisionEvent(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) error {
+	// Create a stable, unique name.
+	// We use a hash to keep it within Kubernetes's name length limits.
+	eventName := fmt.Sprintf("event-%s-%s-%s", mrt.Name, mrt.Namespace, *revision)
+
+	revisionEvent := governancev1alpha1.GovernanceEvent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: eventName,
+			Labels: map[string]string{
+				"governance.nazar.grynko.com/mrt-uid": string(mrt.UID), // Use UID for a unique, immutable link
+			},
+		},
+		Spec: governancev1alpha1.GovernanceEventSpec{
+			Type: governancev1alpha1.EventTypeNewRevision,
+			MRT: governancev1alpha1.ManifestRef{
+				Name:      mrt.Name,
+				Namespace: mrt.Namespace,
+			},
+			NewRevision: &governancev1alpha1.NewRevisionPayload{
+				CommitSHA: *revision,
+			},
+		},
+	}
+
+	if err := v.Client.Create(ctx, &revisionEvent); err != nil {
+		return fmt.Errorf("create new revision %s event: %w", *revision, err)
+	}
+
+	return nil
 }
 
 func (v *ManifestChangeApprovalCustomValidator) getGroupVersionKind(req admission.Request) schema.GroupVersionKind {

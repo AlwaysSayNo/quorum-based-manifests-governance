@@ -6,3 +6,4 @@ TODO:
 3. Remove index from file on MRT deletion
 4. Point ArgoCD on specific commit after MCA is created
 5. Move all Taskfile from inside to outside (or just to the subproject root)
+6. Old / multiple revisions

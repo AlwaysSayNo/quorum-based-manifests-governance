@@ -41,35 +41,22 @@ spec:
           spec:
             description: spec defines the desired state of GovernanceEvent
             properties:
+              mrt:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
               newRevision:
                 description: NewRevision holds the payload if the event type is NewRevision.
                 properties:
-                  argoCDAppName:
-                    type: string
-                  argoCDAppNamespace:
-                    type: string
-                  argoCDApplication:
-                    properties:
-                      name:
-                        description: |-
-                          Name of the ArgoCD Application.
-                          It should contain information about the git repository, branch and path where manifests are stored.
-                        minLength: 1
-                        type: string
-                      namespace:
-                        description: |-
-                          Namespace where the ArgoCD Application is located.
-                          Default is "argocd".
-                        minLength: 0
-                        type: string
-                    required:
-                    - name
-                    type: object
                   commitSHA:
                     type: string
                 required:
-                - argoCDAppName
-                - argoCDAppNamespace
                 - commitSHA
                 type: object
               type:

@@ -23,6 +23,7 @@ webhooks:
     resources:
     - manifestrequesttemplates
   sideEffects: None
+  timeoutSeconds: 30
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -71,3 +72,4 @@ webhooks:
     resources:
     - manifestrequesttemplates
   sideEffects: None
+  timeoutSeconds: 30

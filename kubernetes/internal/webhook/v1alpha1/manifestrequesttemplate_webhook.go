@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// +kubebuilder:webhook:path=/mrt/mutate,mutating=true,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=create,versions=v1alpha1,name=mrt-mutating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1
-// +kubebuilder:webhook:path=/mrt/validate,mutating=false,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=create;update,versions=v1alpha1,name=mrt-validating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mrt/mutate,mutating=true,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=create,versions=v1alpha1,name=mrt-mutating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
+// +kubebuilder:webhook:path=/mrt/validate,mutating=false,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestrequesttemplates,verbs=create;update,versions=v1alpha1,name=mrt-validating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
 
 var mrtlog = logf.Log.WithName("mrt-resource")
 
@@ -51,11 +51,6 @@ func (w *ManifestRequestTemplateWebhook) Default(ctx context.Context, obj runtim
 	// Set default fields on MRT namespace (if empty set 'default')
 	if mrt.Namespace == "" {
 		mrt.Namespace = "default"
-	}
-
-	// If on creation status.revisionQueue slice is nil -> set empty slice
-	if mrt.Status.RevisionsQueue == nil {
-		mrt.Status.RevisionsQueue = []string{}
 	}
 
 	// Set default MSR values

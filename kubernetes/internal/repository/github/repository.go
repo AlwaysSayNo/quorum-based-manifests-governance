@@ -158,6 +158,46 @@ func (p *gitProvider) HasRevision(ctx context.Context, commit string) (bool, err
 	return isAncestor || isTheSame, nil
 }
 
+func (p *gitProvider) IsNotAfter(ctx context.Context, ancestor, child string) (bool, error) {
+	if err := p.Sync(ctx); err != nil {
+		return false, fmt.Errorf("failed to sync repository before checking for revision: %w", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Get the commit object for the ancestor commit
+	ancestorHash := plumbing.NewHash(ancestor)
+	ancestorCommit, err := p.repo.CommitObject(ancestorHash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not get ancestor commit object %s: %w", ancestor, err)
+	}
+
+	// Get the commit object for the child commit
+	childHash := plumbing.NewHash(child)
+	childCommit, err := p.repo.CommitObject(childHash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not get child commit object %s: %w", child, err)
+	}
+
+	// Check if the target ancestorCommit is an ancestor of the childCommit
+	isChild, err := ancestorCommit.IsAncestor(childCommit)
+	if err != nil {
+		return false, fmt.Errorf("error checking ancestry for %s and %s: %w", ancestor, child, err)
+	}
+
+	// Check if the ancestorCommit is childCommit
+	isTheSame := ancestorCommit.Hash.String() == childCommit.String()
+
+	return isChild || isTheSame, nil
+}
+
 // GetLatestRevision takes head of the default branch and returns it's commit hash
 func (p *gitProvider) GetLatestRevision(ctx context.Context) (string, error) {
 	if err := p.Sync(ctx); err != nil {

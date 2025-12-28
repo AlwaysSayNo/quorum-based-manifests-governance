@@ -25,6 +25,40 @@ rules:
 - apiGroups:
   - governance.nazar.grynko.com
   resources:
+  - governanceevents
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - governance.nazar.grynko.com
+  resources:
+  - governanceevents/finalizers
+  - governancequeues/finalizers
+  - manifestchangeapprovals/finalizers
+  - manifestrequesttemplates/finalizers
+  - manifestsigningrequests/finalizers
+  - qubmangoindices/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - governance.nazar.grynko.com
+  resources:
+  - governanceevents/status
+  - governancequeues/status
+  - manifestchangeapprovals/status
+  - manifestrequesttemplates/status
+  - manifestsigningrequests/status
+  - qubmangoindices/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - governance.nazar.grynko.com
+  resources:
   - governancequeues
   - manifestchangeapprovals
   - manifestrequesttemplates
@@ -38,25 +72,3 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - governance.nazar.grynko.com
-  resources:
-  - governancequeues/finalizers
-  - manifestchangeapprovals/finalizers
-  - manifestrequesttemplates/finalizers
-  - manifestsigningrequests/finalizers
-  - qubmangoindices/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - governance.nazar.grynko.com
-  resources:
-  - governancequeues/status
-  - manifestchangeapprovals/status
-  - manifestrequesttemplates/status
-  - manifestsigningrequests/status
-  - qubmangoindices/status
-  verbs:
-  - get
-  - patch
-  - update

@@ -296,12 +296,15 @@ spec:
                 description: RevisionProcessingState tracks the progress of the revision
                   processing.
                 type: string
-              revisionsQueue:
-                description: RevisionsQueue is the list of commit SHAs waiting for
-                  processing.
-                items:
-                  type: string
-                type: array
+              revisionQueueRef:
+                description: RevisionsQueueRef is the reference to the dedicated queue
+                  CRD.
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
             type: object
         required:
         - spec

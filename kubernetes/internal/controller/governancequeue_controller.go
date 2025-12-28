@@ -82,6 +82,7 @@ func (r *GovernanceQueueReconciler) findQueueForEvent(ctx context.Context, obj c
 }
 
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents/finalizers,verbs=update
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues/status,verbs=get;update;patch
@@ -131,6 +132,7 @@ func (r *GovernanceQueueReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.logger.Error(err, "Failed to patch queue status")
 			return ctrl.Result{}, fmt.Errorf("patch queue: %w", err)
 		}
+		r.logger.Info("Queue state", "state", queue.Status.Queue)
 	} else {
 		r.logger.Info("Queue is already in sync.")
 	}

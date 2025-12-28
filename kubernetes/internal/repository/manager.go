@@ -29,6 +29,8 @@ type GitRepository interface {
 	// HasRevision return true, if revision commit is the part of git repository.
 	HasRevision(ctx context.Context, commit string) (bool, error)
 
+	IsNotAfter(ctx context.Context, ancestor, child string) (bool, error)
+
 	// GetLatestRevision return the last observed revision for the repository.
 	GetLatestRevision(ctx context.Context) (string, error)
 
