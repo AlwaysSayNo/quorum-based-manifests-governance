@@ -157,6 +157,21 @@ func (mr *MockGitRepositoryMockRecorder) InitializeGovernance(ctx, operationalFi
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializeGovernance", reflect.TypeOf((*MockGitRepository)(nil).InitializeGovernance), ctx, operationalFileLocation, governanceIndexAlias, governanceFolder)
 }
 
+// IsNotAfter mocks base method.
+func (m *MockGitRepository) IsNotAfter(ctx context.Context, ancestor, child string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNotAfter", ctx, ancestor, child)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsNotAfter indicates an expected call of IsNotAfter.
+func (mr *MockGitRepositoryMockRecorder) IsNotAfter(ctx, ancestor, child any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNotAfter", reflect.TypeOf((*MockGitRepository)(nil).IsNotAfter), ctx, ancestor, child)
+}
+
 // PushMCA mocks base method.
 func (m *MockGitRepository) PushMCA(ctx context.Context, msr *v1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
 	m.ctrl.T.Helper()

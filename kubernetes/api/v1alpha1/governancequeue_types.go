@@ -35,7 +35,7 @@ type GovernanceQueueSpec struct {
 
 // GovernanceQueueStatus defines the observed state of GovernanceQueue.
 type GovernanceQueueStatus struct {
-	
+
 	// The ordered queue of event references.
 	// +optional
 	Queue []EventReference `json:"queue,omitempty"`

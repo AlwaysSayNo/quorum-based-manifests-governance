@@ -36,6 +36,30 @@ const (
 	Approved    SigningRequestStatus = "Approved"
 )
 
+type MSRActionState string
+
+const (
+	MSREmptyActionState        MSRActionState = ""
+	MSRStateGitPushMSR         MSRActionState = "MSRStateGitPushMSR"
+	MSRStateUpdateAfterGitPush MSRActionState = "MSRStateUpdateAfterGitPush"
+	MSRStateInitSetFinalizer   MSRActionState = "MSRStateInitSetFinalizer"
+
+	// Deletion states
+	MSRStateDeletionInProgress MSRActionState = "MSRStateDeletionInProgress"
+
+	//
+	MSRReconcileNewMSRSpec MSRActionState = "MSRReconcileNewMSRSpec"
+)
+
+type MSRReconcileNewMSRSpecState string
+
+const (
+	MSRReconcileStateRevisionEmpty       MSRReconcileNewMSRSpecState = ""
+	MSRReconcileStateGitPushMSR          MSRReconcileNewMSRSpecState = "MSRReconcileStateGitPushMSR"
+	MSRReconcileRStateUpdateAfterGitPush MSRReconcileNewMSRSpecState = "MSRReconcileRStateUpdateAfterGitPush"
+	MSRReconcileRStateNotifyGovernors    MSRReconcileNewMSRSpecState = "MSRReconcileRStateNotifyGovernors"
+)
+
 type VersionedManifestRef struct {
 	// +required
 	Name string `json:"name"`
@@ -137,6 +161,12 @@ type ManifestSigningRequestStatus struct {
 
 	// +optional
 	Approves ApproverList `json:"approves"`
+
+	// +optional
+	ActionState MSRActionState `json:"actionState,omitempty"`
+
+	// +optional
+	ReconcileState MSRReconcileNewMSRSpecState `json:"reconcileState,omitempty"`
 
 	// conditions represent the current state of the ManifestSigningRequest resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

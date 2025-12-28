@@ -159,8 +159,8 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Check if the finalizer is present.
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
+		// No custom finalizer is found. Do nothing
 		return ctrl.Result{}, nil
 	}
 
@@ -199,7 +199,6 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 	r.logger.Info("Finish removing finalizer.")
 
 	r.logger.Info("Successfully deleted ManifestRequestTemplate.")
-
 	err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
 	return ctrl.Result{}, err
 }
@@ -217,7 +216,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	r.logger.Info("Reconciling new ManifestRequestTemplate", "currentState", mrt.Status.ActionState)
+	r.logger.Info("Initializing new ManifestRequestTemplate", "currentState", mrt.Status.ActionState)
 
 	// Check, if there is any available git repository provider
 	if _, err := r.repositoryWithError(ctx, mrt); err != nil {

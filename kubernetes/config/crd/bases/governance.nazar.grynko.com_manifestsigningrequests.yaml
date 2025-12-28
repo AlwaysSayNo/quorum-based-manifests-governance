@@ -184,6 +184,8 @@ spec:
           status:
             description: status defines the observed state of ManifestSigningRequest
             properties:
+              actionState:
+                type: string
               approves:
                 properties:
                   members:
@@ -273,6 +275,8 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              reconcileState:
+                type: string
               requestHistory:
                 items:
                   properties:

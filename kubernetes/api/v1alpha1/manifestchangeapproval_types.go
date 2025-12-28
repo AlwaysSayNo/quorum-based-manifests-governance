@@ -26,7 +26,7 @@ type ManifestChangeApprovalSpec struct {
 	// +kubebuilder:validation:Minimum=0
 	// +required
 	Version int `json:"version"`
-	
+
 	// +required
 	CommitSHA string `json:"commitSha"`
 
