@@ -9,8 +9,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
-	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository"
-	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/controller/internal/repository/github"
+	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/github"
 )
 
 const (

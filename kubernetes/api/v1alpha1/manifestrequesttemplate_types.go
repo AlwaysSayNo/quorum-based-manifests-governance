@@ -21,33 +21,33 @@ import (
 )
 
 // Define the states as constants for type safety
-type ActionState string
+type MRTActionState string
 
 const (
-	// EmptyActionState indicates a free state.
-	EmptyActionState ActionState = ""
-	// StateInitGitGovernanceInitialization indicates the controller is pushing the initial commit.
-	StateInitGitGovernanceInitialization ActionState = "StateInitGitGovernanceInitialization"
-	// InitStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.
-	InitStateCreateDefaultClusterResources ActionState = "InitStateCreateDefaultClusterResources"
-	// StateInitSetFinalizer indicates the controller is adding the finalizer.
-	StateInitSetFinalizer ActionState = "StateInitSetFinalizer"
+	// MRTActionStateEmpty indicates a free state.
+	MRTActionStateEmpty MRTActionState = ""
+	// MRTActionStateGitGovernanceInitialization indicates the controller is pushing the initial commit.
+	MRTActionStateGitGovernanceInitialization MRTActionState = "MRTActionStateGitGovernanceInitialization"
+	// MRTActionStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.
+	MRTActionStateCreateDefaultClusterResources MRTActionState = "MRTActionStateCreateDefaultClusterResources"
+	// MRTActionStateInitSetFinalizer indicates the controller is adding the finalizer.
+	MRTActionStateInitSetFinalizer MRTActionState = "MRTActionStateInitSetFinalizer"
 
 	// Deletion states
-	StateDeletionInProgress ActionState = "StateDeletionInProgress"
+	MRTActionStateDeletion MRTActionState = "MRTActionStateDeletion"
 
 	// Normal operation states
-	StateCheckingDependencies ActionState = "StateCheckingDependencies"
-	StateProcessingRevision   ActionState = "StateProcessingRevision"
+	MRTActionStateCheckingDependencies MRTActionState = "MRTActionStateCheckingDependencies"
+	MRTActionStateNewRevision          MRTActionState = "MRTActionStateNewRevision"
 )
 
-type RevisionProcessingState string
+type MRTNewRevisionState string
 
 const (
-	StateRevisionEmpty          RevisionProcessingState = ""
-	StateRevisionPreflightCheck RevisionProcessingState = "StateRevisionPreflightCheck"
-	StateRevisionUpdateMSRSpec  RevisionProcessingState = "StateRevisionUpdateMSR"
-	StateRevisionAfterMSRUpdate RevisionProcessingState = "StateRevisionAfterMSRUpdate"
+	MRTNewRevisionStateEmpty          MRTNewRevisionState = ""
+	MRTNewRevisionStatePreflightCheck MRTNewRevisionState = "MRTNewRevisionStatePreflightCheck"
+	MRTNewRevisionStateUpdateMSRSpec  MRTNewRevisionState = "MRTNewRevisionStateUpdateMSRSpec"
+	MRTNewRevisionStateAfterMSRUpdate MRTNewRevisionState = "MRTNewRevisionStateAfterMSRUpdate"
 )
 
 type GitRepository struct {
@@ -266,11 +266,11 @@ type ManifestRequestTemplateStatus struct {
 
 	// ActionState tracks the progress of the main reconcile.
 	// +optional
-	ActionState ActionState `json:"actionState,omitempty"`
+	ActionState MRTActionState `json:"actionState,omitempty"`
 
 	// RevisionProcessingState tracks the progress of the revision processing.
 	// +optional
-	RevisionProcessingState RevisionProcessingState `json:"revisionProcessingStep,omitempty"`
+	RevisionProcessingState MRTNewRevisionState `json:"revisionProcessingStep,omitempty"`
 }
 
 // +kubebuilder:object:root=true

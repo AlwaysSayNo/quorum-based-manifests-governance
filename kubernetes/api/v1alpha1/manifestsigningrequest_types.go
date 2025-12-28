@@ -39,25 +39,25 @@ const (
 type MSRActionState string
 
 const (
-	MSREmptyActionState        MSRActionState = ""
-	MSRStateGitPushMSR         MSRActionState = "MSRStateGitPushMSR"
-	MSRStateUpdateAfterGitPush MSRActionState = "MSRStateUpdateAfterGitPush"
-	MSRStateInitSetFinalizer   MSRActionState = "MSRStateInitSetFinalizer"
+	MSRActionStateEmpty              MSRActionState = ""
+	MSRActionStateGitPushMSR         MSRActionState = "MSRActionStateGitPushMSR"
+	MSRActionStateUpdateAfterGitPush MSRActionState = "MSRActionStateUpdateAfterGitPush"
+	MSRActionStateInitSetFinalizer   MSRActionState = "MSRActionStateInitSetFinalizer"
 
 	// Deletion states
-	MSRStateDeletionInProgress MSRActionState = "MSRStateDeletionInProgress"
+	MSRActionStateDeletion MSRActionState = "MSRActionStateDeletion"
 
 	//
-	MSRReconcileNewMSRSpec MSRActionState = "MSRReconcileNewMSRSpec"
+	MSRActionStateNewMSRSpec MSRActionState = "MSRActionStateNewMSRSpec"
 )
 
 type MSRReconcileNewMSRSpecState string
 
 const (
-	MSRReconcileStateRevisionEmpty       MSRReconcileNewMSRSpecState = ""
-	MSRReconcileStateGitPushMSR          MSRReconcileNewMSRSpecState = "MSRReconcileStateGitPushMSR"
-	MSRReconcileRStateUpdateAfterGitPush MSRReconcileNewMSRSpecState = "MSRReconcileRStateUpdateAfterGitPush"
-	MSRReconcileRStateNotifyGovernors    MSRReconcileNewMSRSpecState = "MSRReconcileRStateNotifyGovernors"
+	MSRReconcileNewMSRSpecStateEmpty              MSRReconcileNewMSRSpecState = ""
+	MSRReconcileNewMSRSpecStateGitPushMSR         MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateGitPushMSR"
+	MSRReconcileNewMSRSpecStateUpdateAfterGitPush MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateUpdateAfterGitPush"
+	MSRReconcileNewMSRSpecStateNotifyGovernors    MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateNotifyGovernors"
 )
 
 type VersionedManifestRef struct {
