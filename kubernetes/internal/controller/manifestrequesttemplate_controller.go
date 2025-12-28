@@ -53,6 +53,13 @@ type RepositoryManager interface {
 	GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (repomanager.GitRepository, error)
 }
 
+// MRTStateHandler defines a function that performs work within a state and returns the next state
+type MRTStateHandler func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.ActionState, error)
+
+// MRTRevisionStateHandler defines a function that performs work within a revision processing state
+// and returns the next revision processing state
+type MRTRevisionStateHandler func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.RevisionProcessingState, error)
+
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
@@ -121,37 +128,108 @@ func (r *ManifestRequestTemplateReconciler) findMRTForQueue(ctx context.Context,
 
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = log.FromContext(ctx).WithValues("controller", "ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
-
-	r.logger.Info("Reconciling ManifestRequestTemplate")
+	r.logger.Info("Starting reconciliation", "mrt", req.NamespacedName)
 
 	// Fetch the MRT instance
 	mrt := &governancev1alpha1.ManifestRequestTemplate{}
 	if err := r.Get(ctx, req.NamespacedName, mrt); err != nil {
-		r.logger.Info("DEBUG: MRT not found")
+		r.logger.V(2).Info("MRT not found, may have been deleted")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// Handle deletion
 	if !mrt.ObjectMeta.DeletionTimestamp.IsZero() {
-		r.logger.Info("DEBUG: MRT reconcileDelete")
+		r.logger.Info("MRT is marked for deletion", "actionState", mrt.Status.ActionState)
 		return r.reconcileDelete(ctx, mrt)
 	}
 
-	// Release lock if hold too long
+	// Release lock if hold too long (deadlock prevention)
 	if r.isLockForMoreThan(mrt, 30*time.Second) {
-		r.logger.Info("DEBUG: MRT removeProgressing")
+		r.logger.Info("Lock held too long, releasing to prevent deadlock", "actionState", mrt.Status.ActionState, "lockDuration", "30s")
 		return ctrl.Result{Requeue: true}, r.releaseLockWithFailure(ctx, mrt, mrt.Status.ActionState, fmt.Errorf("lock acquired for too long"))
 	}
 
-	// Handle initialization
+	// Handle initialization (before finalizer is set)
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		r.logger.Info("DEBUG: MRT reconcileCreate")
+		r.logger.Info("MRT not initialized, starting initialization flow", "actionState", mrt.Status.ActionState)
 		return r.reconcileCreate(ctx, mrt)
 	}
 
-	// Handle normal reconciliation
-	r.logger.Info("DEBUG: MRT reconcileNormal")
+	// Handle normal reconciliation (after initialization)
+	r.logger.Info("MRT initialized, processing normal reconciliation", "actionState", mrt.Status.ActionState)
 	return r.reconcileNormal(ctx, mrt)
+}
+
+// withLock wraps state handler logic with lock acquisition and release.
+// It provides a clean abstraction for ActionState transitions:
+// 1. Acquires lock with re-fetch to prevent conflicts
+// 2. Executes the handler function
+// 3. On success: releases lock and transitions to nextState
+// 4. On failure: releases lock with failure reason and returns error
+// This eliminates boilerplate and ensures consistent lock management.
+func (r *ManifestRequestTemplateReconciler) withLock(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	state governancev1alpha1.ActionState,
+	message string,
+	handler MRTStateHandler,
+) (ctrl.Result, error) {
+	lockAcquired, err := r.acquireLock(ctx, mrt, state, message)
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("lock was already acquired, requeuing", "state", state)
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+	}
+
+	nextState, err := handler(ctx, mrt)
+	if err != nil {
+		r.logger.Error(err, "Handler failed, releasing lock with failure", "state", state)
+		_ = r.releaseLockWithFailure(ctx, mrt, state, err)
+		return ctrl.Result{}, err
+	}
+
+	r.logger.V(2).Info("Handler succeeded, transitioning state", "from", state, "to", nextState)
+	releasErr := r.releaseLockAndSetNextState(ctx, mrt, nextState)
+	return ctrl.Result{Requeue: true}, releasErr
+}
+
+// withRevisionLock wraps revision sub-state handler logic.
+// Assumes the outer lock (ActionState) is already held by the parent handler.
+// It provides a clean abstraction for RevisionProcessingState transitions:
+// 1. Executes the handler function
+// 2. On success: updates RevisionProcessingState, releases lock with nextActionState, and requeues
+// 3. On failure: releases lock with failure reason and returns error
+// The nextActionState parameter allows specifying what ActionState to transition to,
+// enabling the last handler to transition back to Empty.
+func (r *ManifestRequestTemplateReconciler) withRevisionLock(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	parentState governancev1alpha1.ActionState,
+	nextActionState governancev1alpha1.ActionState,
+	revision string,
+	handler MRTRevisionStateHandler,
+) (ctrl.Result, error) {
+	nextRevisionState, err := handler(ctx, mrt, revision)
+	if err != nil {
+		r.logger.Error(err, "Revision handler failed, releasing lock", "parentState", parentState, "currentRevisionState", mrt.Status.RevisionProcessingState)
+		_ = r.releaseLockWithFailure(ctx, mrt, parentState, err)
+		return ctrl.Result{}, err
+	}
+
+	// Update RevisionProcessingState
+	r.logger.V(2).Info("Updating RevisionProcessingState", "from", mrt.Status.RevisionProcessingState, "to", nextRevisionState)
+	mrt.Status.RevisionProcessingState = nextRevisionState
+	if err := r.Status().Update(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to update RevisionProcessingState", "newState", nextRevisionState)
+		_ = r.releaseLockWithFailure(ctx, mrt, parentState, fmt.Errorf("update RevisionProcessingState: %w", err))
+		return ctrl.Result{}, err
+	}
+
+	// Transition ActionState to nextActionState and requeue
+	releasErr := r.releaseLockAndSetNextState(ctx, mrt, nextActionState)
+	if releasErr == nil {
+		r.logger.V(2).Info("Revision sub-state completed, requeuing", "nextRevisionState", nextRevisionState, "nextActionState", nextActionState)
+	}
+	return ctrl.Result{Requeue: true}, releasErr
 }
 
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
@@ -160,47 +238,48 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
-		// No custom finalizer is found. Do nothing
+		// No custom finalizer found, nothing to clean up
+		r.logger.V(2).Info("No finalizer found, deletion already in progress")
 		return ctrl.Result{}, nil
 	}
 
-	r.logger.Info("Finalizing ManifestRequestTemplate", "currentState", mrt.Status.ActionState)
+	r.logger.Info("Processing MRT deletion", "actionState", mrt.Status.ActionState)
 
 	switch mrt.Status.ActionState {
 	default:
-		// Any state means we need to start the deletion process.
+		// Any state means we start the deletion process
 		return r.handleStateDeletion(ctx, mrt)
 	}
 }
 
 // handleStateDeletion removes entry for current MRT from index file and finalizer from this resource.
+// State: any → EmptyActionState
 func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Skip lock acquiring.
+	return r.withLock(ctx, mrt, governancev1alpha1.StateDeletionInProgress, "Removing MRT from governance and cluster",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.ActionState, error) {
+			// Clean up the entry in the QubmangoOperationalFile file.
+			r.logger.Info("Removing entry from Git index file", "mrt", mrt.Name, "namespace", mrt.Namespace)
+			governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
+			if _, _, err := r.repository(ctx, mrt).RemoveFromIndexFile(ctx, QubmangoOperationalFile, governanceIndexAlias); err != nil {
+				r.logger.Error(err, "Failed to remove entry from index file")
+				return "", fmt.Errorf("failed to remove entry from index file: %w", err)
+			}
+			r.logger.Info("Entry removed from Git index file successfully")
 
-	// Clean up the entry in the QubmangoOperationalFile file.
-	r.logger.Info("Start removing entry from Git index file.")
-	governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
-	if _, _, err := r.repository(ctx, mrt).RemoveFromIndexFile(ctx, QubmangoOperationalFile, governanceIndexAlias); err != nil {
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateDeletionInProgress, err)
-		return ctrl.Result{}, fmt.Errorf("failed to remove entry from index file: %w", err)
-	}
-	r.logger.Info("Finish removing entry from Git index file.")
-
-	// Remove the finalizer from MRT.
-	r.logger.Info("Start removing finalizer.")
-	controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
-	if err := r.Update(ctx, mrt); err != nil {
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateDeletionInProgress, err)
-		return ctrl.Result{}, fmt.Errorf("remove finalizer from ManifestRequestTemplate: %w", err)
-	}
-	r.logger.Info("Finish removing finalizer.")
-
-	r.logger.Info("Successfully deleted ManifestRequestTemplate.")
-	err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
-	return ctrl.Result{}, err
+			// Remove the finalizer from MRT.
+			r.logger.Info("Removing GovernanceFinalizer from MRT")
+			controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
+			if err := r.Update(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to remove finalizer")
+				return "", fmt.Errorf("remove finalizer from ManifestRequestTemplate: %w", err)
+			}
+			r.logger.Info("Deletion complete, finalizer removed")
+			return governancev1alpha1.EmptyActionState, nil
+		},
+	)
 }
 
 func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(
@@ -208,114 +287,105 @@ func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(
 	duration time.Duration,
 ) bool {
 	condition := meta.FindStatusCondition(mrt.Status.Conditions, governancev1alpha1.Progressing)
-	return condition != nil && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
+	return condition != nil && condition.Status == metav1.ConditionTrue && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
 }
 
 // reconcileCreate handles the logic for a newly created MRT, that has not been initialized.
+// It progresses through these states:
+// 1. StateInitGitGovernanceInitialization: Create entry in Qubmango operational file in Git
+// 2. InitStateCreateDefaultClusterResources: Create default MSR/MCA/GovernanceQueue resources
+// 3. StateInitSetFinalizer: Set finalizer to complete initialization
 func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	r.logger.Info("Initializing new ManifestRequestTemplate", "currentState", mrt.Status.ActionState)
+	r.logger.Info("Initializing new ManifestRequestTemplate", "mrt", mrt.Name, "namespace", mrt.Namespace, "currentState", mrt.Status.ActionState)
 
-	// Check, if there is any available git repository provider
+	// Check if there is any available git repository provider
 	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed on first repository fetch")
+		r.logger.Error(err, "Repository provider unavailable, cannot proceed with initialization")
 		return ctrl.Result{}, fmt.Errorf("init repo for ManifestRequestTemplate: %w", err)
 	}
 
 	switch mrt.Status.ActionState {
 	case governancev1alpha1.EmptyActionState, governancev1alpha1.StateInitGitGovernanceInitialization:
-		// 1. Create an entry in QubmangoOperationalFile file and save the commit as LastObservedCommitHash.
-		r.logger.Info("handleInitStateGitCommit")
+		// 1. Create an entry in QubmangoOperationalFile and save the commit as LastObservedCommitHash.
+		r.logger.V(2).Info("Proceeding to Git initialization")
 		return r.handleInitStateGitCommit(ctx, mrt)
 	case governancev1alpha1.InitStateCreateDefaultClusterResources:
 		// 2. Create default MSR, MCA resources in the cluster.
-		r.logger.Info("handleInitStateCreateClusterResources")
+		r.logger.V(2).Info("Proceeding to create default cluster resources")
 		return r.handleInitStateCreateClusterResources(ctx, mrt)
 	case governancev1alpha1.StateInitSetFinalizer:
-		// 3. Confirm MRT initialization, by setting the GovernanceFinalizer.
-		r.logger.Info("handleStateFinalizing")
+		// 3. Confirm MRT initialization by setting the GovernanceFinalizer.
+		r.logger.V(2).Info("Proceeding to set finalizer")
 		return r.handleStateFinalizing(ctx, mrt)
 	default:
-		// Any unknown ActionState in MRT during initialization - error.
-		r.logger.Info(fmt.Sprintf("Unknown initialization state: %s", string(mrt.Status.ActionState)))
-		return ctrl.Result{}, fmt.Errorf("unknown initialization state: %s", string(mrt.Status.ActionState))
+		// Any unknown ActionState during initialization - error.
+		err := fmt.Errorf("unknown initialization state: %s", string(mrt.Status.ActionState))
+		r.logger.Error(err, "Invalid state for initialization")
+		return ctrl.Result{}, err
 	}
 }
 
-// handleInitStateGitCommit is responsible for managing lock and creating an entry in the QubmangoOperationalFile file.
+// handleInitStateGitCommit creates an entry in the QubmangoOperationalFile and captures the commit hash.
+// State: StateInitGitGovernanceInitialization → InitStateCreateDefaultClusterResources
 func (r *ManifestRequestTemplateReconciler) handleInitStateGitCommit(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.StateInitGitGovernanceInitialization, "Creating entry in Qubmango operational file in Git"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
+	return r.withLock(ctx, mrt, governancev1alpha1.StateInitGitGovernanceInitialization, "Creating entry in Qubmango operational file in Git",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.ActionState, error) {
+			r.logger.Info("Initializing governance in Git repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
-	// Create an entry in the index file
-	governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
-	commitHash, isNewRecord, err := r.repository(ctx, mrt).InitializeGovernance(ctx, QubmangoOperationalFile, governanceIndexAlias, mrt.Spec.Location.Folder)
+			// Create an entry in the index file
+			governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
+			commitHash, isNewRecord, err := r.repository(ctx, mrt).InitializeGovernance(ctx, QubmangoOperationalFile, governanceIndexAlias, mrt.Spec.Location.Folder)
+			if err != nil {
+				r.logger.Error(err, "Failed to initialize governance in repository")
+				return "", fmt.Errorf("initialize governance in repository: %w", err)
+			}
 
-	if err != nil {
-		err = fmt.Errorf("initialize governance in repository: %w", err)
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateInitGitGovernanceInitialization, err)
-		return ctrl.Result{}, err
-	} else if !isNewRecord {
-		// Index already exists. commitHash variable is empty. Take the latest git commit hash from repository.
-		commitHash, err = r.repository(ctx, mrt).GetLatestRevision(ctx)
-		if err != nil {
-			err = fmt.Errorf("take latest commit, when index already exists in repository: %w", err)
-			_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateInitGitGovernanceInitialization, err)
-			return ctrl.Result{}, err
-		}
-	}
+			// If index already exists, get the latest commit hash
+			if !isNewRecord {
+				r.logger.V(2).Info("Index already exists, fetching latest revision")
+				commitHash, err = r.repository(ctx, mrt).GetLatestRevision(ctx)
+				if err != nil {
+					r.logger.Error(err, "Failed to get latest revision when index already exists")
+					return "", fmt.Errorf("take latest commit, when index already exists in repository: %w", err)
+				}
+			}
 
-	// Release lock on success and move to the next state.
-	mrt.Status.LastObservedCommitHash = commitHash
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		err = fmt.Errorf("update MRT LastObservedCommitHash: %w", err)
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateInitGitGovernanceInitialization, err)
-		return ctrl.Result{}, err
-	}
-
-	err = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.InitStateCreateDefaultClusterResources)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleInitStateGitCommit")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleInitStateGitCommit")
-	}
-	return ctrl.Result{Requeue: true}, err
+			// Update MRT with commit hash
+			r.logger.V(2).Info("Saving LastObservedCommitHash", "commitHash", commitHash)
+			mrt.Status.LastObservedCommitHash = commitHash
+			if err := r.Status().Update(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to update LastObservedCommitHash")
+				return "", fmt.Errorf("update MRT LastObservedCommitHash: %w", err)
+			}
+			r.logger.Info("Git initialization complete", "commitHash", commitHash)
+			return governancev1alpha1.InitStateCreateDefaultClusterResources, nil
+		},
+	)
 }
 
-// handleInitStateCreateClusterResources is responsible for managing lock and creating the default MSR/MCA in-cluster objects.
+// handleInitStateCreateClusterResources creates default MSR/MCA/GovernanceQueue resources.
+// State: InitStateCreateDefaultClusterResources → StateInitSetFinalizer
 func (r *ManifestRequestTemplateReconciler) handleInitStateCreateClusterResources(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.InitStateCreateDefaultClusterResources, "Creating MSR/MCA/GovernanceQueue in cluster"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
-
-	// Create linked default MSR/MCA
-	if err := r.createLinkedDefaultResources(ctx, mrt); err != nil {
-		err = fmt.Errorf("create linked default resources: %w", err)
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.InitStateCreateDefaultClusterResources, err)
-		return ctrl.Result{}, err
-	}
-
-	// Release lock on success and move to the next state.
-	err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.StateInitSetFinalizer)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleInitStateCreateClusterResources")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleInitStateCreateClusterResources")
-	}
-	return ctrl.Result{Requeue: true}, err
+	return r.withLock(ctx, mrt, governancev1alpha1.InitStateCreateDefaultClusterResources, "Creating MSR/MCA/GovernanceQueue in cluster",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.ActionState, error) {
+			r.logger.Info("Creating default cluster resources", "mrt", mrt.Name, "namespace", mrt.Namespace)
+			if err := r.createLinkedDefaultResources(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to create linked default resources")
+				return "", fmt.Errorf("create linked default resources: %w", err)
+			}
+			r.logger.Info("Default cluster resources created successfully")
+			return governancev1alpha1.StateInitSetFinalizer, nil
+		},
+	)
 }
 
 // handleInitStateCreateClusterResources is responsible for creating the default MSR/MCA in-cluster objects.
@@ -397,34 +467,24 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(
 	return nil
 }
 
-// handleStateFinalizing is responsible for managing lock and setting the GovernanceFinalizer on MRT.
+// handleStateFinalizing sets the GovernanceFinalizer on the MRT to complete initialization.
+// State: StateInitSetFinalizer → EmptyActionState
 func (r *ManifestRequestTemplateReconciler) handleStateFinalizing(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Acquire Lock
-	if lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.StateInitSetFinalizer, "Applying finalizer"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-	}
-
-	// Add GovernanceFinalizer on MRT
-	controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
-	if err := r.Update(ctx, mrt); err != nil {
-		err = fmt.Errorf("add finalizer in initialization: %w", err)
-		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateInitSetFinalizer, err)
-		return ctrl.Result{}, err
-	}
-
-	// Release lock on success and free the state.
-	err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleStateFinalizing")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleStateFinalizing")
-	}
-
-	return ctrl.Result{}, err
+	return r.withLock(ctx, mrt, governancev1alpha1.StateInitSetFinalizer, "Setting the GovernanceFinalizer on MRT",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.ActionState, error) {
+			r.logger.Info("Adding GovernanceFinalizer to complete initialization")
+			controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
+			if err := r.Update(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to add finalizer")
+				return "", fmt.Errorf("add finalizer in initialization: %w", err)
+			}
+			r.logger.Info("Initialization complete, finalizer added")
+			return governancev1alpha1.EmptyActionState, nil
+		},
+	)
 }
 
 func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
@@ -526,32 +586,37 @@ func (r *ManifestRequestTemplateReconciler) reconcileNormal(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Check an active Lock.
+	// Check for active lock
 	if meta.IsStatusConditionTrue(mrt.Status.Conditions, governancev1alpha1.Progressing) {
-		r.logger.Info("Waiting for an ongoing operation to complete.", "operation", mrt.Status.ActionState)
+		r.logger.V(2).Info("Waiting for ongoing operation to complete", "actionState", mrt.Status.ActionState)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	// If ActionState is empty, we need to decide what action to do.
+	// If ActionState is empty, decide what action to take
 	if mrt.Status.ActionState == governancev1alpha1.EmptyActionState {
-		// If the revision queue is not empty - start revision process.
+		// Check if there are new revisions in the queue
 		newRevision, err := r.anyRevisionEvents(ctx, mrt)
 		if err != nil {
+			r.logger.Error(err, "Failed to check for revision events")
 			return ctrl.Result{}, fmt.Errorf("is any revision event present: %w", err)
 		}
 
 		if newRevision {
-			r.logger.Info("New revisions found in queue. Transitioning to ProcessingRevision state.")
+			r.logger.Info("New revisions found in queue, starting revision processing")
 			return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.StateProcessingRevision)
 		}
+
+		r.logger.V(3).Info("No new revisions to process")
 	}
 
-	// Execute action.
+	// Execute action based on current ActionState
 	switch mrt.Status.ActionState {
 	case governancev1alpha1.StateProcessingRevision:
+		r.logger.V(2).Info("Processing revision")
 		return r.handleStateProcessingRevision(ctx, mrt)
 	default:
-		// If the state is unknown - set to EmptyState.
+		// If the state is unknown - reset to EmptyState
+		r.logger.V(2).Info("Unknown action state, resetting", "actionState", mrt.Status.ActionState)
 		return ctrl.Result{}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
 	}
 }
@@ -625,118 +690,110 @@ func (r *ManifestRequestTemplateReconciler) removeRevisionsQueueHead(
 	return nil
 }
 
-// handleStateProcessingRevision is responsible for managing lock and processing revision request.
+// handleStateProcessingRevision orchestrates processing of a new revision from the queue.
+// State: StateProcessingRevision with sub-states:
+// 1. StateRevisionPreflightCheck: Evaluate if revision should be processed
+// 2. StateRevisionUpdateMSRSpec: Update MSR with changed files from revision
+// 3. StateRevisionAfterMSRUpdate: Finalize and remove event from queue
+// Final state: EmptyActionState
 func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	// Acquire Lock.
-	if lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.StateProcessingRevision, "Processing new Git revision"); !lockAcquired || err != nil {
-		r.logger.Info("lock was already acquired")
+	r.logger.Info("Starting revision processing", "revisionState", mrt.Status.RevisionProcessingState)
+
+	// Acquire Lock
+	lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.StateProcessingRevision, "Processing new Git revision")
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("Lock already held, requeuing", "revisionState", mrt.Status.RevisionProcessingState)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 	}
 
-	// Check all dependencies exist.
+	// Check all dependencies exist
 	if err := r.checkDependencies(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed on dependency check. Requeuing.")
-		err = fmt.Errorf("check dependency: %w", err)
+		r.logger.Error(err, "Dependency check failed")
 		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateProcessingRevision, err)
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("check dependency: %w", err)
 	}
 
-	// Check repository connection exists.
+	// Check repository connection exists
 	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failed to connect to repository.")
-		err = fmt.Errorf("check repository: %w", err)
+		r.logger.Error(err, "Repository unavailable for revision processing")
 		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateProcessingRevision, err)
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("check repository: %w", err)
 	}
 
-	// Get the revision we are working on.
+	// Get the revision we are working on
 	event, err := r.revisionsQueueHead(ctx, mrt)
 	if err != nil {
+		r.logger.Error(err, "Failed to get revision from queue")
 		return ctrl.Result{}, fmt.Errorf("get head of the revision queue: %w", err)
 	}
 
 	revision := event.Spec.NewRevision.CommitSHA
 
-	// Dispatch to the correct revision sub-state handler.
-	var result ctrl.Result
+	// Check if revision processing is complete
+	if mrt.Status.RevisionProcessingState == governancev1alpha1.StateRevisionEmpty {
+		r.logger.Info("Revision processing complete, resetting to empty state", "revision", revision)
+		return ctrl.Result{}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
+	}
 
-	// In case of failure, let the main handler release the lock.
+	// Dispatch to the correct revision sub-state handler
 	switch mrt.Status.RevisionProcessingState {
-	case governancev1alpha1.StateRevisionPreflightCheck, governancev1alpha1.StateRevisionEmpty:
-		// 1. Devide, whether the MSR process should start or revision is worth to skip.
-		r.logger.Info("DEBUG: handleStateProcessingRevision#handleSubStatePreflightCheck")
-		result, err = r.handleSubStatePreflightCheck(ctx, mrt, revision)
+	case governancev1alpha1.StateRevisionPreflightCheck:
+		// 1. Decide whether the MSR process should start or revision is worth to skip
+		r.logger.V(2).Info("Dispatching to preflight check", "revision", revision)
+		return r.handleSubStatePreflightCheck(ctx, mrt, revision)
 	case governancev1alpha1.StateRevisionUpdateMSRSpec:
-		// 2. Update the MSR Spec with data from new revision (changed files, revision hash, etc.).
-		r.logger.Info("DEBUG: handleStateProcessingRevision#handleSubStateUpdateMSR")
-		result, err = r.handleSubStateUpdateMSR(ctx, mrt, revision)
+		// 2. Update the MSR Spec with data from new revision (changed files, revision hash, etc.)
+		r.logger.V(2).Info("Dispatching to MSR update", "revision", revision)
+		return r.handleSubStateUpdateMSR(ctx, mrt, revision)
 	case governancev1alpha1.StateRevisionAfterMSRUpdate:
-		// 3. After MSR is updated, refresh MSR related information in MRT.
-		r.logger.Info("DEBUG: handleStateProcessingRevision#handleSubstateFinish")
-		result, err = r.handleSubstateFinish(ctx, mrt, revision)
+		// 3. After MSR is updated, finalize and remove event from queue
+		r.logger.V(2).Info("Dispatching to finalization", "revision", revision)
+		return r.handleSubstateFinish(ctx, mrt, revision)
 	default:
-		// Any unknown RevisionProcessingState during state processing - error.
-		r.logger.Info(fmt.Sprintf("Unknown RevisionProcessingState state: %s", string(mrt.Status.RevisionProcessingState)))
-		return ctrl.Result{}, fmt.Errorf("unknown RevisionProcessingState state: %s", string(mrt.Status.RevisionProcessingState))
-
-	}
-
-	// If any step failed, we release the lock but keep the meta-state.
-	if err != nil {
-		r.logger.Info("DEBUG: handleStateProcessingRevision: error after sub state call")
+		// Any unknown RevisionProcessingState during state processing - error
+		err := fmt.Errorf("unknown RevisionProcessingState state: %s", string(mrt.Status.RevisionProcessingState))
+		r.logger.Error(err, "Invalid revision processing state")
 		_ = r.releaseLockWithFailure(ctx, mrt, governancev1alpha1.StateProcessingRevision, err)
-		return result, err
+		return ctrl.Result{}, err
 	}
-
-	r.logger.Info("DEBUG: handleStateProcessingRevision: successfull sub state call")
-	return result, nil
 }
 
-// handleInitStateGitCommit is responsible for releasing lock (set in previous function) and deciding,
-// whether MSR process should be started. If yes - sets RevisionProcessingState to be StateRevisionUpdateMSRSpec.
+// handleSubStatePreflightCheck decides whether the revision should be processed or skipped.
+// Sub-state: StateRevisionPreflightCheck/StateRevisionEmpty → StateRevisionUpdateMSRSpec (or EmptyActionState if skip)
 func (r *ManifestRequestTemplateReconciler) handleSubStatePreflightCheck(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 	revision string,
 ) (ctrl.Result, error) {
-	// Evaluate the revision and return, if it should be skipped.
-	shouldSkip, reason, err := r.shouldSkipRevision(ctx, mrt, revision)
-	if err != nil {
-		r.logger.Error(err, "Failure while evaluating new revision from revision queue")
-		err = fmt.Errorf("evaluate new revision from revision queue: %w", err)
-		return ctrl.Result{}, err
-	}
+	return r.withRevisionLock(ctx, mrt, governancev1alpha1.StateProcessingRevision, governancev1alpha1.StateProcessingRevision, revision,
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.RevisionProcessingState, error) {
+			r.logger.Info("Evaluating revision for processing", "revision", revision)
 
-	if shouldSkip {
-		r.logger.Info("Skipping revision based on pre-flight check", "revision", revision, "reason", reason)
-		// Pop the revision from the queue and reset the state to EmptyPending to check the next one.
-		if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
-			return ctrl.Result{}, err
-		}
+			// Evaluate the revision and return if it should be skipped
+			shouldSkip, reason, err := r.shouldSkipRevision(ctx, mrt, revision)
+			if err != nil {
+				r.logger.Error(err, "Failed to evaluate revision")
+				return "", fmt.Errorf("evaluate new revision from revision queue: %w", err)
+			}
 
-		err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
-		return ctrl.Result{}, err
-	}
+			if shouldSkip {
+				r.logger.Info("Skipping revision based on pre-flight check", "revision", revision, "reason", reason)
+				// Pop the revision from the queue and reset the state to Empty
+				if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
+					r.logger.Error(err, "Failed to remove revision from queue")
+					return "", err
+				}
+				// Transition back to Empty (handled by caller)
+				return governancev1alpha1.StateRevisionEmpty, nil
+			}
 
-	// Revision passes. Transition RevisionProcessingState to StateRevisionUpdateMSRSpec.
-	mrt.Status.RevisionProcessingState = governancev1alpha1.StateRevisionUpdateMSRSpec
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failure while updatting RevisionProcessingState")
-		err = fmt.Errorf("update RevisionProcessingState: %w", err)
-		return ctrl.Result{}, fmt.Errorf("update MRT queueRef: %w", err)
-	}
-	err = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.StateProcessingRevision)
-
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleSubStatePreflightCheck")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleSubStatePreflightCheck")
-	}
-
-	return ctrl.Result{Requeue: true}, nil
+			r.logger.Info("Revision passed pre-flight check, proceeding to MSR update", "revision", revision)
+			return governancev1alpha1.StateRevisionUpdateMSRSpec, nil
+		},
+	)
 }
 
 // shouldSkipRevision decides based on MRT, whether revision should be processed or skipped.
@@ -792,43 +849,38 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 	return false, "", nil
 }
 
-// handleSubStateUpdateMSR is responsible for releasing lock (set in previous function) and updating MSR with new data.
-// If there are no changed files in revision - skip this revision and transition to an empty state.
-// If there are changed files - transition to StateRevisionAfterMSRUpdate.
+// handleSubStateUpdateMSR updates the MSR Spec with changes from the new revision.
+// Sub-state: StateRevisionUpdateMSRSpec → StateRevisionAfterMSRUpdate (or EmptyActionState if no changes)
 func (r *ManifestRequestTemplateReconciler) handleSubStateUpdateMSR(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 	revision string,
 ) (ctrl.Result, error) {
-	continueMSR, err := r.performMSRUpdate(ctx, mrt, revision)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("perform ManifestSigningRequest update: %w", err)
-	} else if !continueMSR {
-		r.logger.Info("Skipping revision since there is no govern files in revision", "revision", revision)
-		// Pop the revision from the queue and reset the state to EmptyPending to check the next one.
-		if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
-			return ctrl.Result{}, err
-		}
+	return r.withRevisionLock(ctx, mrt, governancev1alpha1.StateProcessingRevision, governancev1alpha1.StateProcessingRevision, revision,
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.RevisionProcessingState, error) {
+			r.logger.Info("Updating MSR with changes from revision", "revision", revision)
 
-		err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
-		return ctrl.Result{}, err
-	}
+			continueMSR, err := r.performMSRUpdate(ctx, mrt, revision)
+			if err != nil {
+				r.logger.Error(err, "Failed to update MSR")
+				return "", fmt.Errorf("perform ManifestSigningRequest update: %w", err)
+			}
 
-	// Revision passes. Transition RevisionProcessingState to StateRevisionAfterMSRUpdate.
-	mrt.Status.RevisionProcessingState = governancev1alpha1.StateRevisionAfterMSRUpdate
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failure while updatting RevisionProcessingState")
-		err = fmt.Errorf("update RevisionProcessingState: %w", err)
-		return ctrl.Result{}, err
-	}
+			if !continueMSR {
+				r.logger.Info("No manifest files changed in revision, skipping MSR processing", "revision", revision)
+				// Pop the revision from the queue and reset state to Empty
+				if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
+					r.logger.Error(err, "Failed to remove revision from queue")
+					return "", err
+				}
+				// Transition back to Empty (handled by caller)
+				return governancev1alpha1.StateRevisionEmpty, nil
+			}
 
-	err = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.StateProcessingRevision)
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleSubStateUpdateMSR")
-	} else {
-		r.logger.Info("DEBUG: Successfull handleSubStateUpdateMSR")
-	}
-	return ctrl.Result{Requeue: true}, nil
+			r.logger.Info("MSR update complete, ready to finalize", "revision", revision)
+			return governancev1alpha1.StateRevisionAfterMSRUpdate, nil
+		},
+	)
 }
 
 // performMSRUpdate takes all the changed files for revision.
@@ -888,39 +940,37 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	return true, nil
 }
 
-// handleSubstateFinish is responsible for releasing lock (set in previous function) and
-// updating MRT's LastObservedCommitHash, RevisionsQueue and setting ActionState, RevisionProcessingState to empty states.
+// handleSubstateFinish completes revision processing and removes the event from the queue.
+// Sub-state: StateRevisionAfterMSRUpdate → StateRevisionEmpty (final)
+// Transitions ActionState back to EmptyActionState, completing the revision processing cycle.
 func (r *ManifestRequestTemplateReconciler) handleSubstateFinish(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 	revision string,
 ) (ctrl.Result, error) {
-	// Update MRT LastObservedCommitHash and pop the revision from the queue.
-	mrt.Status.LastObservedCommitHash = revision
-	// Set RevisionProcessingState to an empty state.
-	mrt.Status.RevisionProcessingState = governancev1alpha1.StateRevisionEmpty
-	if err := r.Status().Update(ctx, mrt); err != nil {
-		r.logger.Error(err, "Failure while updatting RevisionProcessingState")
-		err = fmt.Errorf("update RevisionProcessingState: %w", err)
-		return ctrl.Result{}, err
-	}
+	return r.withRevisionLock(ctx, mrt, governancev1alpha1.StateProcessingRevision, governancev1alpha1.EmptyActionState, revision,
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.RevisionProcessingState, error) {
+			r.logger.Info("Finalizing revision processing", "revision", revision)
 
-	// Release lock on success and free the state.
-	err := r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.EmptyActionState)
+			// Update LastObservedCommitHash
+			mrt.Status.LastObservedCommitHash = revision
+			r.logger.V(2).Info("Updating LastObservedCommitHash", "commitHash", revision)
+			if err := r.Status().Update(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to update LastObservedCommitHash")
+				return "", fmt.Errorf("update LastObservedCommitHash: %w", err)
+			}
 
-	if err != nil {
-		r.logger.Info("DEBUG: Unsuccessfull handleSubstateFinish")
-		return ctrl.Result{}, err
-	} else {
-		r.logger.Info("DEBUG: Successfull handleSubstateFinish")
-	}
+			// Delete the revision event from queue
+			r.logger.Info("Removing revision event from queue")
+			if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to remove revision from queue")
+				return "", err
+			}
 
-	// Delete the revision event.
-	if err := r.removeRevisionsQueueHead(ctx, mrt); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
+			r.logger.Info("Revision processing complete", "revision", revision)
+			return governancev1alpha1.StateRevisionEmpty, nil
+		},
+	)
 }
 
 // checkDependencies validates that all linked resources for an MRT exist.
