@@ -30,10 +30,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
+
+// MCAStateHandler defines a function that performs work within a state and returns the next state
+type MCAStateHandler func(ctx context.Context, msr *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error)
+
+// MCAReconcileStateHandler defines a function that performs work within a reconcile state
+// and returns the next reconcile state
+type MCAReconcileStateHandler func(ctx context.Context, msr *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error)
 
 // ManifestChangeApprovalReconciler reconciles a ManifestChangeApproval object
 type ManifestChangeApprovalReconciler struct {
@@ -47,6 +55,7 @@ type ManifestChangeApprovalReconciler struct {
 func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&governancev1alpha1.ManifestChangeApproval{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Named("manifestchangeapproval").
 		Complete(r)
 }
@@ -56,6 +65,11 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
+// Reconcile orchestrates the reconciliation flow for ManifestSigningRequest.
+// It handles three main paths:
+// 1. Deletion: Remove finalizer and cleanup
+// 2. Initialization: Create, push to Git, update history, set finalizer
+// 3. Normal: Process new versions
 func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
 	r.logger.Info("Reconciling ManifestChangeApproval")
@@ -71,6 +85,12 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 		return r.reconcileDelete(ctx, mca)
 	}
 
+	// Release lock if hold too long (deadlock prevention)
+	if r.isLockForMoreThan(mca, 30*time.Second) {
+		r.logger.Info("Lock held too long, releasing to prevent deadlock", "actionState", mca.Status.ActionState, "lockDuration", "30s")
+		return ctrl.Result{Requeue: true}, r.releaseLockWithFailure(ctx, mca, mca.Status.ActionState, fmt.Errorf("lock acquired for too long"))
+	}
+
 	// Handle initialization
 	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
 		return r.reconcileCreate(ctx, mca, req)
@@ -81,7 +101,10 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 }
 
 // reconcileCreate handles the logic for a newly created MCA that has not been initialized.
-func (r *ManifestChangeApprovalReconciler) reconcileDelete(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (ctrl.Result, error) {
+func (r *ManifestChangeApprovalReconciler) reconcileDelete(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
 		// No custom finalizer is found. Do nothing
 		return ctrl.Result{}, nil
@@ -99,142 +122,239 @@ func (r *ManifestChangeApprovalReconciler) reconcileDelete(ctx context.Context, 
 	return ctrl.Result{}, nil
 }
 
-// reconcileCreate handles the logic for a newly created MCA that has not been initialized.
-func (r *ManifestChangeApprovalReconciler) reconcileCreate(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) (ctrl.Result, error) { // TODO: be transactional
-	r.logger.Info("Initializing new ManifestChangeApproval")
+// isLockForMoreThan checks if the Progressing lock has been held for longer than the specified duration.
+// Used for deadlock detection and prevention.
+func (r *ManifestChangeApprovalReconciler) isLockForMoreThan(
+	mca *governancev1alpha1.ManifestChangeApproval,
+	duration time.Duration,
+) bool {
+	condition := meta.FindStatusCondition(mca.Status.Conditions, governancev1alpha1.Progressing)
+	return condition != nil && condition.Status == metav1.ConditionTrue && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
+}
 
-	// Check if MCA is being initialized
+// reconcileCreate handles initialization of a new MCA.
+// It progresses through these states:
+// 1. MCAStateGitPushMCA: Push initial MCA manifest to Git
+// 2. MCAStateUpdateAfterGitPush: Update in-cluster history after push
+// 3. MCAStateInitSetFinalizer: Set finalizer to complete initialization
+func (r *ManifestChangeApprovalReconciler) reconcileCreate(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	req ctrl.Request,
+) (ctrl.Result, error) {
+	r.logger.Info("Initializing new MCA", "actionState", mca.Status.ActionState)
+
+	// Check if there is any available git repository provider
+	if _, err := r.repositoryWithError(ctx, mca); err != nil {
+		r.logger.Error(err, "Repository provider unavailable, cannot proceed with initialization")
+		return ctrl.Result{}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
+	}
+
+	switch mca.Status.ActionState {
+	case governancev1alpha1.MCAActionStateEmpty, governancev1alpha1.MCAActionStateGitPushMCA:
+		// 1. Create an initial MCA file in governance folder in Git repository.
+		r.logger.Info("Pushing initial MCA to Git repository")
+		return r.handleStateGitCommit(ctx, mca)
+	case governancev1alpha1.MCAActionStateUpdateAfterGitPush:
+		// 2. Update information in-cluster MCA (add history record) after Git repository push.
+		r.logger.Info("Updating MCA after initial Git push")
+		return r.handleUpdateAfterGitPush(ctx, mca)
+	case governancev1alpha1.MCAActionStateInitSetFinalizer:
+		// 3. Confirm MCA initialization by setting the GovernanceFinalizer.
+		r.logger.Info("Setting finalizer to complete initialization")
+		return r.handleStateFinalizer(ctx, mca)
+	default:
+		err := fmt.Errorf("unknown initialization state: %s", string(mca.Status.ActionState))
+		r.logger.Error(err, "Invalid state for initialization")
+		return ctrl.Result{}, err
+	}
+}
+
+// handleStateGitCommit pushes the initial MCA manifest to the Git repository.
+// State: MCAStateGitPushMCA → MCAStateUpdateAfterGitPush
+func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateGitPushMCA, "Pushing MCA manifest to Git repository",
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
+			r.logger.Info("Saving initial MCA to Git repository", "mca", mca.Name, "namespace", mca.Namespace)
+			if err := r.saveInRepository(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to save MCA to repository")
+				return "", fmt.Errorf("save MCA in Git repository: %w", err)
+			}
+			r.logger.Info("MCA saved to repository successfully")
+			return governancev1alpha1.MCAActionStateUpdateAfterGitPush, nil
+		},
+	)
+}
+
+// handleUpdateAfterGitPush updates the in-cluster MCA status with history after Git push.
+// State: MCAStateUpdateAfterGitPush → MCAStateInitSetFinalizer
+func (r *ManifestChangeApprovalReconciler) handleUpdateAfterGitPush(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateUpdateAfterGitPush, "Updating in-cluster MCA information after Git push",
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
+			r.logger.Info("Adding history record after Git push", "version", mca.Spec.Version, "newHistoryCount", len(mca.Status.ApprovalHistory)+1)
+			newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
+			mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
+			if err := r.Status().Update(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to update MCA with history record", "version", newRecord.Version)
+				return "", fmt.Errorf("update MCA information after Git push: %w", err)
+			}
+			r.logger.Info("MCA history updated successfully")
+			return governancev1alpha1.MCAActionStateInitSetFinalizer, nil
+		},
+	)
+}
+
+// handleStateFinalizer sets the GovernanceFinalizer on the MCA to complete initialization.
+// State: MCAStateInitSetFinalizer → MCAEmptyActionState
+func (r *ManifestChangeApprovalReconciler) handleStateFinalizer(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateInitSetFinalizer, "Setting the GovernanceFinalizer on MCA",
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
+			r.logger.Info("Adding GovernanceFinalizer to complete initialization")
+			controllerutil.AddFinalizer(mca, GovernanceFinalizer)
+			if err := r.Update(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to add finalizer")
+				return "", fmt.Errorf("add finalizer in initialization: %w", err)
+			}
+			r.logger.Info("Initialization complete, finalizer added")
+			return governancev1alpha1.MCAActionStateEmpty, nil
+		},
+	)
+}
+
+// reconcileNormal handles reconciliation for initialized MCA resources.
+// It processes new versions detected in the Spec and orchestrates the reconciliation state machine.
+// If Spec.Version > latest history version, transitions to MCAReconcileNewMCASpec state.
+func (r *ManifestChangeApprovalReconciler) reconcileNormal(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	req ctrl.Request,
+) (ctrl.Result, error) {
+	// Check for active lock
 	if meta.IsStatusConditionTrue(mca.Status.Conditions, governancev1alpha1.Progressing) {
-		r.logger.Info("Initialization is already in progress. Waiting")
+		r.logger.V(2).Info("Waiting for ongoing operation to complete", "actionState", mca.Status.ActionState)
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
-	// Acquire the lock
-	r.logger.Info("Setting Progressing=True to begin initialization")
-	meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
-		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionTrue,
-		Reason:  "CreatingInitialState",
-		Message: "Creating default history entry and performing initial Git commit",
-	})
-	if err := r.Status().Update(ctx, mca); err != nil {
-		r.logger.Error(err, "Failed to set Progressing condition")
+	// If ActionState is empty, we need to decide what action to do
+	if mca.Status.ActionState == governancev1alpha1.MCAActionStateEmpty {
+		// Get the latest history record version
+		latestHistoryVersion := -1
+		history := mca.Status.ApprovalHistory
+		if len(history) > 0 {
+			latestHistoryVersion = history[len(history)-1].Version
+		}
+
+		// If the spec's version is newer - reconcile status
+		if mca.Spec.Version > latestHistoryVersion {
+			r.logger.Info("New version detected in spec, starting reconciliation", "specVersion", mca.Spec.Version, "latestVersion", latestHistoryVersion)
+			return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec)
+		}
+
+		// No new version detected
+		r.logger.V(3).Info("No new version to process", "specVersion", mca.Spec.Version, "latestVersion", latestHistoryVersion)
+	}
+
+	// Execute action based on current ActionState
+	switch mca.Status.ActionState {
+	case governancev1alpha1.MCAActionStateNewMCASpec:
+		r.logger.V(2).Info("Processing new MCA spec")
+		return r.handleReconcileNewMCASpec(ctx, mca)
+	default:
+		// If the state is unknown - reset to EmptyState
+		r.logger.V(2).Info("Unknown action state, resetting", "actionState", mca.Status.ActionState)
+		return ctrl.Result{}, r.releaseLockAndSetNextState(ctx, mca, governancev1alpha1.MCAActionStateEmpty)
+	}
+}
+
+// handleReconcileNewMCASpec orchestrates processing of a new MCA Spec version.
+// State: MCAReconcileNewMCASpec with sub-states:
+// 1. MCAReconcileStateGitPushMCA: Push updated MCA to Git
+// 2. MCAReconcileRStateUpdateAfterGitPush: Add history record
+// 3. MCAReconcileRStateNotifyGovernors: Notify governors
+// Final state: MCAEmptyActionState
+func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	r.logger.Info("Starting reconciliation of new MCA spec", "version", mca.Spec.Version, "reconcileState", mca.Status.ReconcileState)
+
+	// Acquire Lock
+	lockAcquired, err := r.acquireLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, "Processing new MCA Spec")
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("Lock already held, requeuing", "reconcileState", mca.Status.ReconcileState)
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+	}
+
+	// Check repository connection exists
+	if _, err := r.repositoryWithError(ctx, mca); err != nil {
+		r.logger.Error(err, "Repository unavailable for spec reconciliation")
+		_ = r.releaseLockWithFailure(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, fmt.Errorf("check repository: %w", err))
 		return ctrl.Result{}, err
 	}
 
-	// Check repository connection
-	if _, err := r.repositoryWithError(ctx, mca); err != nil {
-		r.logger.Error(err, "Failed to connect to repository.")
-		// Release lock with reason failed
-		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
-			Type:    governancev1alpha1.Progressing,
-			Status:  metav1.ConditionFalse,
-			Reason:  "InitializationFailed",
-			Message: err.Error(),
-		})
-		// Also mark Available as false
-		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
-			Type:    governancev1alpha1.Available,
-			Status:  metav1.ConditionFalse,
-			Reason:  "InitializationFailed",
-			Message: err.Error(),
-		})
-
-		freshMCA := &governancev1alpha1.ManifestChangeApproval{}
-		_ = r.Get(ctx, req.NamespacedName, freshMCA)
-		freshMCA.Status.Conditions = mca.Status.Conditions
-		_ = r.Status().Update(ctx, freshMCA)
-
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("init repo for ManifestChangeApproval: %w", err)
+	// Dispatch to the correct reconcile sub-state handler
+	// Each handler manages its own ReconcileState transition and lock release
+	r.logger.V(2).Info("Dispatching to reconcile sub-state handler", "reconcileState", mca.Status.ReconcileState)
+	switch mca.Status.ReconcileState {
+	case governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, governancev1alpha1.MCAReconcileNewMCASpecStateGitPushMCA:
+		return r.handleMCAReconcileStateGitCommit(ctx, mca)
+	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush:
+		return r.handleMCAReconcileStateUpdateAfterGitPush(ctx, mca)
+	default:
+		err := fmt.Errorf("unknown ReconcileState: %s", string(mca.Status.ReconcileState))
+		r.logger.Error(err, "Invalid reconcile state")
+		_ = r.releaseLockWithFailure(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, err)
+		return ctrl.Result{}, err
 	}
-
-	r.logger.Info("Start saving initial MCA in repository")
-	if err := r.saveInRepository(ctx, mca); err != nil {
-		r.logger.Error(err, "Failed to save initial ManifestChangeApproval in repository")
-		// Release lock with reason failed
-		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
-			Type:    governancev1alpha1.Progressing,
-			Status:  metav1.ConditionFalse,
-			Reason:  "InitializationFailed",
-			Message: err.Error(),
-		})
-		// Also mark Available as false
-		meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
-			Type:    governancev1alpha1.Available,
-			Status:  metav1.ConditionFalse,
-			Reason:  "InitializationFailed",
-			Message: err.Error(),
-		})
-
-		freshMCA := &governancev1alpha1.ManifestChangeApproval{}
-		_ = r.Get(ctx, req.NamespacedName, freshMCA)
-		freshMCA.Status.Conditions = mca.Status.Conditions
-		_ = r.Status().Update(ctx, freshMCA)
-
-		return ctrl.Result{}, fmt.Errorf("save initial ManifestChangeApproval in repository: %w", err)
-	}
-	r.logger.Info("Finish saving initial MCA in repository")
-
-	// Mark MCA as set up. Take new MCA
-	r.logger.Info("Start setting finalizer on the MCA")
-	latestMCA := &governancev1alpha1.ManifestChangeApproval{}
-	if err := r.Get(ctx, req.NamespacedName, latestMCA); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to re-fetch MCA before finalization: %w", err)
-	}
-
-	// Add new initial history record
-	newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
-	latestMCA.Status.ApprovalHistory = append(latestMCA.Status.ApprovalHistory, newRecord)
-	// Add finalizer
-	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
-
-	// Update status conditions to reflect success
-	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
-		Type:    governancev1alpha1.Progressing,
-		Status:  metav1.ConditionFalse,
-		Reason:  "InitializationSuccessful",
-		Message: "Initial state successfully committed to Git and cluster",
-	})
-	meta.SetStatusCondition(&latestMCA.Status.Conditions, metav1.Condition{
-		Type:    governancev1alpha1.Available,
-		Status:  metav1.ConditionTrue,
-		Reason:  "SetupComplete",
-		Message: "Governance is active for this MCA",
-	})
-
-	if err := r.Status().Update(ctx, mca); err != nil {
-		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
-	}
-	controllerutil.AddFinalizer(mca, GovernanceFinalizer)
-	if err := r.Update(ctx, mca); err != nil {
-		return ctrl.Result{}, fmt.Errorf("apply finalizer and set final status: %w", err)
-	}
-	r.logger.Info("Finish setting finalizer on the MCA")
-
-	r.logger.Info("Successfully finalized ManifestChangeApproval")
-	return ctrl.Result{}, nil
 }
 
-func (r *ManifestChangeApprovalReconciler) reconcileNormal(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval, req ctrl.Request) (ctrl.Result, error) {
-	if meta.IsStatusConditionTrue(mca.Status.Conditions, governancev1alpha1.Progressing) {
-		r.logger.Info("Waiting for ongoing operation to complete.")
-		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
-	}
+// handleMCAReconcileStateGitCommit pushes the updated MCA manifest to Git repository.
+// Sub-state: MCAReconcileStateGitPushMCA → MCAReconcileRStateUpdateAfterGitPush
+func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
+			r.logger.Info("Pushing updated MCA manifest to Git repository", "version", mca.Spec.Version)
+			if err := r.saveInRepository(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to push MCA to repository", "version", mca.Spec.Version)
+				return "", fmt.Errorf("save MCA in Git repository: %w", err)
+			}
+			r.logger.Info("MCA pushed to repository, transitioning to update state", "version", mca.Spec.Version)
+			return governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush, nil
+		},
+	)
+}
 
-	// Get the latest history record version
-	latestHistoryVersion := -1
-	history := mca.Status.ApprovalHistory
-	if len(history) > 0 {
-		latestHistoryVersion = history[len(history)-1].Version
-	}
-
-	// If the spec's version is newer - reconcile status
-	if mca.Spec.Version > latestHistoryVersion {
-		r.logger.Info("Detected new version in spec, updating status history", "specVersion", mca.Spec.Version, "statusVersion", latestHistoryVersion)
-		return ctrl.Result{}, r.saveNewHistoryRecord(ctx, mca)
-	}
-
-	return ctrl.Result{}, nil
+// handleMCAReconcileStateUpdateAfterGitPush adds a history record after Git push.
+// Sub-state: MCAReconcileRStateUpdateAfterGitPush → MCAReconcileRStateNotifyGovernors
+func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGitPush(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
+			r.logger.Info("Adding reconciliation history record", "version", mca.Spec.Version)
+			newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
+			mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
+			if err := r.Status().Update(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to add history record", "version", newRecord.Version)
+				return "", fmt.Errorf("update MCA information after Git push: %w", err)
+			}
+			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "newHistoryCount", len(mca.Status.ApprovalHistory))
+			return governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, nil
+		},
+	)
 }
 
 func (r *ManifestChangeApprovalReconciler) saveInRepository(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
@@ -289,6 +409,160 @@ func (r *ManifestChangeApprovalReconciler) createNewMCAHistoryRecordFromSpec(mca
 		Require:   mcaCopy.Spec.Require,
 		Approves:  mcaCopy.Status.Approves,
 	}
+}
+
+// withLock wraps state handler logic with lock acquisition and release.
+// It provides a clean abstraction for ActionState transitions:
+// 1. Acquires lock with re-fetch to prevent conflicts
+// 2. Executes the handler function
+// 3. On success: releases lock and transitions to nextState
+// 4. On failure: releases lock with failure reason and returns error
+// This eliminates boilerplate and ensures consistent lock management.
+func (r *ManifestChangeApprovalReconciler) withLock(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	state governancev1alpha1.MCAActionState,
+	message string,
+	handler MCAStateHandler,
+) (ctrl.Result, error) {
+	lockAcquired, err := r.acquireLock(ctx, mca, state, message)
+	if !lockAcquired || err != nil {
+		r.logger.V(2).Info("lock was already acquired, requeuing", "state", state)
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+	}
+
+	nextState, err := handler(ctx, mca)
+	if err != nil {
+		r.logger.Error(err, "Handler failed, releasing lock with failure", "state", state)
+		_ = r.releaseLockWithFailure(ctx, mca, state, err)
+		return ctrl.Result{}, err
+	}
+
+	r.logger.V(2).Info("Handler succeeded, transitioning state", "from", state, "to", nextState)
+	releaseErr := r.releaseLockAndSetNextState(ctx, mca, nextState)
+	return ctrl.Result{Requeue: true}, releaseErr
+}
+
+// withReconcileLock wraps reconcile sub-state handler logic.
+// Assumes the outer lock (ActionState) is already held by the parent handler.
+// It provides a clean abstraction for ReconcileState transitions:
+// 1. Executes the handler function
+// 2. On success: updates ReconcileState, releases lock with nextActionState, and requeues
+// 3. On failure: releases lock with failure reason and returns error
+// The nextActionState parameter allows specifying what ActionState to transition to,
+// enabling the last handler to transition back to Empty.
+func (r *ManifestChangeApprovalReconciler) withReconcileLock(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	parentState governancev1alpha1.MCAActionState,
+	nextActionState governancev1alpha1.MCAActionState,
+	handler MCAReconcileStateHandler,
+) (ctrl.Result, error) {
+	nextReconcileState, err := handler(ctx, mca)
+	if err != nil {
+		r.logger.Error(err, "Reconcile handler failed, releasing lock", "parentState", parentState, "currentReconcileState", mca.Status.ReconcileState)
+		_ = r.releaseLockWithFailure(ctx, mca, parentState, err)
+		return ctrl.Result{}, err
+	}
+
+	// Update ReconcileState
+	r.logger.V(2).Info("Updating ReconcileState", "from", mca.Status.ReconcileState, "to", nextReconcileState)
+	mca.Status.ReconcileState = nextReconcileState
+	if err := r.Status().Update(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to update ReconcileState", "newState", nextReconcileState)
+		_ = r.releaseLockWithFailure(ctx, mca, parentState, fmt.Errorf("update ReconcileState: %w", err))
+		return ctrl.Result{}, err
+	}
+
+	// Transition ActionState to nextActionState and requeue
+	releaseErr := r.releaseLockAndSetNextState(ctx, mca, nextActionState)
+	if releaseErr == nil {
+		r.logger.V(2).Info("Reconcile sub-state completed, requeuing", "nextReconcileState", nextReconcileState, "nextActionState", nextActionState)
+	}
+	return ctrl.Result{Requeue: true}, releaseErr
+}
+
+// acquireLock attempts to acquire an exclusive lock for the given state.
+// It re-fetches the MCA to avoid "object modified" conflicts.
+// Returns (true, nil) if lock was acquired, (false, nil) if already held, (false, err) on error.
+func (r *ManifestChangeApprovalReconciler) acquireLock(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	newState governancev1alpha1.MCAActionState,
+	message string,
+) (bool, error) {
+	// Re-fetch is crucial to avoid "object modified" errors
+	if err := r.Get(ctx, client.ObjectKeyFromObject(mca), mca); err != nil {
+		r.logger.Error(err, "Failed to re-fetch MCA for lock acquisition", "state", newState)
+		return false, fmt.Errorf("fetch fresh ManifestChangeApproval: %w", err)
+	}
+
+	// Check if Condition.Progressing was already set for this state
+	if mca.Status.ActionState == newState && meta.IsStatusConditionTrue(mca.Status.Conditions, governancev1alpha1.Progressing) {
+		r.logger.V(3).Info("Lock already held for this state", "state", newState)
+		return false, nil
+	}
+
+	// Set ActionState and Progressing condition
+	mca.Status.ActionState = newState
+	meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+		Type: governancev1alpha1.Progressing, Status: metav1.ConditionTrue, Reason: string(newState), Message: message,
+	})
+
+	// Save the lock
+	if err := r.Status().Update(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to acquire lock", "state", newState)
+		return false, fmt.Errorf("update ManifestChangeApproval after lock acquired: %w", err)
+	}
+
+	r.logger.V(2).Info("Lock acquired", "state", newState, "message", message)
+	return true, nil
+}
+
+// releaseLockWithFailure releases the lock and sets the reason to StepFailed.
+// It preserves the ActionState for retry.
+func (r *ManifestChangeApprovalReconciler) releaseLockWithFailure(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	nextState governancev1alpha1.MCAActionState,
+	cause error,
+) error {
+	r.logger.V(2).Info("Releasing lock due to failure", "state", nextState, "error", cause.Error())
+	return r.releaseLockAbstract(ctx, mca, nextState, "StepFailed", fmt.Sprintf("Error occurred: %v", cause))
+}
+
+// releaseLockAndSetNextState releases the lock and transitions to the next state.
+// It sets the reason to StepComplete indicating successful completion.
+func (r *ManifestChangeApprovalReconciler) releaseLockAndSetNextState(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	nextState governancev1alpha1.MCAActionState,
+) error {
+	r.logger.V(2).Info("Releasing lock and transitioning state", "nextState", nextState)
+	return r.releaseLockAbstract(ctx, mca, nextState, "StepComplete", "Step completed, proceeding to next state")
+}
+
+// releaseLockAbstract is the internal implementation for lock release.
+// It updates the Progressing condition to False and transitions ActionState.
+func (r *ManifestChangeApprovalReconciler) releaseLockAbstract(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+	nextState governancev1alpha1.MCAActionState,
+	reason, message string,
+) error {
+	// The passed 'mca' should already be the latest version
+	mca.Status.ActionState = nextState
+	meta.SetStatusCondition(&mca.Status.Conditions, metav1.Condition{
+		Type: governancev1alpha1.Progressing, Status: metav1.ConditionFalse, Reason: reason, Message: message,
+	})
+
+	if err := r.Status().Update(ctx, mca); err != nil {
+		r.logger.Error(err, "Failed to release lock", "nextState", nextState, "reason", reason)
+		return err
+	}
+
+	r.logger.V(3).Info("Lock released", "nextState", nextState, "reason", reason)
+	return nil
 }
 
 func (r *ManifestChangeApprovalReconciler) getExistingMRTForMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (*governancev1alpha1.ManifestRequestTemplate, error) {

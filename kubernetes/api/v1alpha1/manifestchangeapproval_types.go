@@ -20,6 +20,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type MCAActionState string
+
+const (
+	MCAActionStateEmpty              MCAActionState = ""
+	MCAActionStateGitPushMCA         MCAActionState = "MCAActionStateGitPushMCA"
+	MCAActionStateUpdateAfterGitPush MCAActionState = "MCAActionStateUpdateAfterGitPush"
+	MCAActionStateInitSetFinalizer   MCAActionState = "MCAActionStateInitSetFinalizer"
+
+	// Deletion states
+	MCAActionStateDeletion MCAActionState = "MCAActionStateDeletion"
+
+	//
+	MCAActionStateNewMCASpec MCAActionState = "MCAActionStateNewMCASpec"
+)
+
+type MCAReconcileNewMCASpecState string
+
+const (
+	MCAReconcileNewMCASpecStateEmpty              MCAReconcileNewMCASpecState = ""
+	MCAReconcileNewMCASpecStateGitPushMCA         MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateGitPushMCA"
+	MCAReconcileNewMCASpecStateUpdateAfterGitPush MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateAfterGitPush"
+)
+
 // ManifestChangeApprovalSpec defines the desired state of ManifestChangeApproval
 type ManifestChangeApprovalSpec struct {
 	// 0 is value of the default ManifestSigningRequest, created by qubmango
@@ -99,6 +122,12 @@ type ManifestChangeApprovalStatus struct {
 
 	// +optional
 	Approves ApproverList `json:"approves"`
+
+	// +optional
+	ActionState MCAActionState `json:"actionState,omitempty"`
+
+	// +optional
+	ReconcileState MCAReconcileNewMCASpecState `json:"reconcileState,omitempty"`
 
 	// Standard condition types include:
 	// - "Available": the resource is fully functional

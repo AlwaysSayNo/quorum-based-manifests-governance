@@ -229,7 +229,7 @@ func (r *ManifestSigningRequestReconciler) handleUpdateAfterGitPush(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, msr, governancev1alpha1.MSRActionStateUpdateAfterGitPush, "Updating in-cluster MSR information after Git push",
 		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
-			r.logger.Info("Adding history record after Git push", "version", msr.Spec.Version, "historyCount", len(msr.Status.RequestHistory)+1)
+			r.logger.Info("Adding history record after Git push", "version", msr.Spec.Version, "newHistoryCount", len(msr.Status.RequestHistory)+1)
 			newRecord := r.createNewMSRHistoryRecordFromSpec(msr)
 			msr.Status.RequestHistory = append(msr.Status.RequestHistory, newRecord)
 			if err := r.Status().Update(ctx, msr); err != nil {
@@ -385,7 +385,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRReconcileStateUpdateAfterGit
 				r.logger.Error(err, "Failed to add history record", "version", newRecord.Version)
 				return "", fmt.Errorf("update MSR information after Git push: %w", err)
 			}
-			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "historyCount", len(msr.Status.RequestHistory))
+			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "newHistoryCount", len(msr.Status.RequestHistory))
 			return governancev1alpha1.MSRReconcileNewMSRSpecStateNotifyGovernors, nil
 		},
 	)
@@ -461,7 +461,7 @@ func (r *ManifestSigningRequestReconciler) saveNewHistoryRecord(
 		return fmt.Errorf("update ManifestSigningRequest status with new history record: %w", err)
 	}
 
-	r.logger.V(2).Info("New history record added", "version", newRecord.Version, "historyCount", len(msr.Status.RequestHistory))
+	r.logger.V(2).Info("New history record added", "version", newRecord.Version, "newHistoryCount", len(msr.Status.RequestHistory))
 	return nil
 }
 
@@ -510,8 +510,8 @@ func (r *ManifestSigningRequestReconciler) withLock(
 	}
 
 	r.logger.V(2).Info("Handler succeeded, transitioning state", "from", state, "to", nextState)
-	releasErr := r.releaseLockAndSetNextState(ctx, msr, nextState)
-	return ctrl.Result{Requeue: true}, releasErr
+	releaseErr := r.releaseLockAndSetNextState(ctx, msr, nextState)
+	return ctrl.Result{Requeue: true}, releaseErr
 }
 
 // withReconcileLock wraps reconcile sub-state handler logic.
@@ -546,11 +546,11 @@ func (r *ManifestSigningRequestReconciler) withReconcileLock(
 	}
 
 	// Transition ActionState to nextActionState and requeue
-	releasErr := r.releaseLockAndSetNextState(ctx, msr, nextActionState)
-	if releasErr == nil {
+	releaseErr := r.releaseLockAndSetNextState(ctx, msr, nextActionState)
+	if releaseErr == nil {
 		r.logger.V(2).Info("Reconcile sub-state completed, requeuing", "nextReconcileState", nextReconcileState, "nextActionState", nextActionState)
 	}
-	return ctrl.Result{Requeue: true}, releasErr
+	return ctrl.Result{Requeue: true}, releaseErr
 }
 
 // acquireLock attempts to acquire an exclusive lock for the given state.

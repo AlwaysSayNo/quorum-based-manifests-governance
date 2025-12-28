@@ -188,8 +188,8 @@ func (r *ManifestRequestTemplateReconciler) withLock(
 	}
 
 	r.logger.V(2).Info("Handler succeeded, transitioning state", "from", state, "to", nextState)
-	releasErr := r.releaseLockAndSetNextState(ctx, mrt, nextState)
-	return ctrl.Result{Requeue: true}, releasErr
+	releaseErr := r.releaseLockAndSetNextState(ctx, mrt, nextState)
+	return ctrl.Result{Requeue: true}, releaseErr
 }
 
 // withRevisionLock wraps revision sub-state handler logic.
@@ -225,11 +225,11 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 	}
 
 	// Transition ActionState to nextActionState and requeue
-	releasErr := r.releaseLockAndSetNextState(ctx, mrt, nextActionState)
-	if releasErr == nil {
+	releaseErr := r.releaseLockAndSetNextState(ctx, mrt, nextActionState)
+	if releaseErr == nil {
 		r.logger.V(2).Info("Revision sub-state completed, requeuing", "nextRevisionState", nextRevisionState, "nextActionState", nextActionState)
 	}
-	return ctrl.Result{Requeue: true}, releasErr
+	return ctrl.Result{Requeue: true}, releaseErr
 }
 
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
@@ -905,7 +905,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 		return false, fmt.Errorf("get ManifestChangeApproval for ManifestRequestTemplate: %w", err)
 	}
 
-	// Get changed аiles from git repository.
+	// Get changed alias from git repository.
 	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.LastApprovedCommitSHA, revision, application.Spec.Source.Path)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
