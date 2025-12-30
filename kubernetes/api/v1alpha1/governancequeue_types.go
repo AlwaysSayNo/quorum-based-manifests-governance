@@ -23,8 +23,9 @@ import (
 
 // EventReference holds a reference to a GovernanceEvent object.
 type EventReference struct {
-	UID  types.UID `json:"uid"`
-	Name string    `json:"name"`
+	UID       types.UID `json:"uid"`
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace"`
 }
 
 // GovernanceQueueSpec defines the desired state of GovernanceQueue

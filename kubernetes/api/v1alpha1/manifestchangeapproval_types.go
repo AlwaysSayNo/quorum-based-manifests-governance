@@ -26,6 +26,7 @@ const (
 	MCAActionStateEmpty              MCAActionState = ""
 	MCAActionStateGitPushMCA         MCAActionState = "MCAActionStateGitPushMCA"
 	MCAActionStateUpdateAfterGitPush MCAActionState = "MCAActionStateUpdateAfterGitPush"
+	MCAActionStateUpdateArgoCD       MCAActionState = "MCAActionStateUpdateArgoCD"
 	MCAActionStateInitSetFinalizer   MCAActionState = "MCAActionStateInitSetFinalizer"
 
 	// Deletion states
@@ -40,6 +41,7 @@ type MCAReconcileNewMCASpecState string
 const (
 	MCAReconcileNewMCASpecStateEmpty              MCAReconcileNewMCASpecState = ""
 	MCAReconcileNewMCASpecStateGitPushMCA         MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateGitPushMCA"
+	MCAReconcileNewMCASpecStateUpdateArgoCD       MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateArgoCD"
 	MCAReconcileNewMCASpecStateUpdateAfterGitPush MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateAfterGitPush"
 )
 

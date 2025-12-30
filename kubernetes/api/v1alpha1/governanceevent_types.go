@@ -55,7 +55,6 @@ type GovernanceEventStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,shortName=govevent
 
 // GovernanceEvent is the Schema for the governanceevents API
 type GovernanceEvent struct {

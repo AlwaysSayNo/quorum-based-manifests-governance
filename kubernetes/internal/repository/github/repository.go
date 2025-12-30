@@ -195,7 +195,7 @@ func (p *gitProvider) IsNotAfter(ctx context.Context, ancestor, child string) (b
 	// Check if the ancestorCommit is childCommit
 	isTheSame := ancestorCommit.Hash.String() == childCommit.String()
 
-	return isChild || isTheSame, nil
+	return !isChild || isTheSame, nil
 }
 
 // GetLatestRevision takes head of the default branch and returns it's commit hash

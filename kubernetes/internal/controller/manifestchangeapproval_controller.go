@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -159,8 +160,12 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(
 		// 2. Update information in-cluster MCA (add history record) after Git repository push.
 		r.logger.Info("Updating MCA after initial Git push")
 		return r.handleUpdateAfterGitPush(ctx, mca)
+	case governancev1alpha1.MCAActionStateUpdateArgoCD:
+		// 3. Update ArgoCD Application targetRevision.
+		r.logger.Info("Updating ArgoCD Application target revision")
+		return r.handleStateUpdateArgoCD(ctx, mca)
 	case governancev1alpha1.MCAActionStateInitSetFinalizer:
-		// 3. Confirm MCA initialization by setting the GovernanceFinalizer.
+		// 4. Confirm MCA initialization by setting the GovernanceFinalizer.
 		r.logger.Info("Setting finalizer to complete initialization")
 		return r.handleStateFinalizer(ctx, mca)
 	default:
@@ -205,6 +210,37 @@ func (r *ManifestChangeApprovalReconciler) handleUpdateAfterGitPush(
 				return "", fmt.Errorf("update MCA information after Git push: %w", err)
 			}
 			r.logger.Info("MCA history updated successfully")
+			return governancev1alpha1.MCAActionStateUpdateArgoCD, nil
+		},
+	)
+}
+
+// handleStateUpdateArgoCD updates the ArgoCD Application's targetRevision to the approved Commit SHA.
+// State: MCAActionStateUpdateArgoCD → MCAActionStateInitSetFinalizer
+func (r *ManifestChangeApprovalReconciler) handleStateUpdateArgoCD(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateUpdateArgoCD, "Updating ArgoCD Application target revision",
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
+			// Get the Application
+			app, err := r.getApplicationForMCA(ctx, mca)
+			if err != nil {
+				return "", fmt.Errorf("fetch Application for MCA: %w", err)
+			}
+
+			// Patch the Application with MCA CommitSHA
+			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", app.Spec.Source.TargetRevision, "newRevision", mca.Spec.CommitSHA)
+
+			patch := client.MergeFrom(app.DeepCopy())
+			app.Spec.Source.TargetRevision = mca.Spec.CommitSHA
+
+			if err := r.Patch(ctx, app, patch); err != nil {
+				r.logger.Error(err, "Failed to patch ArgoCD Application")
+				return "", fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
+			}
+
+			r.logger.Info("ArgoCD Application updated successfully")
 			return governancev1alpha1.MCAActionStateInitSetFinalizer, nil
 		},
 	)
@@ -337,7 +373,7 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 }
 
 // handleMCAReconcileStateUpdateAfterGitPush adds a history record after Git push.
-// Sub-state: MCAReconcileRStateUpdateAfterGitPush → MCAReconcileRStateNotifyGovernors
+// Sub-state: MCAReconcileRStateUpdateAfterGitPush → MCAReconcileNewMCASpecStateUpdateArgoCD
 func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGitPush(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -352,12 +388,46 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGit
 				return "", fmt.Errorf("update MCA information after Git push: %w", err)
 			}
 			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "newHistoryCount", len(mca.Status.ApprovalHistory))
+			return governancev1alpha1.MCAReconcileNewMCASpecStateUpdateArgoCD, nil
+		},
+	)
+}
+
+// handleReconcileStateUpdateArgoCD updates the ArgoCD Application's targetRevision to the approved Commit SHA.
+// Sub-state: MCAReconcileNewMCASpecStateUpdateArgoCD → MCAReconcileNewMCASpecStateEmpty
+func (r *ManifestChangeApprovalReconciler) handleReconcileStateUpdateArgoCD(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateEmpty,
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
+			// Get the Application
+			app, err := r.getApplicationForMCA(ctx, mca)
+			if err != nil {
+				return "", fmt.Errorf("fetch Application for MCA: %w", err)
+			}
+
+			// Patch the Application with MCA CommitSHA
+			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", app.Spec.Source.TargetRevision, "newRevision", mca.Spec.CommitSHA)
+
+			patch := client.MergeFrom(app.DeepCopy())
+			app.Spec.Source.TargetRevision = mca.Spec.CommitSHA
+
+			if err := r.Patch(ctx, app, patch); err != nil {
+				r.logger.Error(err, "Failed to patch ArgoCD Application")
+				return "", fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
+			}
+
+			r.logger.Info("ArgoCD Application updated successfully")
 			return governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, nil
 		},
 	)
 }
 
-func (r *ManifestChangeApprovalReconciler) saveInRepository(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
+func (r *ManifestChangeApprovalReconciler) saveInRepository(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) error {
 	repositoryMCA := r.createRepositoryMCA(mca)
 	if _, err := r.repository(ctx, mca).PushMCA(ctx, &repositoryMCA); err != nil {
 		r.logger.Error(err, "Failed to push initial ManifestChangeApproval in repository")
@@ -367,7 +437,9 @@ func (r *ManifestChangeApprovalReconciler) saveInRepository(ctx context.Context,
 	return nil
 }
 
-func (r *ManifestChangeApprovalReconciler) createRepositoryMCA(mca *governancev1alpha1.ManifestChangeApproval) governancev1alpha1.ManifestChangeApprovalManifestObject {
+func (r *ManifestChangeApprovalReconciler) createRepositoryMCA(
+	mca *governancev1alpha1.ManifestChangeApproval,
+) governancev1alpha1.ManifestChangeApprovalManifestObject {
 	mcaCopy := mca.DeepCopy()
 	return governancev1alpha1.ManifestChangeApprovalManifestObject{
 		TypeMeta: metav1.TypeMeta{
@@ -382,7 +454,10 @@ func (r *ManifestChangeApprovalReconciler) createRepositoryMCA(mca *governancev1
 	}
 }
 
-func (r *ManifestChangeApprovalReconciler) saveNewHistoryRecord(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
+func (r *ManifestChangeApprovalReconciler) saveNewHistoryRecord(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) error {
 	// Append a new history record
 	newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
 	mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
@@ -397,7 +472,9 @@ func (r *ManifestChangeApprovalReconciler) saveNewHistoryRecord(ctx context.Cont
 	return nil
 }
 
-func (r *ManifestChangeApprovalReconciler) createNewMCAHistoryRecordFromSpec(mca *governancev1alpha1.ManifestChangeApproval) governancev1alpha1.ManifestChangeApprovalHistoryRecord {
+func (r *ManifestChangeApprovalReconciler) createNewMCAHistoryRecordFromSpec(
+	mca *governancev1alpha1.ManifestChangeApproval,
+) governancev1alpha1.ManifestChangeApprovalHistoryRecord {
 	mcaCopy := mca.DeepCopy()
 
 	return governancev1alpha1.ManifestChangeApprovalHistoryRecord{
@@ -565,7 +642,32 @@ func (r *ManifestChangeApprovalReconciler) releaseLockAbstract(
 	return nil
 }
 
-func (r *ManifestChangeApprovalReconciler) getExistingMRTForMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (*governancev1alpha1.ManifestRequestTemplate, error) {
+func (r *ManifestChangeApprovalReconciler) getApplicationForMCA(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (*argocdv1alpha1.Application, error) {
+	mrt, err := r.getExistingMRTForMCA(ctx, mca)
+	if err != nil {
+		return nil, fmt.Errorf("fetch ManifestRequestTemplate to use it for Application fetch: %w", err)
+	}
+
+	appKey := types.NamespacedName{
+		Name:      mrt.Spec.ArgoCDApplication.Name,
+		Namespace: mrt.Spec.ArgoCDApplication.Namespace,
+	}
+
+	app := &argocdv1alpha1.Application{}
+	if err := r.Get(ctx, appKey, app); err != nil {
+		return nil, fmt.Errorf("fetch Application for ManifestChangeApproval: %w", err)
+	}
+
+	return app, nil
+}
+
+func (r *ManifestChangeApprovalReconciler) getExistingMRTForMCA(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (*governancev1alpha1.ManifestRequestTemplate, error) {
 	mrtKey := types.NamespacedName{
 		Name:      mca.Spec.MRT.Name,
 		Namespace: mca.Spec.MRT.Namespace,
@@ -579,7 +681,10 @@ func (r *ManifestChangeApprovalReconciler) getExistingMRTForMCA(ctx context.Cont
 	return mrt, nil
 }
 
-func (r *ManifestChangeApprovalReconciler) repositoryWithError(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (repomanager.GitRepository, error) {
+func (r *ManifestChangeApprovalReconciler) repositoryWithError(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (repomanager.GitRepository, error) {
 	mrt, err := r.getExistingMRTForMCA(ctx, mca)
 	if err != nil {
 		return nil, fmt.Errorf("get ManifestRequestTemplate for repository: %w", err)
@@ -588,7 +693,10 @@ func (r *ManifestChangeApprovalReconciler) repositoryWithError(ctx context.Conte
 	return r.RepoManager.GetProviderForMRT(ctx, mrt)
 }
 
-func (r *ManifestChangeApprovalReconciler) repository(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) repomanager.GitRepository {
+func (r *ManifestChangeApprovalReconciler) repository(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) repomanager.GitRepository {
 	mrt, _ := r.getExistingMRTForMCA(ctx, mca)
 	repo, _ := r.RepoManager.GetProviderForMRT(ctx, mrt)
 	return repo

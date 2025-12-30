@@ -61,7 +61,14 @@ spec:
   syncPolicy:
     automated:
       prune: true
-      selfHeal: true" > app-manifests/app.yaml
+      selfHeal: true
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      name: application-my  # Matches its own name and namespace
+      namespace: argocd
+      jsonPointers:
+      - /spec/source/targetRevision" > app-manifests/app.yaml
 
 # Replace placeholder with actual repo URL
 sed -i'' -e "s|#{REPO_URL}#|$repo_url|g" app-manifests/app.yaml

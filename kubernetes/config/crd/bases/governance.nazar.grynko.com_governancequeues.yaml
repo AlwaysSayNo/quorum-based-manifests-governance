@@ -122,6 +122,8 @@ spec:
                   properties:
                     name:
                       type: string
+                    namespace:
+                      type: string
                     uid:
                       description: |-
                         UID is a type that holds unique ID values, including UUIDs.  Because we
@@ -130,6 +132,7 @@ spec:
                       type: string
                   required:
                   - name
+                  - namespace
                   - uid
                   type: object
                 type: array

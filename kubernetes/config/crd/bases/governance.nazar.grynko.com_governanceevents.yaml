@@ -11,10 +11,8 @@ spec:
     kind: GovernanceEvent
     listKind: GovernanceEventList
     plural: governanceevents
-    shortNames:
-    - govevent
     singular: governanceevent
-  scope: Cluster
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:

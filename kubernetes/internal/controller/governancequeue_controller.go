@@ -116,8 +116,9 @@ func (r *GovernanceQueueReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Only add events that are not being deleted.
 		if event.ObjectMeta.DeletionTimestamp.IsZero() {
 			desiredQueue = append(desiredQueue, governancev1alpha1.EventReference{
-				UID:  event.UID,
-				Name: event.Name,
+				UID:       event.UID,
+				Name:      event.Name,
+				Namespace: event.Namespace,
 			})
 		}
 	}
@@ -142,21 +143,23 @@ func (r *GovernanceQueueReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 func (r *GovernanceQueueReconciler) getAllEventsForQueue(ctx context.Context, queue *governancev1alpha1.GovernanceQueue) ([]governancev1alpha1.GovernanceEvent, error) {
 	eventList := &governancev1alpha1.GovernanceEventList{}
-	if err := r.List(ctx, eventList); err != nil {
-		r.logger.Error(err, "Failed to list GovernanceEvents for queue")
-		return nil, fmt.Errorf("list GovernanceEvents for queue", err)
-	}
-
 	mrtRef := queue.Spec.MRT
-	result := []governancev1alpha1.GovernanceEvent{}
-	for _, e := range eventList.Items {
-
-		if mrtRef == e.Spec.MRT {
-			result = append(result, e)
-		}
+	var mrt governancev1alpha1.ManifestRequestTemplate
+	if err := r.Get(ctx, types.NamespacedName{Name: mrtRef.Name, Namespace: mrtRef.Namespace}, &mrt); err != nil {
+		r.logger.Error(err, "Failed to fetch MRT for GovernanceQueue", "mrtRef", mrtRef)
+		return nil, fmt.Errorf("fetch ManifestRequestTemplate for GovernanceQueue")
 	}
 
-	return result, nil
+	// Use label for quick search
+	matchingLabels := client.MatchingLabels{
+		"governance.nazar.grynko.com/mrt-uid": string(mrt.UID),
+	}
+
+	if err := r.List(ctx, eventList, matchingLabels); err != nil {
+		r.logger.Error(err, "Failed to list GovernanceEvents for queue")
+		return nil, fmt.Errorf("list GovernanceEvents for queue: %w", err)
+	}
+	return eventList.Items, nil
 }
 
 func (r *GovernanceQueueReconciler) getMRTAndQueue(ctx context.Context, event *governancev1alpha1.GovernanceEvent) (*governancev1alpha1.ManifestRequestTemplate, *governancev1alpha1.GovernanceQueue, error) {

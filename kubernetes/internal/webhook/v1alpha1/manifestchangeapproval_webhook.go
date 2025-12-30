@@ -23,18 +23,19 @@ import (
 	"slices"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	governancecontroller "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
 )
 
 // nolint:unused
@@ -43,6 +44,8 @@ var (
 )
 
 // +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues,verbs=get;list
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;create;
 
 type ManifestChangeApprovalCustomValidator struct {
 	Client  client.Client
@@ -51,9 +54,9 @@ type ManifestChangeApprovalCustomValidator struct {
 
 // Handle is the function that gets called for validation admission request.
 func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	if true {
-		return admission.Allowed("Change approved by Manifest Change Approval")
-	}
+	// if true {
+	// 	return admission.Allowed("Change approved by Manifest Change Approval")
+	// }
 
 	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo)
 
@@ -70,6 +73,11 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	} else if mrt == nil {
 		logger.Info("No governing MRT found for Application", "application", application.Name, "namespace", application.Namespace)
 		return admission.Allowed("No governing MRT found, allow by default")
+	}
+
+	if !controllerutil.ContainsFinalizer(mrt, governancecontroller.GovernanceFinalizer) {
+		logger.Info("Governing MRT not initialized yet, wait", "mrtName", mrt.Name, "mrtNamespace", mrt.Namespace)
+		return admission.Denied("Governing MRT not initialized yet, deny by default")
 	}
 
 	// Take revision commit hash from Application
@@ -94,7 +102,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 		return rec.CommitSHA == revision
 	})
 	if requestedMCAIdx == -1 {
-		logger.Info("No approval found in MCA for requested revision", "revision", revision, "mca", mca.Name)
+		logger.V(3).Info("No approval found in MCA for requested revision", "revision", revision, "mca", mca.Name)
 
 		// If there is no ManifestChangeApproval, corresponding for this revision -- put it into ManifestRequestTemplate review queue
 		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
@@ -235,15 +243,9 @@ func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(appli
 }
 
 func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (*admission.Response, bool) {
-	var queue governancev1alpha1.GovernanceQueue
 	queueRef := mrt.Status.RevisionQueueRef
-	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: queueRef.Namespace, Name: queueRef.Name}, &queue); err != nil {
-		logger.Error(err, "Failed to get GovernanceQueue for MRT")
-		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("get GovernanceQueue for MRT: %w", err))
-		return &resp, false
-	}
 
-	contains, err := v.queueContainsRevision(ctx, revision, &queue, mrt)
+	contains, err := v.queueContainsRevision(ctx, revision, mrt)
 	if err != nil {
 		logger.Error(err, "Failed to check, if queue contains revision", "queue", queueRef, "revision", revision)
 		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("check, if queue %v contains revision %s: %w", queueRef, *revision, err))
@@ -261,7 +263,7 @@ func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(c
 	return nil, true
 }
 
-func (v *ManifestChangeApprovalCustomValidator) queueContainsRevision(ctx context.Context, revision *string, queue *governancev1alpha1.GovernanceQueue, mrt *governancev1alpha1.ManifestRequestTemplate) (bool, error) {
+func (v *ManifestChangeApprovalCustomValidator) queueContainsRevision(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) (bool, error) {
 	events, err := v.getAllEventsForQueue(ctx, mrt)
 	if err != nil {
 		return false, fmt.Errorf("get all events for queue: %w", err)
@@ -290,12 +292,12 @@ func (v *ManifestChangeApprovalCustomValidator) getAllEventsForQueue(ctx context
 
 func (v *ManifestChangeApprovalCustomValidator) createRevisionEvent(ctx context.Context, revision *string, mrt *governancev1alpha1.ManifestRequestTemplate) error {
 	// Create a stable, unique name.
-	// We use a hash to keep it within Kubernetes's name length limits.
 	eventName := fmt.Sprintf("event-%s-%s-%s", mrt.Name, mrt.Namespace, *revision)
 
 	revisionEvent := governancev1alpha1.GovernanceEvent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: eventName,
+			Name:      eventName,
+			Namespace: mrt.Namespace,
 			Labels: map[string]string{
 				"governance.nazar.grynko.com/mrt-uid": string(mrt.UID), // Use UID for a unique, immutable link
 			},

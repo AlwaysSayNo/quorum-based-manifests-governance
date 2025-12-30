@@ -56,7 +56,7 @@ tasks:
         )
   
   dev:describe-webhook:
-    desc: "Describe the governance webhook in the clsuter"
+    desc: "Describe the governance webhook in the cluster"
     cmds: 
       - kubectl describe validatingwebhookconfiguration local-controller-validating-webhook-configuration
 
