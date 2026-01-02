@@ -305,7 +305,7 @@ func (p *gitProvider) getQubmangoIndexWithPath(
 	ctx context.Context,
 	qubmangoFileRepositoryPath string,
 ) (*manager.QubmangoIndex, error) {
-	_, _, _, err := p.syncAndLock(ctx)
+	_, _, err := p.syncAndLock2(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sync and lock: %w", err)
 	}
@@ -344,7 +344,7 @@ func (p *gitProvider) GetActiveMSR(
 	policy *manager.QubmangoPolicy,
 ) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {
 	// Sync and Lock
-	worktree, _, _, err := p.syncAndLock(ctx)
+	worktree, _, err := p.syncAndLock2(ctx)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("sync and lock: %w", err)
 	}
@@ -498,11 +498,28 @@ func (p *gitProvider) readGovernorSignatures(
 	return goverSignatures, nil
 }
 
-func (p *gitProvider) syncAndLock(
+func (p *gitProvider) syncAndLock3(
 	ctx context.Context,
 ) (*git.Worktree, func(), *openpgp.Entity, error) {
+	worktree, rollback, err := p.syncAndLock2(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	pgpEntity, err := crypto.GetPGPEntity(ctx, &p.pgpSecrets)
+	if err != nil {
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("failed to load PGP signing key: %w", err)
+	}
+
+	return worktree, rollback, pgpEntity, nil
+}
+
+func (p *gitProvider) syncAndLock2(
+	ctx context.Context,
+) (*git.Worktree, func(), error) {
 	if err := p.Sync(ctx); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to sync repository before push: %w", err)
+		return nil, nil, fmt.Errorf("failed to sync repository before push: %w", err)
 	}
 
 	p.mu.Lock()
@@ -510,18 +527,13 @@ func (p *gitProvider) syncAndLock(
 	worktree, err := p.repo.Worktree()
 	if err != nil {
 		p.mu.Unlock()
-		return nil, nil, nil, fmt.Errorf("could not get repository worktree: %w", err)
-	}
-	pgpEntity, err := crypto.GetPGPEntity(ctx, &p.pgpSecrets)
-	if err != nil {
-		p.mu.Unlock()
-		return nil, nil, nil, fmt.Errorf("failed to load PGP signing key: %w", err)
+		return nil, nil, fmt.Errorf("could not get repository worktree: %w", err)
 	}
 
 	headRef, err := p.repo.Head()
 	if err != nil {
 		p.mu.Unlock()
-		return nil, nil, nil, fmt.Errorf("could not get current HEAD before commit: %w", err)
+		return nil, nil, fmt.Errorf("could not get current HEAD before commit: %w", err)
 	}
 	originalCommitHash := headRef.Hash()
 	rollback := func() {
@@ -531,5 +543,5 @@ func (p *gitProvider) syncAndLock(
 		})
 	}
 
-	return worktree, rollback, pgpEntity, nil
+	return worktree, rollback, nil
 }

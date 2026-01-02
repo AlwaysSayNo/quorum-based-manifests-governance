@@ -36,13 +36,17 @@ func init() {
 				return fmt.Errorf("get repository by alias %s: %w", alias, err)
 			}
 
+			sshPass, err := getSSHPassphrase(cmd.OutOrStdout())
+			if err != nil {
+				return fmt.Errorf("get SSH passphrase: %w", err)
+			}
+
 			// Initialize the repository provider
 			conf := &manager.GovernorRepositoryConfig{
 				GitRepositoryURL: repositoryInfo.URL,
 				SSHSecretPath:    repositoryInfo.SSHKeyPath,
-				SSHPassphrase:    "",
+				SSHPassphrase:    sshPass,
 				PGPSecretPath:    repositoryInfo.PGPKeyPath,
-				PGPPassphrase:    "",
 			}
 			repoProvider, err := repoManager.GetProvider(ctx, conf)
 			if err != nil {

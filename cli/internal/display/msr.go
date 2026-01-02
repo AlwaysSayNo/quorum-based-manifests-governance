@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/xlab/treeprint"
@@ -57,6 +58,7 @@ func PrintMSRTable(
 	}
 	if err != nil {
 		printMSRFailed(w, msr, msg, err)
+		return err
 	}
 
 	// Print MSR information in table, if no error happened.
@@ -169,7 +171,13 @@ func verifyMSRSignature(
 		return msg, fmt.Errorf("failed to parse operator public key: %w", err)
 	}
 
-	_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), bytes.NewReader(signatureData), nil)
+	// De-armor the signature before verification
+	armorBlock, err := armor.Decode(bytes.NewReader(signatureData))
+	if err != nil {
+		return msg, fmt.Errorf("failed to decode armored signature: %w", err)
+	}
+
+	_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), armorBlock.Body, nil)
 	if err != nil {
 		return msg, fmt.Errorf("signature verification failed: %w", err)
 	}
@@ -358,7 +366,14 @@ func getVerifiedSigners(
 				continue
 			}
 
-			_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), bytes.NewReader(sigData), nil)
+			// De-armor the signature before verification
+			armorBlock, err := armor.Decode(bytes.NewReader(sigData))
+			if err != nil {
+				// Signature might be malformed, try next signer
+				continue
+			}
+
+			_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), armorBlock.Body, nil)
 			if err == nil {
 				verifiedSigners[alias] = Verified
 				// Move to the next signature
