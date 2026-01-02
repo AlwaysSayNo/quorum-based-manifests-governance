@@ -28,6 +28,8 @@ const (
 	MRTActionStateEmpty MRTActionState = ""
 	// MRTActionStateGitGovernanceInitialization indicates the controller is pushing the initial commit.
 	MRTActionStateGitGovernanceInitialization MRTActionState = "MRTActionStateGitGovernanceInitialization"
+	// MRTActionStateSaveArgoCDTargetRevision indicates the controller is saving initial Application targetRevision.
+	MRTActionStateSaveArgoCDTargetRevision MRTActionState = "MRTActionStateSaveArgoCDTargetRevision"
 	// MRTActionStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.
 	MRTActionStateCreateDefaultClusterResources MRTActionState = "MRTActionStateCreateDefaultClusterResources"
 	// MRTActionStateInitSetFinalizer indicates the controller is adding the finalizer.
@@ -52,21 +54,21 @@ const (
 
 type GitRepository struct {
 	// +required
-	SSHURL string `json:"sshUrl,omitempty"`
+	SSHURL string `json:"sshUrl,omitempty" yaml:"sshUrl,omitempty"`
 }
 
 type ManifestRef struct {
 	// +required
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	// +required
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
 type ManifestRefOptional struct {
 	// +optional
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 	// +optional
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace" yaml:"namespace"`
 }
 
 type ArgoCDApplication struct {
@@ -74,21 +76,21 @@ type ArgoCDApplication struct {
 	// It should contain information about the git repository, branch and path where manifests are stored.
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
 	// Namespace where the ArgoCD Application is located.
 	// Default is "argocd".
 	// +kubebuilder:validation:MinLength=0
 	// +optional
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
-type Location struct {
-	// Folder where MSR, MCA and Signatures will be stored.
+type MRTLocations struct {
+	// GovernancePath where MSR, MCA and Signatures will be stored.
 	// Default: root of the repo.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
-	Folder string `json:"folder,omitempty"`
+	GovernancePath string `json:"governancePath,omitempty" yaml:"governancePath,omitempty"`
 }
 
 type MCA struct {
@@ -96,26 +98,26 @@ type MCA struct {
 	// Default is "mca".
 	// +kubebuilder:validation:MinLength=1
 	// +optional
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
 	// Namespace where the MCA resource will be created.
 	// Default is the same namespace as the MRT.
 	// +kubebuilder:validation:MinLength=0
 	// +optional
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
 type SlackChannel struct {
 	// Slack channel ID to notify (e.g., S01234567)
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	ChannelID string `json:"channelID,omitempty"`
+	ChannelID string `json:"channelID,omitempty" yaml:"channelID,omitempty"`
 }
 
 type NotificationChannel struct {
 
 	// +optional
-	Slack *SlackChannel `json:"slack,omitempty"`
+	Slack *SlackChannel `json:"slack,omitempty" yaml:"slack,omitempty"`
 
 	// Other notification channels can be added in the future
 	// ...
@@ -126,22 +128,22 @@ type Governor struct {
 	// Alias for governor (for easier identification)
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	Alias string `json:"alias,omitempty"`
+	Alias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 
 	// PublicKey of the governor used to verify signatures.
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	PublicKey string `json:"publicKey,omitempty"`
+	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 }
 
 type GovernorList struct {
 	// General list of notification channels to inform governors about pending approvals.
 	// +optional
-	NotificationChannels []NotificationChannel `json:"notificationChannels,omitempty"`
+	NotificationChannels []NotificationChannel `json:"notificationChannels,omitempty" yaml:"notificationChannels,omitempty"`
 
 	// List of governors.
 	// +required
-	Members []Governor `json:"members,omitempty"`
+	Members []Governor `json:"members,omitempty" yaml:"members,omitempty"`
 }
 
 /*
@@ -158,35 +160,35 @@ type ApprovalRule struct {
 	// Specifies the minimum number of child rules that must be satisfied.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	AtLeast *int `json:"atLeast,omitempty"`
+	AtLeast *int `json:"atLeast,omitempty" yaml:"atLeast,omitempty"`
 
 	// If true, all child rules must be satisfied.
 	// +optional
-	All *bool `json:"all,omitempty"`
+	All *bool `json:"all,omitempty" yaml:"all,omitempty"`
 
 	// List of child rules.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
-	Require []ApprovalRule `json:"require,omitempty"`
+	Require []ApprovalRule `json:"require,omitempty" yaml:"require,omitempty"`
 
 	// Signer can be either PublicKey or Alias of the governor. If alias is used, it should start with `$` to distinguish it from PublicKey.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
-	Signer string `json:"signer,omitempty"`
+	Signer string `json:"signer,omitempty" yaml:"signer,omitempty"`
 }
 
 type PGPPrivateKeySecret struct {
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	PublicKey string `json:"publicKey,omitempty"`
+	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 	// +required
-	SecretsRef ManifestRef `json:"secretsRef,omitempty"`
+	SecretsRef ManifestRef `json:"secretsRef,omitempty" yaml:"secretsRef,omitempty"`
 }
 
 type SSHPrivateKeySecret struct {
 	// +required
-	SecretsRef ManifestRef `json:"secretsRef,omitempty"`
+	SecretsRef ManifestRef `json:"secretsRef,omitempty" yaml:"secretsRef,omitempty"`
 }
 
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
@@ -196,42 +198,42 @@ type ManifestRequestTemplateSpec struct {
 	// Each new MRT must have a version higher than the previous one.
 	// +kubebuilder:validation:Minimum=1
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 
 	// +require
-	GitRepository GitRepository `json:"gitRepository"`
+	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
 
 	// +required
-	PGP *PGPPrivateKeySecret `json:"pgp"`
+	PGP *PGPPrivateKeySecret `json:"pgp" yaml:"pgp"`
 
 	// +required
-	SSH *SSHPrivateKeySecret `json:"ssh"`
+	SSH *SSHPrivateKeySecret `json:"ssh" yaml:"ssh"`
 
 	// ArgoCDApplicationName is the name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.
 	// +required
-	ArgoCDApplication ArgoCDApplication `json:"argoCDApplication,omitempty"`
+	ArgoCDApplication ArgoCDApplication `json:"argoCDApplication,omitempty" yaml:"argoCDApplication,omitempty"`
 
-	// Location contains information about where to store MSR, MCA and signatures.
+	// Locations contains information about where to store MSR, MCA and signatures.
 	// +optional
-	Location Location `json:"location,omitempty"`
+	Locations MRTLocations `json:"locations,omitempty" yaml:"locations,omitempty"`
 
 	// MSR contains information about MSR metadata.
 	// +optional
-	MSR ManifestRefOptional `json:"msr,omitempty"`
+	MSR ManifestRefOptional `json:"msr,omitempty" yaml:"msr,omitempty"`
 
 	// MCA contains information about MCA metadata.
 	// +optional
-	MCA ManifestRefOptional `json:"mca,omitempty"`
+	MCA ManifestRefOptional `json:"mca,omitempty" yaml:"mca,omitempty"`
 
 	// Required until GovernorsRef is implemented.
 	// +required
-	Governors GovernorList `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty" yaml:"governors,omitempty"`
 
 	// The policy rules for approvals.
 	// Required until ApprovalRuleRef is implemented.
 	// +required
-	Require ApprovalRule `json:"require"`
+	Require ApprovalRule `json:"require" yaml:"require"`
 }
 
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
@@ -239,38 +241,34 @@ type ManifestRequestTemplateStatus struct {
 
 	// conditions represent the current state of the ManifestRequestTemplate resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 
 	// RevisionsQueueRef is the reference to the dedicated queue CRD.
 	// +optional
-	RevisionQueueRef ManifestRefOptional `json:"revisionQueueRef,omitempty"`
+	RevisionQueueRef ManifestRefOptional `json:"revisionQueueRef,omitempty" yaml:"revisionQueueRef,omitempty"`
 
 	// LastObservedCommitHash is the last observed commit hash from the git repository
-	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty"`
+	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty" yaml:"lastObservedCommitHash,omitempty"`
 
 	// LastMSRVersion is the version of the last created MSR resource
-	LastMSRVersion int `json:"lastMSR,omitempty"`
+	LastMSRVersion int `json:"lastMSR,omitempty" yaml:"lastMSR,omitempty"`
 
 	// LastAcceptedMSRVersion is the version of the last accepted MSR resource
-	LastAcceptedMSRVersion int `json:"lastAcceptedMSR,omitempty"`
+	LastAcceptedMSRVersion int `json:"lastAcceptedMSR,omitempty" yaml:"lastAcceptedMSR,omitempty"`
 
 	// ActionState tracks the progress of the main reconcile.
 	// +optional
-	ActionState MRTActionState `json:"actionState,omitempty"`
+	ActionState MRTActionState `json:"actionState,omitempty" yaml:"actionState,omitempty"`
 
 	// RevisionProcessingState tracks the progress of the revision processing.
 	// +optional
-	RevisionProcessingState MRTNewRevisionState `json:"revisionProcessingStep,omitempty"`
+	RevisionProcessingState MRTNewRevisionState `json:"revisionProcessingStep,omitempty" yaml:"revisionProcessingStep,omitempty"`
+
+	ApplicationInitTargetRevision string `json:"applicationInitTargetRevision,omitempty" yaml:"applicationInitTargetRevision,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -278,28 +276,28 @@ type ManifestRequestTemplateStatus struct {
 
 // ManifestRequestTemplate is the Schema for the manifestrequesttemplates API
 type ManifestRequestTemplate struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero" yaml:"metadata"`
 
 	// spec defines the desired state of ManifestRequestTemplate
 	// +required
-	Spec ManifestRequestTemplateSpec `json:"spec"`
+	Spec ManifestRequestTemplateSpec `json:"spec" yaml:"spec"`
 
 	// status defines the observed state of ManifestRequestTemplate
 	// +optional
-	Status ManifestRequestTemplateStatus `json:"status,omitempty"`
+	Status ManifestRequestTemplateStatus `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // ManifestRequestTemplateList contains a list of ManifestRequestTemplate
 type ManifestRequestTemplateList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ManifestRequestTemplate `json:"items"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	Items           []ManifestRequestTemplate `json:"items" yaml:"items"`
 }
 
 const (

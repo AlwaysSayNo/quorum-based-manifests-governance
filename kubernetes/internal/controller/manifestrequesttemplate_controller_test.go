@@ -166,7 +166,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 				GitRepository: governancev1alpha1.GitRepository{
 					SSHURL: defaultApp.Spec.Source.RepoURL,
 				},
-				Location:  *defaultMRT.Spec.Location.DeepCopy(),
+				Location:  *defaultMRT.Spec.Locations.DeepCopy(),
 				Changes:   defaultRepoChanges,
 				Governors: *defaultMRT.Spec.Governors.DeepCopy(),
 				Require:   *defaultMRT.Spec.Require.DeepCopy(),
@@ -207,7 +207,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 					SSHURL: defaultApp.Spec.Source.RepoURL,
 				},
 				LastApprovedCommitSHA: defaultInitCommit,
-				Location:              *defaultMRT.Spec.Location.DeepCopy(),
+				Location:              *defaultMRT.Spec.Locations.DeepCopy(),
 				Changes:               defaultRepoChanges,
 				Governors:             *defaultMRT.Spec.Governors.DeepCopy(),
 				Require:               *defaultMRT.Spec.Require.DeepCopy(),

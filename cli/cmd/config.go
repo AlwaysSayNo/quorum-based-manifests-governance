@@ -48,7 +48,7 @@ func init() {
 	removeRepoCmd := &cobra.Command{
 		Use:   "remove-repo <alias>",
 		Short: "Remove existing repository configuration",
-		Args:  cobra.ExactArgs(4),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			alias := args[0]
 

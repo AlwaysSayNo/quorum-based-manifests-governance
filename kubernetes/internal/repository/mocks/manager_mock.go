@@ -142,9 +142,9 @@ func (mr *MockGitRepositoryMockRecorder) HasRevision(ctx, commit any) *gomock.Ca
 }
 
 // InitializeGovernance mocks base method.
-func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias, governanceFolder string) (string, bool, error) {
+func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias string, mrt *v1alpha1.ManifestRequestTemplate) (string, bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InitializeGovernance", ctx, operationalFileLocation, governanceIndexAlias, governanceFolder)
+	ret := m.ctrl.Call(m, "InitializeGovernance", ctx, operationalFileLocation, governanceIndexAlias, mrt)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
@@ -152,9 +152,9 @@ func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationa
 }
 
 // InitializeGovernance indicates an expected call of InitializeGovernance.
-func (mr *MockGitRepositoryMockRecorder) InitializeGovernance(ctx, operationalFileLocation, governanceIndexAlias, governanceFolder any) *gomock.Call {
+func (mr *MockGitRepositoryMockRecorder) InitializeGovernance(ctx, operationalFileLocation, governanceIndexAlias, mrt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializeGovernance", reflect.TypeOf((*MockGitRepository)(nil).InitializeGovernance), ctx, operationalFileLocation, governanceIndexAlias, governanceFolder)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializeGovernance", reflect.TypeOf((*MockGitRepository)(nil).InitializeGovernance), ctx, operationalFileLocation, governanceIndexAlias, mrt)
 }
 
 // IsNotAfter mocks base method.

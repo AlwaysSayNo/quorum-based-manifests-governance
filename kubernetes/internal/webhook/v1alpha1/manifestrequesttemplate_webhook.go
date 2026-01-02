@@ -75,8 +75,8 @@ func (w *ManifestRequestTemplateWebhook) Default(ctx context.Context, obj runtim
 	}
 
 	// Set default Location values
-	if mrt.Spec.Location.Folder == "" {
-		mrt.Spec.Location.Folder = LocationDefaultFolder
+	if mrt.Spec.Locations.GovernancePath == "" {
+		mrt.Spec.Locations.GovernancePath = LocationDefaultFolder
 	}
 
 	return nil
@@ -101,23 +101,29 @@ func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(rule governancev1al
 }
 
 func (w *ManifestRequestTemplateWebhook) approvalRuleValidCheck(rule governancev1alpha1.ApprovalRule, membersMap map[string]bool, path *field.Path) (bool, *field.Error) {
-	// Check both missing / existing atLeast and all at the same time
-	if rule.AtLeast == nil && rule.All == nil {
+	// Check both missing / existing atLeast and all at the same time / non-leaf node has a signer in it.
+	if rule.AtLeast == nil && rule.All == nil && len(rule.Require) != 0 {
 		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be null in the same time")
 	} else if rule.AtLeast != nil && rule.All != nil {
 		return false, field.Forbidden(path.Child("atLeast"), "atLeast and all cannot be set in the same time")
+	} else if (rule.AtLeast != nil || rule.All != nil || len(rule.Require) != 0) && rule.Signer != "" {
+		return false, field.Forbidden(path.Child("signer"), "signer should be placed only on a leaf node with no atLeast, all, require attributes")
 	}
 
-	// Check, if signer exists in the governors list
-	if _, ok := membersMap[rule.Signer]; rule.Signer != "" && !ok {
-		return false, field.Forbidden(path.Child("signer"), "signer doesn't exist in governors list")
+	// Check the leaf-node case
+	if rule.Signer != "" {
+		// Check, if signer exists in the governors list
+		if _, ok := membersMap[rule.Signer]; !ok {
+			return false, field.Forbidden(path.Child("signer"), "signer doesn't exist in governors list")
+		}
+		// End of lead-node case
+		return true, nil
 	}
+
+	// Check inner-node cases
 
 	// Count total number of possible singers
 	cnt := len(rule.Require)
-	if rule.Signer != "" {
-		cnt++
-	}
 
 	// Check if number of signers can be fulfilled
 	if cnt == 0 {
@@ -181,6 +187,9 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(ctx context.Context, old
 	}
 	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
+	}
+	if oldMRT.Spec.Locations.GovernancePath != newMRT.Spec.Locations.GovernancePath {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("locations").Child("governanceFolder"), "governanceFolder is immutable and cannot be changed after creation"))
 	}
 
 	// Check nested approval rules

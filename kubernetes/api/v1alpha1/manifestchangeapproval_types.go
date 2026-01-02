@@ -50,69 +50,72 @@ type ManifestChangeApprovalSpec struct {
 	// 0 is value of the default ManifestSigningRequest, created by qubmango
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 
 	// +required
-	CommitSHA string `json:"commitSha"`
+	CommitSHA string `json:"commitSha" yaml:"commitSha"`
 
 	// +required
-	MRT VersionedManifestRef `json:"mrt,omitempty"`
+	PreviousCommitSHA string `json:"previousCommitSha" yaml:"previousCommitSha"`
 
 	// +required
-	MSR VersionedManifestRef `json:"msr,omitempty"`
+	MRT VersionedManifestRef `json:"mrt,omitempty" yaml:"mrt,omitempty"`
+
+	// +required
+	MSR VersionedManifestRef `json:"msr,omitempty" yaml:"msr,omitempty"`
 
 	// publicKey is used to sign MCA.
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	PublicKey string `json:"publicKey,omitempty"`
+	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 
 	// +required
-	GitRepository GitRepository `json:"gitRepository"`
+	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
 
 	// Last approved commit SHA
 	// +optional
-	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty"`
+	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty" yaml:"lastApprovedCommitSHA,omitempty"`
 
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
-	Location Location `json:"location,omitempty"`
+	Locations Locations `json:"locations,omitempty" yaml:"locations,omitempty"`
 
 	// +required
-	Changes []FileChange `json:"changes"`
+	Changes []FileChange `json:"changes" yaml:"changes"`
 
 	// Required until GovernorsRef is implemented.
 	// +required
-	Governors GovernorList `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty" yaml:"governors,omitempty"`
 
 	// The policy rules for approvals.
 	// Required until ApprovalRuleRef is implemented.
 	// +required
-	Require ApprovalRule `json:"require"`
+	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// Signers contains all governors, who signed ManifestSigningRequest, related to this approval
 }
 
 type ManifestChangeApprovalHistoryRecord struct {
 	// CommitSHA is the SHA of the approved commit
-	CommitSHA string `json:"commitSHA"`
+	CommitSHA string `json:"commitSHA" yaml:"commitSHA"`
 
 	// Time is the time when the approval was created
-	Time metav1.Time `json:"time"`
+	Time metav1.Time `json:"time" yaml:"time"`
 
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 
 	// +required
-	Changes []FileChange `json:"changes"`
+	Changes []FileChange `json:"changes" yaml:"changes"`
 
 	// +required
-	Governors GovernorList `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty" yaml:"governors,omitempty"`
 
 	// +required
-	Require ApprovalRule `json:"require"`
+	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// +optional
-	Approves ApproverList `json:"approves,omitempty"`
+	Approves ApproverList `json:"approves,omitempty" yaml:"approves,omitempty"`
 }
 
 // ManifestChangeApprovalStatus defines the observed state of ManifestChangeApproval.
@@ -120,27 +123,24 @@ type ManifestChangeApprovalStatus struct {
 
 	// History of approvals
 	// +optional
-	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty"`
+	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty" yaml:"approvalHistory,omitempty"`
 
 	// +optional
-	Approves ApproverList `json:"approves"`
+	Approves ApproverList `json:"approves" yaml:"approves"`
 
 	// +optional
-	ActionState MCAActionState `json:"actionState,omitempty"`
+	ActionState MCAActionState `json:"actionState,omitempty" yaml:"actionState,omitempty"`
 
 	// +optional
-	ReconcileState MCAReconcileNewMCASpecState `json:"reconcileState,omitempty"`
+	ReconcileState MCAReconcileNewMCASpecState `json:"reconcileState,omitempty" yaml:"reconcileState,omitempty"`
 
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
+	// conditions represent the current state of the ManifestChangeApproval resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -148,34 +148,34 @@ type ManifestChangeApprovalStatus struct {
 
 // ManifestChangeApproval is the Schema for the manifestchangeapprovals API
 type ManifestChangeApproval struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero" yaml:"metadata"`
 
 	// spec defines the desired state of ManifestChangeApproval
 	// +required
-	Spec ManifestChangeApprovalSpec `json:"spec"`
+	Spec ManifestChangeApprovalSpec `json:"spec" yaml:"spec"`
 
 	// status defines the observed state of ManifestChangeApproval
 	// +optional
-	Status ManifestChangeApprovalStatus `json:"status,omitzero"`
+	Status ManifestChangeApprovalStatus `json:"status,omitzero" yaml:"status"`
 }
 
 type ManifestChangeApprovalManifestObject struct {
-	metav1.TypeMeta `json:",inline"`
-	ObjectMeta      ManifestRef                `json:"metadata,omitzero"`
-	Spec            ManifestChangeApprovalSpec `json:"spec"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	ObjectMeta      ManifestRef                `json:"metadata,omitzero" yaml:"metadata"`
+	Spec            ManifestChangeApprovalSpec `json:"spec" yaml:"spec"`
 }
 
 // +kubebuilder:object:root=true
 
 // ManifestChangeApprovalList contains a list of ManifestChangeApproval
 type ManifestChangeApprovalList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []ManifestChangeApproval `json:"items"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero" yaml:"metadata"`
+	Items           []ManifestChangeApproval `json:"items" yaml:"items"`
 }
 
 func init() {

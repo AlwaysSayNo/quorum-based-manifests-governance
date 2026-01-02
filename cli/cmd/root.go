@@ -14,6 +14,7 @@ import (
 
 var (
 	repoAlias string
+	mrtAlias string
 	cliConfig   config.Config
 	repoManager *manager.Manager
 	ctx context.Context

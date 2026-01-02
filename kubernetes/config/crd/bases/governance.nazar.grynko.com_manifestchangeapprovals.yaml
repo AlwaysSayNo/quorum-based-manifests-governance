@@ -115,15 +115,17 @@ spec:
               lastApprovedCommitSHA:
                 description: Last approved commit SHA
                 type: string
-              location:
+              locations:
                 description: Location contains information about where to store MSR,
                   MCA and signatures.
                 properties:
-                  folder:
+                  governancePath:
                     description: |-
-                      Folder where MSR, MCA and Signatures will be stored.
+                      GovernancePath where MSR, MCA and Signatures will be stored.
                       Default: root of the repo.
                     minLength: 1
+                    type: string
+                  sourcePath:
                     type: string
                 type: object
               mrt:
@@ -152,6 +154,8 @@ spec:
                 - namespace
                 - version
                 type: object
+              previousCommitSha:
+                type: string
               publicKey:
                 description: publicKey is used to sign MCA.
                 minLength: 1
@@ -189,9 +193,10 @@ spec:
             - commitSha
             - gitRepository
             - governors
-            - location
+            - locations
             - mrt
             - msr
+            - previousCommitSha
             - publicKey
             - require
             - version
@@ -359,11 +364,8 @@ spec:
                 type: object
               conditions:
                 description: |-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
+                  conditions represent the current state of the ManifestChangeApproval resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
                   description: Condition contains details for one aspect of the current

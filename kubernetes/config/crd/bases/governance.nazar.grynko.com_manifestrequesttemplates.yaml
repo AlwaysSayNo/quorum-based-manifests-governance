@@ -106,13 +106,13 @@ spec:
                 required:
                 - members
                 type: object
-              location:
-                description: Location contains information about where to store MSR,
+              locations:
+                description: Locations contains information about where to store MSR,
                   MCA and signatures.
                 properties:
-                  folder:
+                  governancePath:
                     description: |-
-                      Folder where MSR, MCA and Signatures will be stored.
+                      GovernancePath where MSR, MCA and Signatures will be stored.
                       Default: root of the repo.
                     minLength: 1
                     type: string
@@ -211,16 +211,12 @@ spec:
               actionState:
                 description: ActionState tracks the progress of the main reconcile.
                 type: string
+              applicationInitTargetRevision:
+                type: string
               conditions:
                 description: |-
                   conditions represent the current state of the ManifestRequestTemplate resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
                   The status of each condition is one of True, False, or Unknown.
                 items:
                   description: Condition contains details for one aspect of the current

@@ -25,6 +25,10 @@ type QubmangoPolicy struct {
 	Alias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 	// +required
 	GovernancePath string `json:"governancePath,omitempty" yaml:"governancePath,omitempty"`
+	// +required
+	MSR ManifestRefOptional `json:"msr,omitempty" yaml:"msr,omitempty"`
+	// +required
+	MCA ManifestRefOptional `json:"mca,omitempty" yaml:"mca,omitempty"`
 }
 
 // QubmangoIndexSpec defines the desired state of QubmangoIndex
@@ -35,12 +39,6 @@ type QubmangoIndexSpec struct {
 
 // QubmangoIndexStatus defines the observed state of QubmangoIndex.
 type QubmangoIndexStatus struct {
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

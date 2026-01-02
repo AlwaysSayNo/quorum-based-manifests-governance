@@ -9,26 +9,30 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	
+
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 )
 
 const (
-	DefaultReposPath = "~/tmp/qubmango/git/repos"
+	DefaultReposPath      = "/tmp/qubmango/git/repos"
+	QubmangoIndexFilePath = ".qubmango/index.yaml"
 )
 
 type GitRepositoryFactory interface {
-	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepository, error)
+	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepositoryProvider, error)
 	IdentifyProvider(repoURL string) bool
 }
 
-type GitRepository interface {
+type SignatureData []byte
+
+type GitRepositoryProvider interface {
 	Sync(ctx context.Context) error
 	HasRevision(ctx context.Context, commit string) (bool, error)
 	GetLatestRevision(ctx context.Context) (string, error)
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]FileChange, error)
-	PushSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, signatureData []byte) (string, error)
-	GetActiveMSR(ctx context.Context) (ManifestSigningRequestManifestObject, [][]byte, error)
+	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]FileBytesWithStatus, error)
+	PushSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, signatureData SignatureData) (string, error)
+	GetQubmangoIndex(ctx context.Context) (*QubmangoIndex, error)
+	GetActiveMSR(ctx context.Context, policy *QubmangoPolicy) (*ManifestSigningRequestManifestObject, []byte, SignatureData, []SignatureData, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.
@@ -38,7 +42,7 @@ type Manager struct {
 	// List of all available providers factories
 	providers []GitRepositoryFactory
 	// Cache of initialized providersToMRT, keyed by repo URL
-	providersToMRT map[string]GitRepository
+	providersToMRT map[string]GitRepositoryProvider
 	mu             sync.Mutex
 }
 
@@ -46,26 +50,35 @@ func NewManager() *Manager {
 	return NewManagerWithPath(DefaultReposPath)
 }
 
-func NewManagerWithPath(basePath string) *Manager {
+func NewManagerWithPath(
+	basePath string,
+) *Manager {
 	return &Manager{
 		basePath:       basePath,
 		providers:      []GitRepositoryFactory{},
-		providersToMRT: make(map[string]GitRepository),
+		providersToMRT: make(map[string]GitRepositoryProvider),
 	}
 }
 
-func (m *Manager) Register(factory GitRepositoryFactory) error {
+func (m *Manager) Register(
+	factory GitRepositoryFactory,
+) error {
 	m.providers = append(m.providers, factory)
 	return nil
 }
 
 type GovernorRepositoryConfig struct {
 	GitRepositoryURL string
-	PGPSecretPath    string
 	SSHSecretPath    string
+	SSHPassphrase    string
+	PGPSecretPath    string
+	PGPPassphrase    string
 }
 
-func (m *Manager) GetProvider(ctx context.Context, conf *GovernorRepositoryConfig) (GitRepository, error) {
+func (m *Manager) GetProvider(
+	ctx context.Context,
+	conf *GovernorRepositoryConfig,
+) (GitRepositoryProvider, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -87,7 +100,7 @@ func (m *Manager) GetProvider(ctx context.Context, conf *GovernorRepositoryConfi
 	localPath := filepath.Join(m.basePath, repoHash)
 
 	// Sync ssh secrets
-	sshSecrets, err := crypto.GetSSHSecrets(conf.SSHSecretPath)
+	sshSecrets, err := crypto.GetSSHSecrets(conf.SSHSecretPath, conf.SSHPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("get ssh secrets: %w", err)
 	}
@@ -97,7 +110,7 @@ func (m *Manager) GetProvider(ctx context.Context, conf *GovernorRepositoryConfi
 	}
 
 	// Get pgp secrets
-	pgpSecrets, err := crypto.GetPGPSecrets(conf.SSHSecretPath)
+	pgpSecrets, err := crypto.GetPGPSecrets(conf.PGPSecretPath, conf.PGPPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("get pgp secrets: %w", err)
 	}
@@ -113,7 +126,9 @@ func (m *Manager) GetProvider(ctx context.Context, conf *GovernorRepositoryConfi
 	return provider, nil
 }
 
-func (m *Manager) providerExists(repoURL string) bool {
+func (m *Manager) providerExists(
+	repoURL string,
+) bool {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})
@@ -121,7 +136,12 @@ func (m *Manager) providerExists(repoURL string) bool {
 	return idx != -1
 }
 
-func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepository, error) {
+func (m *Manager) findProvider(
+	ctx context.Context,
+	repoURL, localPath string,
+	auth transport.AuthMethod,
+	pgpSecrets crypto.Secrets,
+) (GitRepositoryProvider, error) {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})

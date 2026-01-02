@@ -23,7 +23,7 @@ type dummyGitFactory struct{}
 func (d *dummyGitFactory) IdentifyProvider(repoURL string) bool {
 	return strings.Contains(repoURL, "testhub.com")
 }
-func (d *dummyGitFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets Secrets) (GitRepository, error) {
+func (d *dummyGitFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets Secrets) (GitRepositoryProvider, error) {
 	return &dummyGitRepo{}, nil
 }
 

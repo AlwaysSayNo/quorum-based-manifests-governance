@@ -230,7 +230,7 @@ func (r *ManifestChangeApprovalReconciler) handleStateUpdateArgoCD(
 			}
 
 			// Patch the Application with MCA CommitSHA
-			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", app.Spec.Source.TargetRevision, "newRevision", mca.Spec.CommitSHA)
+			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", mca.Spec.PreviousCommitSHA, "newRevision", mca.Spec.CommitSHA)
 
 			patch := client.MergeFrom(app.DeepCopy())
 			app.Spec.Source.TargetRevision = mca.Spec.CommitSHA
@@ -408,7 +408,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileStateUpdateArgoCD(
 			}
 
 			// Patch the Application with MCA CommitSHA
-			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", app.Spec.Source.TargetRevision, "newRevision", mca.Spec.CommitSHA)
+			r.logger.Info("Patching ArgoCD Application targetRevision", "app", app.Name, "oldRevision", mca.Spec.PreviousCommitSHA, "newRevision", mca.Spec.CommitSHA)
 
 			patch := client.MergeFrom(app.DeepCopy())
 			app.Spec.Source.TargetRevision = mca.Spec.CommitSHA

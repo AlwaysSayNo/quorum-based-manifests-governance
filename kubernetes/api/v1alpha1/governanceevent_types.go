@@ -30,27 +30,30 @@ const (
 
 // NewRevisionPayload holds the data for a NewRevision event.
 type NewRevisionPayload struct {
-	CommitSHA string `json:"commitSHA"`
+	CommitSHA string `json:"commitSHA" yaml:"commitSHA"`
 }
 
 // GovernanceEventSpec defines the desired state of GovernanceEvent
 type GovernanceEventSpec struct {
 	// Type indicates the kind of event this is.
-	Type EventType `json:"type"`
+	Type EventType `json:"type" yaml:"type"`
 
-	MRT ManifestRef `json:"mrt,omitempty"`
+	MRT ManifestRef `json:"mrt,omitempty" yaml:"mrt,omitempty"`
 
 	// NewRevision holds the payload if the event type is NewRevision.
 	// +optional
-	NewRevision *NewRevisionPayload `json:"newRevision,omitempty"`
+	NewRevision *NewRevisionPayload `json:"newRevision,omitempty" yaml:"newRevision,omitempty"`
 }
 
 // GovernanceEventStatus defines the observed state of GovernanceEvent.
 type GovernanceEventStatus struct {
+	// conditions represent the current state of the GovernanceEvent resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -58,28 +61,28 @@ type GovernanceEventStatus struct {
 
 // GovernanceEvent is the Schema for the governanceevents API
 type GovernanceEvent struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero" yaml:"metadata,omitzero"`
 
 	// spec defines the desired state of GovernanceEvent
 	// +required
-	Spec GovernanceEventSpec `json:"spec"`
+	Spec GovernanceEventSpec `json:"spec" yaml:"spec"`
 
 	// status defines the observed state of GovernanceEvent
 	// +optional
-	Status GovernanceEventStatus `json:"status,omitzero"`
+	Status GovernanceEventStatus `json:"status,omitzero" yaml:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
 // GovernanceEventList contains a list of GovernanceEvent
 type GovernanceEventList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []GovernanceEvent `json:"items"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero" yaml:"metadata,omitzero"`
+	Items           []GovernanceEvent `json:"items" yaml:"items"`
 }
 
 func init() {

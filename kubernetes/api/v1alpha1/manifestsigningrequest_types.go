@@ -60,56 +60,66 @@ const (
 	MSRReconcileNewMSRSpecStateNotifyGovernors    MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateNotifyGovernors"
 )
 
+type Locations struct {
+	// GovernancePath where MSR, MCA and Signatures will be stored.
+	// Default: root of the repo.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	GovernancePath string `json:"governancePath" yaml:"governancePath"`
+	// +optional
+	SourcePath string `json:"sourcePath" yaml:"sourcePath"`
+}
+
 type VersionedManifestRef struct {
 	// +required
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 	// +required
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace" yaml:"namespace"`
 
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 }
 
 type FileChange struct {
 	// +required
-	Kind string `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty" yaml:"kind,omitempty"`
 	// +required
-	Status FileChangeStatus `json:"status,omitempty"`
+	Status FileChangeStatus `json:"status,omitempty" yaml:"status,omitempty"`
 	// +required
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	// +required
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace" yaml:"namespace"`
 	// +required
-	SHA256 string `json:"sha256,omitempty"`
+	SHA256 string `json:"sha256,omitempty" yaml:"sha256,omitempty"`
 	// +required
-	Path string `json:"path"`
+	Path string `json:"path" yaml:"path"`
 }
 
 type ApproverList struct {
 	// List of governors.
 	// +optional
-	Members []Governor `json:"members"`
+	Members []Governor `json:"members" yaml:"members"`
 }
 
 type ManifestSigningRequestHistoryRecord struct {
 
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 
 	// +required
-	Changes []FileChange `json:"changes"`
+	Changes []FileChange `json:"changes" yaml:"changes"`
 
 	// +required
-	Governors GovernorList `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty" yaml:"governors,omitempty"`
 
 	// +required
-	Require ApprovalRule `json:"require"`
+	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// +optional
-	Approves ApproverList `json:"approves"`
+	Approves ApproverList `json:"approves" yaml:"approves"`
 
 	// +required
-	Status SigningRequestStatus `json:"status,omitempty"`
+	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 // ManifestSigningRequestSpec defines the desired state of ManifestSigningRequest
@@ -117,70 +127,67 @@ type ManifestSigningRequestSpec struct {
 	// 0 is value of the default ManifestSigningRequest, created by qubmango
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	Version int `json:"version"`
+	Version int `json:"version" yaml:"version"`
 
 	// +required
-	CommitSHA string `json:"commitSha"`
+	CommitSHA string `json:"commitSha" yaml:"commitSha"`
+
+	// +required
+	PreviousCommitSHA string `json:"previousCommitSha" yaml:"previousCommitSha"`
 
 	// +optional
-	MRT VersionedManifestRef `json:"mrt"`
+	MRT VersionedManifestRef `json:"mrt" yaml:"mrt"`
 
 	// publicKey is used to sign MCA.
 	// +kubebuilder:validation:MinLength=1
 	// +required
-	PublicKey string `json:"publicKey,omitempty"`
+	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 
 	// +required
-	GitRepository GitRepository `json:"gitRepository"`
+	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
 
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
-	Location Location `json:"location,omitempty"`
+	Locations Locations `json:"locations,omitempty" yaml:"locations,omitempty"`
 
 	// +required
-	Changes []FileChange `json:"changes"`
+	Changes []FileChange `json:"changes" yaml:"changes"`
 
 	// Required until GovernorsRef is implemented.
 	// +required
-	Governors GovernorList `json:"governors,omitempty"`
+	Governors GovernorList `json:"governors,omitempty" yaml:"governors,omitempty"`
 
 	// The policy rules for approvals.
 	// Required until ApprovalRuleRef is implemented.
 	// +required
-	Require ApprovalRule `json:"require"`
+	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// +required
-	Status SigningRequestStatus `json:"status,omitempty"`
+	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 // ManifestSigningRequestStatus defines the observed state of ManifestSigningRequest.
 type ManifestSigningRequestStatus struct {
 
 	// +optional
-	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty"`
+	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty" yaml:"requestHistory,omitempty"`
 
 	// +optional
-	Approves ApproverList `json:"approves"`
+	Approves ApproverList `json:"approves" yaml:"approves"`
 
 	// +optional
-	ActionState MSRActionState `json:"actionState,omitempty"`
+	ActionState MSRActionState `json:"actionState,omitempty" yaml:"actionState,omitempty"`
 
 	// +optional
-	ReconcileState MSRReconcileNewMSRSpecState `json:"reconcileState,omitempty"`
+	ReconcileState MSRReconcileNewMSRSpecState `json:"reconcileState,omitempty" yaml:"reconcileState,omitempty"`
 
 	// conditions represent the current state of the ManifestSigningRequest resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -188,34 +195,34 @@ type ManifestSigningRequestStatus struct {
 
 // ManifestSigningRequest is the Schema for the manifestsigningrequests API
 type ManifestSigningRequest struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero" yaml:"metadata"`
 
 	// spec defines the desired state of ManifestSigningRequest
 	// +required
-	Spec ManifestSigningRequestSpec `json:"spec"`
+	Spec ManifestSigningRequestSpec `json:"spec" yaml:"spec"`
 
 	// status defines the observed state of ManifestSigningRequest
 	// +optional
-	Status ManifestSigningRequestStatus `json:"status,omitzero"`
+	Status ManifestSigningRequestStatus `json:"status,omitzero" yaml:"status"`
 }
 
 type ManifestSigningRequestManifestObject struct {
-	metav1.TypeMeta `json:",inline"`
-	ObjectMeta      ManifestRef                `json:"metadata,omitzero"`
-	Spec            ManifestSigningRequestSpec `json:"spec"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	ObjectMeta      ManifestRef                `json:"metadata,omitzero" yaml:"metadata"`
+	Spec            ManifestSigningRequestSpec `json:"spec" yaml:"spec"`
 }
 
 // +kubebuilder:object:root=true
 
 // ManifestSigningRequestList contains a list of ManifestSigningRequest
 type ManifestSigningRequestList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []ManifestSigningRequest `json:"items"`
+	metav1.TypeMeta `json:",inline" yaml:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero" yaml:"metadata"`
+	Items           []ManifestSigningRequest `json:"items" yaml:"items"`
 }
 
 func init() {

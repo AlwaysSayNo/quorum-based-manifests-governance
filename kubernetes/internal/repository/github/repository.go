@@ -340,7 +340,7 @@ func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *objec
 
 func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error) {
 	files := []fileToPush{
-		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Location.Folder, Version: msr.Spec.Version},
+		{Object: msr, Name: msr.ObjectMeta.Name, Folder: msr.Spec.Locations.GovernancePath, Version: msr.Spec.Version},
 	}
 	msg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
 	return p.pushWorkflow(ctx, files, msg)
@@ -348,7 +348,7 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *governancev1alpha1.Manif
 
 func (p *gitProvider) PushMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
 	files := []fileToPush{
-		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Location.Folder, Version: mca.Spec.Version},
+		{Object: mca, Name: mca.ObjectMeta.Name, Folder: mca.Spec.Locations.GovernancePath, Version: mca.Spec.Version},
 	}
 	msg := fmt.Sprintf("New ManifestChangeApproval: create manifest change approval %s with version %d", mca.ObjectMeta.Name, mca.Spec.Version)
 	return p.pushWorkflow(ctx, files, msg)
@@ -431,7 +431,8 @@ func (p *gitProvider) RemoveFromIndexFile(
 // If err != nil, default second parameter value is false.
 func (p *gitProvider) InitializeGovernance(
 	ctx context.Context,
-	operationalFileLocation, governanceIndexAlias, governanceFolder string,
+	operationalFileLocation, governanceIndexAlias string,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (string, bool, error) {
 	worktree, rollback, gpgEntity, err := p.syncAndLock(ctx)
 	if err != nil {
@@ -486,7 +487,9 @@ func (p *gitProvider) InitializeGovernance(
 	// Append new policy and add to staging tree
 	policy := governancev1alpha1.QubmangoPolicy{
 		Alias:          governanceIndexAlias,
-		GovernancePath: governanceFolder,
+		GovernancePath: mrt.Spec.Locations.GovernancePath,
+		MSR:            mrt.Spec.MSR,
+		MCA:            mrt.Spec.MCA,
 	}
 	indexFile.Spec.Policies = append(indexFile.Spec.Policies, policy)
 

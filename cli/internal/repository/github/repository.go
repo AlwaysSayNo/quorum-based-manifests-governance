@@ -2,26 +2,25 @@ package github
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
+	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 )
 
 // Helper struct for GetChangedFiles to parse Kind, Name, and Namespace
@@ -38,14 +37,19 @@ type GitProviderFactory struct {
 }
 
 // New creates and initializes a gitProvider
-func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (manager.GitRepository, error) {
+func (f *GitProviderFactory) New(
+	ctx context.Context,
+	remoteURL, localPath string,
+	auth transport.AuthMethod,
+	pgpSecrets crypto.Secrets,
+) (manager.GitRepositoryProvider, error) {
 	p := &gitProvider{
 		remoteURL:  remoteURL,
 		localPath:  localPath,
 		auth:       auth,
-		logger:     log.FromContext(ctx),
 		pgpSecrets: pgpSecrets,
 	}
+
 	// Sync on creation
 	if err := p.Sync(context.Background()); err != nil {
 		return nil, fmt.Errorf("initial sync failed: %w", err)
@@ -53,7 +57,9 @@ func (f *GitProviderFactory) New(ctx context.Context, remoteURL, localPath strin
 	return p, nil
 }
 
-func (f *GitProviderFactory) IdentifyProvider(repoURL string) bool {
+func (f *GitProviderFactory) IdentifyProvider(
+	repoURL string,
+) bool {
 	return strings.Contains(repoURL, "github.com")
 }
 
@@ -62,14 +68,15 @@ type gitProvider struct {
 	localPath string
 	repo      *git.Repository
 	auth      transport.AuthMethod
-	logger    logr.Logger
 	// A mutex to protect repo from concurrent git operations
 	mu         sync.Mutex
 	pgpSecrets crypto.Secrets
 }
 
 // Sync ensures the local repository is cloned and up-to-date.
-func (p *gitProvider) Sync(ctx context.Context) error {
+func (p *gitProvider) Sync(
+	ctx context.Context,
+) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -106,7 +113,10 @@ func (p *gitProvider) Sync(ctx context.Context) error {
 	return nil
 }
 
-func (p *gitProvider) HasRevision(ctx context.Context, commit string) (bool, error) {
+func (p *gitProvider) HasRevision(
+	ctx context.Context,
+	commit string,
+) (bool, error) {
 	if err := p.Sync(ctx); err != nil {
 		return false, fmt.Errorf("failed to sync repository before checking for revision: %w", err)
 	}
@@ -147,7 +157,9 @@ func (p *gitProvider) HasRevision(ctx context.Context, commit string) (bool, err
 }
 
 // GetLatestRevision takes head of the default branch and returns it's commit hash
-func (p *gitProvider) GetLatestRevision(ctx context.Context) (string, error) {
+func (p *gitProvider) GetLatestRevision(
+	ctx context.Context,
+) (string, error) {
 	if err := p.Sync(ctx); err != nil {
 		return "", fmt.Errorf("failed to sync repository before getting latest revision: %w", err)
 	}
@@ -163,7 +175,11 @@ func (p *gitProvider) GetLatestRevision(ctx context.Context) (string, error) {
 	return headRef.Hash().String(), nil
 }
 
-func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]manager.FileChange, error) {
+func (p *gitProvider) GetChangedFilesRaw(
+	ctx context.Context,
+	fromCommit, toCommit string,
+	fromFolder string,
+) (map[string]manager.FileBytesWithStatus, error) {
 	if err := p.Sync(ctx); err != nil {
 		return nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
 	}
@@ -198,7 +214,10 @@ func (p *gitProvider) GetChangedFiles(ctx context.Context, fromCommit, toCommit 
 	return p.patchToFileChangeList(fromTree, toTree, patch, fromFolder)
 }
 
-func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*object.Tree, error) {
+func (p *gitProvider) getTreeForCommit(
+	ctx context.Context,
+	hash string,
+) (*object.Tree, error) {
 	hashObj := plumbing.NewHash(hash)
 	commitObj, err := p.repo.CommitObject(hashObj)
 	if err != nil {
@@ -213,8 +232,12 @@ func (p *gitProvider) getTreeForCommit(ctx context.Context, hash string) (*objec
 	return tree, nil
 }
 
-func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *object.Tree, patch *object.Patch, fromFolder string) ([]manager.FileChange, error) {
-	var changes []manager.FileChange
+func (p *gitProvider) patchToFileChangeList(
+	fromTree, toTree *object.Tree,
+	patch *object.Patch,
+	fromFolder string,
+) (map[string]manager.FileBytesWithStatus, error) {
+	result := make(map[string]manager.FileBytesWithStatus)
 	fromFolderNormalized := filepath.Clean(fromFolder)
 
 	for _, filePatch := range patch.FilePatches() {
@@ -251,73 +274,254 @@ func (p *gitProvider) patchToFileChangeList(fromTree *object.Tree, toTree *objec
 			continue
 		}
 
-		// Get sha256 and meta
-		var sha256Hex string
-		var meta k8sObjectMetadata
+		content, err := file.Contents()
+		if err != nil {
+			return nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
+		}
+		result[path] = manager.FileBytesWithStatus{
+			Content: []byte(content),
+			Status:  status,
+			Path:    path,
+		}
+	}
 
-		if file != nil {
-			content, err := file.Contents()
+	return result, nil
+}
+
+func (p *gitProvider) PushSignature(
+	ctx context.Context,
+	msr *manager.ManifestSigningRequestManifestObject,
+	signatureData manager.SignatureData,
+) (string, error) {
+	return "", nil
+}
+
+func (p *gitProvider) GetQubmangoIndex(ctx context.Context,
+) (*manager.QubmangoIndex, error) {
+	return p.getQubmangoIndexWithPath(ctx, manager.QubmangoIndexFilePath)
+}
+
+func (p *gitProvider) getQubmangoIndexWithPath(
+	ctx context.Context,
+	qubmangoFileRepositoryPath string,
+) (*manager.QubmangoIndex, error) {
+	_, _, _, err := p.syncAndLock(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	fullFilePath := filepath.Join(p.localPath, qubmangoFileRepositoryPath)
+
+	// Check correctness of operational file name (a yaml file with non-empty name)
+	fileName := filepath.Base(fullFilePath)
+	if !strings.HasSuffix(fileName, ".yaml") || fileName == ".yaml" {
+		return nil, fmt.Errorf("incorrect operational .yaml file name %s", fileName)
+	}
+
+	if _, err := os.Stat(fullFilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("index file doesn't exist in %s", fullFilePath)
+	}
+
+	// File exists - read and unmarshal
+	fileBytes, err := os.ReadFile(fullFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read qubmango index file: %w", err)
+	}
+
+	var qubmangoIndex manager.QubmangoIndex
+	if err := yaml.Unmarshal(fileBytes, &qubmangoIndex); err != nil {
+		return nil, fmt.Errorf("unmarshal qubmango index file: %w", err)
+	}
+
+	return &qubmangoIndex, nil
+}
+
+// GetActiveMSR finds the most recent MSR in the repository and its associated signatures.
+// It returns the parsed MSR, its file content, qubmango signature, a list of governor signatures, and an error if any.
+func (p *gitProvider) GetActiveMSR(
+	ctx context.Context,
+	policy *manager.QubmangoPolicy,
+) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {
+	// Sync and Lock
+	worktree, _, _, err := p.syncAndLock(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	// Get the latest MSR folder path
+	activeMSRFolderPath, err := p.getLatestMSRFolder(worktree, policy)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("get the latest MSR folder path: %w", err)
+	}
+
+	// Extract MSR, MSR content and signature
+	msr, msrContent, msrSignature, err := p.getMSRAndSignature(activeMSRFolderPath, worktree, policy)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("extract MSR, MSR content and signature: %w", err)
+	}
+
+	// Fetch governor signatures for current msr
+	goverSignatures, err := p.readGovernorSignatures(activeMSRFolderPath, worktree, policy)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("fetch governor signatures: %w", err)
+	}
+
+	return msr, msrContent, msrSignature, goverSignatures, nil
+}
+
+func (p *gitProvider) getLatestMSRFolder(
+	worktree *git.Worktree,
+	policy *manager.QubmangoPolicy,
+) (string, error) {
+	// Scan for the latest version folder (v_N)
+	fileInfos, err := worktree.Filesystem.ReadDir(policy.GovernancePath)
+	if err != nil {
+		// If the folder doesn't exist yet, it's not an error, just no MSR found
+		return "", fmt.Errorf("read governance folder %s: %w", policy.GovernancePath, err)
+	}
+
+	msrFolderMatcher := regexp.MustCompile(`^v_(\d+)$`)
+	latestMSRFolderPath := ""
+	msrVersion := -1
+
+	for _, f := range fileInfos {
+		if !f.IsDir() {
+			continue
+		}
+
+		// Check if folder matches v_{number}
+		matches := msrFolderMatcher.FindStringSubmatch(f.Name())
+		if len(matches) == 2 {
+			// Error ignored because regex guarantees digits
+			n, _ := strconv.Atoi(matches[1])
+			if n > msrVersion {
+				msrVersion = n
+				latestMSRFolderPath = filepath.Join(policy.GovernancePath, f.Name())
+			}
+		}
+	}
+
+	if msrVersion == -1 {
+		return "", fmt.Errorf("no MSR version found in %s", policy.GovernancePath)
+	}
+
+	return latestMSRFolderPath, nil
+}
+
+func (p *gitProvider) getMSRAndSignature(
+	activeMSRFolderPath string,
+	worktree *git.Worktree,
+	policy *manager.QubmangoPolicy,
+) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, error) {
+	// Extract MSR Content
+	msrFilePath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml", policy.MSR.Name))
+	msrFile, err := worktree.Filesystem.Open(msrFilePath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("open msr file %s: %w", msrFilePath, err)
+	}
+	defer msrFile.Close()
+
+	msrContent, err := io.ReadAll(msrFile)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read msr file content: %w", err)
+	}
+
+	var msr manager.ManifestSigningRequestManifestObject
+	if err := yaml.Unmarshal(msrContent, &msr); err != nil {
+		return nil, nil, nil, fmt.Errorf("unmarshal msr file content: %w", err)
+	}
+
+	// Read msr governance signature (msr.yaml.sig)
+	var msrSignature manager.SignatureData
+	appSigPath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MSR.Name))
+
+	msrSigFile, err := worktree.Filesystem.Open(appSigPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read msr governance signature: %w", err)
+	}
+	defer msrSigFile.Close()
+
+	// Only read if file exists
+	sigBytes, err := io.ReadAll(msrSigFile)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read app signature: %w", err)
+	}
+	msrSignature = manager.SignatureData(sigBytes)
+
+	return &msr, msrContent, msrSignature, nil
+}
+
+func (p *gitProvider) readGovernorSignatures(
+	activeMSRFolderPath string,
+	worktree *git.Worktree,
+	policy *manager.QubmangoPolicy,
+) ([]manager.SignatureData, error) {
+	// Read governor signatures (signatures/msr.yaml.sig.*)
+	var goverSignatures []manager.SignatureData
+	signaturesFolderPath := filepath.Join(activeMSRFolderPath, "signatures")
+
+	sigFileInfos, err := worktree.Filesystem.ReadDir(signaturesFolderPath)
+	if err != nil && os.IsNotExist(err) {
+		// It's okay if the signatures folder doesn't exist yet (e.g., initial creation)
+		return goverSignatures, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("read signatures folder: %w", err)
+	}
+
+	// Regex to match: msr.yaml.sig.{suffix}
+	govSigMatcher := regexp.MustCompile(fmt.Sprintf(`^%s\.yaml\.sig\..+$`, policy.MSR.Name))
+
+	for _, sigFile := range sigFileInfos {
+		if sigFile.IsDir() {
+			continue
+		}
+
+		if govSigMatcher.MatchString(sigFile.Name()) {
+			fPath := filepath.Join(signaturesFolderPath, sigFile.Name())
+			f, err := worktree.Filesystem.Open(fPath)
 			if err != nil {
-				return nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
+				continue // Skip unreadable files
 			}
 
-			if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
-				// Could be a non-k8s file, or malformed. Log and skip for now.
-				p.logger.Error(err, fmt.Sprintf("could not unmarshal k8s metadata from %s, skipping: %v\n", path, err))
+			content, err := io.ReadAll(f)
+			f.Close()
+			if err != nil {
 				continue
 			}
 
-			// Calculate SHA256
-			hasher := sha256.New()
-			hasher.Write([]byte(content))
-			sha256Hex = hex.EncodeToString(hasher.Sum(nil))
+			goverSignatures = append(goverSignatures, manager.SignatureData(content))
 		}
-
-		changes = append(changes, manager.FileChange{
-			Path:      path,
-			Status:    status,
-			Kind:      meta.Kind,
-			Name:      meta.Metadata.Name,
-			Namespace: meta.Metadata.Namespace,
-			SHA256:    sha256Hex,
-		})
 	}
 
-	return changes, nil
+	return goverSignatures, nil
 }
 
-func (p *gitProvider) PushMSR(ctx context.Context, msr *manager.ManifestSigningRequestManifestObject) (string, error) {
+func (p *gitProvider) syncAndLock(
+	ctx context.Context,
+) (*git.Worktree, func(), *openpgp.Entity, error) {
 	if err := p.Sync(ctx); err != nil {
-		return "", fmt.Errorf("failed to sync repository before pushing MSR: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to sync repository before push: %w", err)
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	worktree, err := p.repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("could not get repository worktree: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("could not get repository worktree: %w", err)
 	}
-	gpgEntity, err := crypto.GetGpgEntity(ctx, &p.pgpSecrets)
+	pgpEntity, err := crypto.GetPGPEntity(ctx, &p.pgpSecrets)
 	if err != nil {
-		return "", fmt.Errorf("failed to load GPG signing key: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("failed to load PGP signing key: %w", err)
 	}
 
-	// Convert MSR object to file
-	msrBytes, err := yaml.Marshal(msr)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal MSR to YAML: %w", err)
-	}
-	// Create detached signature from the MSR file
-	signatureBytes, err := crypto.CreateDetachedSignatureByEntity(msrBytes, gpgEntity)
-	if err != nil {
-		return "", fmt.Errorf("failed to create detached signature for MSR: %w", err)
-	}
-
-	// Function to rollback working tree to the old state, if error appears
 	headRef, err := p.repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("could not get current HEAD before commit: %w", err)
+		p.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("could not get current HEAD before commit: %w", err)
 	}
 	originalCommitHash := headRef.Hash()
 	rollback := func() {
@@ -327,75 +531,5 @@ func (p *gitProvider) PushMSR(ctx context.Context, msr *manager.ManifestSigningR
 		})
 	}
 
-	// Create folder for new MSR and signatures subfolder
-	repoRequestFolderPath := filepath.Join(msr.Spec.Location.Folder, fmt.Sprintf("v_%d", msr.Spec.Version))
-	repoMsrSignaturesFolderPath := filepath.Join(repoRequestFolderPath, "signatures")
-
-	os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644)
-	os.MkdirAll(filepath.Join(p.localPath, repoMsrSignaturesFolderPath), 0644)
-
-	// Write MSR and sig files into repo folder
-	msrFileName := fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name)
-	sigFileName := fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Name)
-
-	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, msrFileName, msrBytes); err != nil {
-		rollback()
-		return "", fmt.Errorf("create MSR file and to worktree: %w", err)
-	}
-	if err := p.addCreateFileAndAddToWorktree(worktree, repoRequestFolderPath, sigFileName, signatureBytes); err != nil {
-		rollback()
-		return "", fmt.Errorf("create MSR.sig file and to worktree: %w", err)
-	}
-
-	// Commit and push changes
-	commitMsg := fmt.Sprintf("New ManifestSigningRequest: create manifest signing request %s with version %d", msr.ObjectMeta.Name, msr.Spec.Version)
-	commitOpts := &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Qubmango Governance Operator",
-			Email: "noreply@qubmango.com",
-			When:  time.Now(),
-		},
-		SignKey: gpgEntity,
-	}
-	commitHash, err := worktree.Commit(commitMsg, commitOpts)
-	if err != nil {
-		rollback()
-		return "", fmt.Errorf("failed to commit MSR: %w", err)
-	}
-
-	pushOpts := &git.PushOptions{
-		RemoteName: "origin",
-		Auth:       p.auth,
-	}
-	err = p.repo.PushContext(ctx, pushOpts)
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		rollback()
-		return "", fmt.Errorf("failed to push MSR commit: %w", err)
-	}
-
-	return commitHash.String(), nil
-}
-
-func (p *gitProvider) addCreateFileAndAddToWorktree(worktree *git.Worktree, repoFolderPath, fileName string, file []byte) error {
-	filePath := filepath.Join(p.localPath, repoFolderPath, fileName)
-	repoPath := filepath.Join(repoFolderPath, fileName)
-
-	err := os.WriteFile(filePath, file, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write MSR file: %w", err)
-	}
-
-	if _, err = worktree.Add(repoPath); err != nil {
-		return fmt.Errorf("failed to git add MSR file to the staging area: %w", err)
-	}
-
-	return nil
-}
-
-func (p *gitProvider) PushSignature(ctx context.Context, msr *manager.ManifestSigningRequestManifestObject, signatureData []byte) (string, error) {
-	return "", nil
-}
-
-func (p *gitProvider) GetActiveMSR(ctx context.Context) (manager.ManifestSigningRequestManifestObject, [][]byte, error) {
-	return manager.ManifestSigningRequestManifestObject{}, make([][]byte, 0), nil
+	return worktree, rollback, pgpEntity, nil
 }

@@ -666,7 +666,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-msr", Namespace: "test-ns"},
 			Spec: governancev1alpha1.ManifestSigningRequestSpec{
 				Version:  1,
-				Location: governancev1alpha1.Location{Folder: "governance"},
+				Location: governancev1alpha1.MRTLocations{GovernancePath: "governance"},
 			},
 		}
 

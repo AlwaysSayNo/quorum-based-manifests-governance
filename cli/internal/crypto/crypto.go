@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -19,46 +19,46 @@ type Secrets struct {
 	Passphrase string
 }
 
-func GetPGPSecrets(path string) (*Secrets, error) {
+func GetPGPSecrets(
+	path, passphrase string,
+) (*Secrets, error) {
 	privateKey, err := readPrivateKeyFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read pgp privateKey: %w", err)
 	}
 
-	// TODO: Ask for passphrase if privateKey is encrypted, or else "" if non-encrypted
-	passphrase := ""
-
 	return &Secrets{
 		PrivateKey: privateKey,
 		Passphrase: passphrase,
 	}, nil
 }
 
-func GetSSHSecrets(path string) (*Secrets, error) {
+func GetSSHSecrets(
+	path, passphrase string,
+) (*Secrets, error) {
 	privateKey, err := readPrivateKeyFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read ssh privateKey: %w", err)
 	}
 
-	// TODO: Ask for passphrase if privateKey is encrypted, or else "" if non-encrypted
-	passphrase := ""
-
 	return &Secrets{
 		PrivateKey: privateKey,
 		Passphrase: passphrase,
 	}, nil
 }
 
-func SyncSSHSecrets(ctx context.Context, secrets *Secrets) (*ssh.PublicKeys, error) {
+func SyncSSHSecrets(
+	ctx context.Context,
+	secrets *Secrets,
+) (*ssh.PublicKeys, error) {
 	if secrets == nil {
 		return nil, fmt.Errorf("ssh information is nil")
 	}
 
 	privateKeyBytes := []byte(secrets.PrivateKey)
-	passphraseBytes := []byte(secrets.Passphrase)
 
 	// Decrypt the private key
-	publicKeys, err := ssh.NewPublicKeys("git", privateKeyBytes, string(passphraseBytes))
+	publicKeys, err := ssh.NewPublicKeys("git", privateKeyBytes, secrets.Passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create public keys from secret: %w", err)
 	}
@@ -66,7 +66,9 @@ func SyncSSHSecrets(ctx context.Context, secrets *Secrets) (*ssh.PublicKeys, err
 	return publicKeys, nil
 }
 
-func readPrivateKeyFile(path string) (string, error) {
+func readPrivateKeyFile(
+	path string,
+) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("secret path is not provided")
 	}
@@ -85,7 +87,9 @@ func readPrivateKeyFile(path string) (string, error) {
 	return privateKey, nil
 }
 
-func readFile(path string) ([]byte, error) {
+func readFile(
+	path string,
+) ([]byte, error) {
 	p := filepath.Join(filepath.Clean(path))
 	if _, err := os.Stat(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		// Unknown error
@@ -101,7 +105,10 @@ func readFile(path string) ([]byte, error) {
 	return file, nil
 }
 
-func GetGpgEntity(ctx context.Context, secrets *Secrets) (*openpgp.Entity, error) {
+func GetPGPEntity(
+	ctx context.Context,
+	secrets *Secrets,
+) (*openpgp.Entity, error) {
 	if secrets == nil {
 		return nil, fmt.Errorf("secret object is nil")
 	} else if secrets.PrivateKey == "" {
@@ -132,8 +139,12 @@ func GetGpgEntity(ctx context.Context, secrets *Secrets) (*openpgp.Entity, error
 	return entity, nil
 }
 
-func CreateDetachedSignature(ctx context.Context, fileContent []byte, secrets *Secrets) ([]byte, error) {
-	signKey, err := GetGpgEntity(ctx, secrets)
+func CreateDetachedSignature(
+	ctx context.Context,
+	fileContent []byte,
+	secrets *Secrets,
+) ([]byte, error) {
+	signKey, err := GetPGPEntity(ctx, secrets)
 	if err != nil {
 		return nil, fmt.Errorf("get pgp entity: %w", err)
 	}
@@ -143,7 +154,10 @@ func CreateDetachedSignature(ctx context.Context, fileContent []byte, secrets *S
 
 // createDetachedSignature takes the raw bytes of a file and a GPG entity,
 // and returns the raw bytes of an armored, detached signature.
-func CreateDetachedSignatureByEntity(fileContent []byte, signKey *openpgp.Entity) ([]byte, error) {
+func CreateDetachedSignatureByEntity(
+	fileContent []byte,
+	signKey *openpgp.Entity,
+) ([]byte, error) {
 	// Create a buffer to hold the armored signature
 	sigBuf := new(bytes.Buffer)
 	armorWriter, err := armor.Encode(sigBuf, openpgp.SignatureType, nil)
