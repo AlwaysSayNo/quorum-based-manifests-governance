@@ -677,7 +677,7 @@ func (p *gitProvider) syncAndLock(
 		p.mu.Unlock()
 		return nil, nil, nil, fmt.Errorf("could not get repository worktree: %w", err)
 	}
-	gpgEntity, err := p.getGpgEntity(ctx)
+	gpgEntity, err := p.getPGPEntity(ctx)
 	if err != nil {
 		p.mu.Unlock()
 		return nil, nil, nil, fmt.Errorf("failed to load GPG signing key: %w", err)
@@ -797,7 +797,7 @@ func (p *gitProvider) commitAndPush(
 	return commitHash.String(), nil
 }
 
-func (p *gitProvider) getGpgEntity(
+func (p *gitProvider) getPGPEntity(
 	ctx context.Context,
 ) (*openpgp.Entity, error) {
 	if p.pgpSecrets.PrivateKey == "" {
@@ -844,9 +844,13 @@ func createDetachedSignature(
 	// Generate the detached signature from the file content
 	err = openpgp.DetachSign(armorWriter, signKey, bytes.NewReader(fileContent), nil)
 	if err != nil {
+		armorWriter.Close()
 		return nil, fmt.Errorf("failed to create detached signature: %w", err)
 	}
-	armorWriter.Close()
+
+    if err := armorWriter.Close(); err != nil {
+        return nil, fmt.Errorf("failed to finalize signature: %w", err)
+    }
 
 	return sigBuf.Bytes(), nil
 }

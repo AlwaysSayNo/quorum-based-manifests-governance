@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 )
 
@@ -30,9 +31,9 @@ type GitRepositoryProvider interface {
 	HasRevision(ctx context.Context, commit string) (bool, error)
 	GetLatestRevision(ctx context.Context) (string, error)
 	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]FileBytesWithStatus, error)
-	PushSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, signatureData SignatureData) (string, error)
+	PushGovernorSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
 	GetQubmangoIndex(ctx context.Context) (*QubmangoIndex, error)
-	GetActiveMSR(ctx context.Context, policy *QubmangoPolicy) (*ManifestSigningRequestManifestObject, []byte, SignatureData, []SignatureData, error)
+	GetLatestMSR(ctx context.Context, policy *QubmangoPolicy) (*ManifestSigningRequestManifestObject, []byte, SignatureData, []SignatureData, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.

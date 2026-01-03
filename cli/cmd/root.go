@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -57,6 +58,52 @@ func Execute() {
 func init() {
 }
 
+func fetchLatestMSR(
+	repoProvider manager.GitRepositoryProvider,
+) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {
+
+	// Take QubmangoIndex from the repository
+	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("get QubmangoIndex: %w", err)
+	}
+
+	// Get policy from qubmango index
+	policy, err := getGovernancePolicy(qubmangoIndex, mrtAlias)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("get governance policy: %w", err)
+	}
+
+	// Fetch the latest MSR, its and governors signatures
+	return repoProvider.GetLatestMSR(ctx, policy)
+}
+
+// getGovernancePolicy returns specific policy by MRT alias. If QubmangoIndex contains only one policy - alias can be empty string.
+// If QubmangoIndex contains >= 1 policies - alias required.
+func getGovernancePolicy(
+	qubmangoIndex *manager.QubmangoIndex,
+	alias string,
+) (*manager.QubmangoPolicy, error) {
+	if len(qubmangoIndex.Spec.Policies) == 1 && alias == "" {
+		return &qubmangoIndex.Spec.Policies[0], nil
+	}
+
+	if len(qubmangoIndex.Spec.Policies) > 1 && alias == "" {
+		return nil, fmt.Errorf("index file contains more than 1 entry and no mrtAlias was provided")
+	}
+
+	// Find policy with mrtAlias and fetch governanceFolderPath
+	governanceIndex := slices.IndexFunc(qubmangoIndex.Spec.Policies, func(p manager.QubmangoPolicy) bool {
+		return p.Alias == mrtAlias
+	})
+
+	if governanceIndex == -1 || len(qubmangoIndex.Spec.Policies) == 0 {
+		return nil, fmt.Errorf("no ManifestRequestTemplate index found for mrtAlias %s", mrtAlias)
+	}
+
+	return &qubmangoIndex.Spec.Policies[governanceIndex], nil
+}
+
 func repositoryManager() *manager.Manager {
 	m := manager.NewManager()
 	m.Register(&github.GitProviderFactory{})
@@ -76,7 +123,59 @@ func getRepoAlias() (string, error) {
 	return "", fmt.Errorf("no current repository is set")
 }
 
-func getSSHPassphrase(w io.Writer) (string, error) {
+func getRepositoryProviderWithInput(
+	requestSSH, requestPGP bool,
+	w io.Writer,
+) (manager.GitRepositoryProvider, error) {
+	sshPass := ""
+	var err error
+
+	if requestSSH {
+		sshPass, err = getSSHPassphrase(w)
+		if err != nil {
+			return nil, fmt.Errorf("get SSH passphrase: %w", err)
+		}
+	}
+
+	pgpPass := ""
+	if requestPGP {
+		pgpPass, err = getPGPPassphrase(w)
+		if err != nil {
+			return nil, fmt.Errorf("get PGP passphrase: %w", err)
+		}
+	}
+
+	return getRepositoryProvider(sshPass, pgpPass)
+}
+
+func getRepositoryProvider(
+	sshPass, pgpPass string,
+) (manager.GitRepositoryProvider, error) {
+	// Get the repo info for repoAlias
+	alias, err := getRepoAlias()
+	if err != nil {
+		return nil, fmt.Errorf("get repository alias: %w", err)
+	}
+
+	repositoryInfo, err := cliConfig.GetRepository(alias)
+	if err != nil {
+		return nil, fmt.Errorf("get repository by alias %s: %w", alias, err)
+	}
+
+	// Initialize the repository provider
+	conf := &manager.GovernorRepositoryConfig{
+		GitRepositoryURL: repositoryInfo.URL,
+		SSHSecretPath:    repositoryInfo.SSHKeyPath,
+		SSHPassphrase:    sshPass,
+		PGPSecretPath:    repositoryInfo.PGPKeyPath,
+		PGPPassphrase:    pgpPass,
+	}
+	return repoManager.GetProvider(ctx, conf)
+}
+
+func getSSHPassphrase(
+	w io.Writer,
+) (string, error) {
 	if sshPassphrase != "" {
 		return sshPassphrase, nil
 	}
@@ -84,7 +183,9 @@ func getSSHPassphrase(w io.Writer) (string, error) {
 	return sshPassphrase, err
 }
 
-func getPGPPassphrase(w io.Writer) (string, error) {
+func getPGPPassphrase(
+	w io.Writer,
+) (string, error) {
 	if pgpPassphrase != "" {
 		return pgpPassphrase, nil
 	}
@@ -106,4 +207,13 @@ func getSecretInput(
 	fmt.Fprintln(w)
 
 	return string(bytePassword), nil
+}
+
+func getUserInfoValidated() (config.UserInfo, error) {
+	user := cliConfig.GetData().User
+	if user.Email == "" || user.Name == "" {
+		return config.UserInfo{}, fmt.Errorf("user information missing (email: %s, name: %s)", user.Email, user.Name)
+	}
+
+	return user, nil
 }

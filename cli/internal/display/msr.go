@@ -2,12 +2,8 @@ package display
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -16,9 +12,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/xlab/treeprint"
-	"gopkg.in/yaml.v2"
 
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
+	msrvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/validation"
 )
 
 type SignatureStatus string
@@ -29,12 +25,42 @@ const (
 	MalformedPublicKey SignatureStatus = "⚠️ Malformed public key"
 )
 
-// PrintMSRRaw prints the raw MSR manifest to the writer.
-func PrintMSRRaw(w io.Writer, msr *manager.ManifestSigningRequestManifestObject) error {
-	msrBytes, err := yaml.Marshal(msr)
-	if err != nil {
-		return fmt.Errorf("failed to marshal MSR to YAML: %w", err)
+func PrintIfVerifyFails(
+	w io.Writer,
+	msr *manager.ManifestSigningRequestManifestObject,
+	msrBytes []byte,
+	appSignature manager.SignatureData,
+	governorSignatures []manager.SignatureData,
+	changedFiles map[string]manager.FileBytesWithStatus,
+) error {
+	// Verify, that MSR was signed by the MRT publicKey (from MSR Spec).
+	msg, err := msrvalidation.VerifyMSRSignature(msr, msrBytes, appSignature)
+	// Verify, that files' content isn't changed.
+	if err == nil {
+		msg, err = msrvalidation.VerifyChangedFiles(msr, changedFiles)
 	}
+	if err != nil {
+		printMSRFailed(w, msr, msg, err)
+		return err
+	}
+
+	return nil
+}
+
+// PrintMSRRaw prints the raw MSR manifest to the writer.
+func PrintMSRRaw(
+	w io.Writer,
+	msr *manager.ManifestSigningRequestManifestObject,
+	msrBytes []byte,
+	appSignature manager.SignatureData,
+	governorSignatures []manager.SignatureData,
+	changedFiles map[string]manager.FileBytesWithStatus,
+) error {
+	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
+	if err != nil {
+		return err
+	}
+	
 	_, err = w.Write(msrBytes)
 	return err
 }
@@ -50,14 +76,8 @@ func PrintMSRTable(
 	governorSignatures []manager.SignatureData,
 	changedFiles map[string]manager.FileBytesWithStatus,
 ) error {
-	// Verify, that MSR was signed by the MRT publicKey (from MSR Spec).
-	msg, err := verifyMSRSignature(msr, msrBytes, appSignature)
-	// Verify, that files' content isn't changed.
-	if err == nil {
-		msg, err = verifyChangedFiles(msr, changedFiles)
-	}
+	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
 	if err != nil {
-		printMSRFailed(w, msr, msg, err)
 		return err
 	}
 
@@ -147,110 +167,6 @@ func printMSRInformation(
 		})
 	}
 	changesTable.Render()
-}
-
-// verifyMSRSignature checks the detached signature of the MSR against the operator's public key.
-func verifyMSRSignature(
-	msr *manager.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	signatureData []byte,
-) (string, error) {
-	msg := "CRITICAL WARNING: The Manifest Signing Request itself is invalid or has been tampered with. Do not proceed"
-	if len(signatureData) == 0 {
-		return msg, fmt.Errorf("operator signature is missing")
-	}
-
-	// The MSR spec must contain the public key of the operator that signed it.
-	operatorPubKeyStr := msr.Spec.PublicKey
-	if operatorPubKeyStr == "" {
-		return msg, fmt.Errorf("operator public key is not present in the MSR spec")
-	}
-
-	keyRing, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(operatorPubKeyStr)))
-	if err != nil {
-		return msg, fmt.Errorf("failed to parse operator public key: %w", err)
-	}
-
-	// De-armor the signature before verification
-	armorBlock, err := armor.Decode(bytes.NewReader(signatureData))
-	if err != nil {
-		return msg, fmt.Errorf("failed to decode armored signature: %w", err)
-	}
-
-	_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), armorBlock.Body, nil)
-	if err != nil {
-		return msg, fmt.Errorf("signature verification failed: %w", err)
-	}
-
-	return "", nil
-}
-
-func verifyChangedFiles(
-	msr *manager.ManifestSigningRequestManifestObject,
-	changedFiles map[string]manager.FileBytesWithStatus,
-) (string, error) {
-	msrChanges := msr.Spec.Changes
-	var err error
-	// Check length of both slices.
-	if len(msrChanges) != len(changedFiles) {
-		err = fmt.Errorf("different changes length: %d (MSR) != %d (Git)", len(msrChanges), len(changedFiles))
-	}
-
-	// If lengths are equal, check that they have the same paths / status.
-	if err == nil {
-		for _, cf := range msrChanges {
-			cfGit, ok := changedFiles[cf.Path]
-			if !ok || cfGit.Status != cf.Status {
-				err = fmt.Errorf("Git and MSR have different changed file sets (files / statuses)")
-			}
-		}
-	}
-
-	// Return, if error found.
-	if err != nil {
-		msrFilePathsStr := formatAndSortFiles(msrChanges)
-		gitFilePathsStr := formatAndSortFiles(slices.Collect(maps.Values(changedFiles)))
-
-		return fmt.Sprintf("MSR files:\n%s\n\nGit files:\n%s", msrFilePathsStr, gitFilePathsStr),
-			err
-	}
-
-	// Check, that files have equal hashes.
-	var differentHashes []string
-	for _, cf := range msrChanges {
-		cfGit := changedFiles[cf.Path]
-
-		// Calculate SHA256.
-		hasher := sha256.New()
-		hasher.Write(cfGit.Content)
-		sha256Hex := hex.EncodeToString(hasher.Sum(nil))
-
-		if sha256Hex != cf.SHA256 {
-			differentHashes = append(differentHashes, fmt.Sprintf("%s: %s vs %s", cf.Path, sha256Hex, cf.SHA256))
-		}
-	}
-
-	// Return error, if any file changes have different hashes.
-	if len(differentHashes) != 0 {
-		return fmt.Sprintf("Hashes (Git vs MSR): %s", strings.Join(differentHashes, "\n")),
-			fmt.Errorf("some Git and MSR files have different SHA256")
-	}
-
-	return "", nil
-}
-
-func formatAndSortFiles[T manager.PathStatusGetter](
-	files []T,
-) string {
-	var paths []string
-	for _, f := range files {
-		paths = append(paths, fmt.Sprintf("%s (%s)", f.GetPath(), f.GetStatus()))
-	}
-
-	// Sort ascending lexicographically
-	slices.Sort(paths)
-
-	return strings.Join(paths, "\n")
 }
 
 // evaluateAndBuildRuleTree is a recursive function that evaluates the approval rules

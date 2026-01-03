@@ -61,7 +61,7 @@ type GitRepository struct {
 	SSHURL string `json:"sshUrl,omitempty" yaml:"sshUrl,omitempty"`
 }
 
-type Location struct {
+type Locations struct {
 	GovernancePath string `json:"governancePath" yaml:"governancePath"`
 	SourcePath     string `json:"sourcePath" yaml:"sourcePath"`
 }
@@ -111,7 +111,7 @@ type ManifestSigningRequestSpec struct {
 	MRT               VersionedManifestRef `json:"mrt" yaml:"mrt"`
 	PublicKey         string               `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 	GitRepository     GitRepository        `json:"gitRepository" yaml:"gitRepository"`
-	Location          Location             `json:"locations,omitempty" yaml:"locations,omitempty"`
+	Locations         Locations            `json:"locations,omitempty" yaml:"locations,omitempty"`
 	Changes           []FileChange         `json:"changes" yaml:"changes"`
 	Governors         GovernorList         `json:"governors,omitempty" yaml:"governors,omitempty"`
 	Require           ApprovalRule         `json:"require" yaml:"require"`

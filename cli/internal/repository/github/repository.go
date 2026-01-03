@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"gopkg.in/yaml.v2"
 
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 )
@@ -288,12 +290,124 @@ func (p *gitProvider) patchToFileChangeList(
 	return result, nil
 }
 
-func (p *gitProvider) PushSignature(
+func (p *gitProvider) PushGovernorSignature(
 	ctx context.Context,
 	msr *manager.ManifestSigningRequestManifestObject,
-	signatureData manager.SignatureData,
+	user config.UserInfo,
 ) (string, error) {
-	return "", nil
+	worktree, rollback, pgpEntity, err := p.syncAndLock3(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	// Sign MSR as a governor and add it to the governance signatures folder in the worktree
+	if err := p.createFileGovernorSignatureAndAttach(worktree, pgpEntity, msr, msr.ObjectMeta.Name, msr.Spec.Locations.GovernancePath, msr.Spec.Version); err != nil {
+		rollback()
+		return "", fmt.Errorf("stage governor signature: %w", err)
+	}
+
+	// Created signed commit and push it to the remote repo
+	commitMsg := fmt.Sprintf("%s signs ManifestSigningRequest %s with version %d", user.Name, msr.ObjectMeta.Name, msr.Spec.Version)
+	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, pgpEntity, user)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("commit and push: %w", err)
+	}
+
+	return commitHash, nil
+}
+
+func (p *gitProvider) createFileGovernorSignatureAndAttach(
+	worktree *git.Worktree,
+	pgpEntity *openpgp.Entity,
+	file any,
+	fileName, inRepoFolderPath string,
+	version int,
+) error {
+	// Create signatures folder.
+	repoSignaturesFolderPath := filepath.Join(inRepoFolderPath, fmt.Sprintf("v_%d", version), "signatures")
+	os.MkdirAll(filepath.Join(p.localPath, repoSignaturesFolderPath), 0644)
+
+	// Convert publicKey into a hash.
+	pubKeyHash, err := crypto.ConvertPublicKeyToHash(pgpEntity)
+	if err != nil {
+		return fmt.Errorf("convert public key into hash: %w", err)
+	}
+
+	// Write signature file into repo folder.
+	sigFileName := fmt.Sprintf("%s.yaml.sig.%s", fileName, pubKeyHash)
+
+	// Convert file object to bytes
+	fileBytes, err := yaml.Marshal(file)
+	if err != nil {
+		return fmt.Errorf("failed to marshal file to YAML: %w", err)
+	}
+
+	// Create detached signature from the bytes.
+	signatureBytes, err := crypto.CreateDetachedSignatureByEntity(fileBytes, pgpEntity)
+	fmt.Println(string(signatureBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create detached signature for MSR: %w", err)
+	}
+	if err := p.createFileAndAddToWorktree(worktree, repoSignaturesFolderPath, sigFileName, signatureBytes); err != nil {
+		return fmt.Errorf("create %s file and add to worktree: %w", sigFileName, err)
+	}
+
+	return nil
+}
+
+func (p *gitProvider) createFileAndAddToWorktree(
+	worktree *git.Worktree,
+	repoFolderPath, fileName string, file []byte,
+) error {
+	filePath := filepath.Join(p.localPath, repoFolderPath, fileName)
+	repoPath := filepath.Join(repoFolderPath, fileName)
+
+	err := os.WriteFile(filePath, file, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write %s file: %w", fileName, err)
+	}
+
+	if _, err = worktree.Add(repoPath); err != nil {
+		return fmt.Errorf("failed to git add file %s to the staging area: %w", fileName, err)
+	}
+
+	return nil
+}
+
+func (p *gitProvider) commitAndPush(
+	ctx context.Context,
+	worktree *git.Worktree,
+	commitMsg string,
+	pgpEntity *openpgp.Entity,
+	user config.UserInfo,
+) (string, error) {
+	if user.Email == "" || user.Name == "" {
+		return "", fmt.Errorf("user information missing (email: %s, name: %s)", user.Email, user.Name)
+	}
+	commitOpts := &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  user.Name,
+			Email: user.Email,
+			When:  time.Now(),
+		},
+		SignKey: pgpEntity,
+	}
+	commitHash, err := worktree.Commit(commitMsg, commitOpts)
+	if err != nil {
+		return "", fmt.Errorf("failed to commit: %w", err)
+	}
+
+	pushOpts := &git.PushOptions{
+		RemoteName: "origin",
+		Auth:       p.auth,
+	}
+	err = p.repo.PushContext(ctx, pushOpts)
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return "", fmt.Errorf("failed to push commit: %w", err)
+	}
+	return commitHash.String(), nil
 }
 
 func (p *gitProvider) GetQubmangoIndex(ctx context.Context,
@@ -337,9 +451,9 @@ func (p *gitProvider) getQubmangoIndexWithPath(
 	return &qubmangoIndex, nil
 }
 
-// GetActiveMSR finds the most recent MSR in the repository and its associated signatures.
+// GetLatestMSR finds the most recent MSR in the repository and its associated signatures.
 // It returns the parsed MSR, its file content, qubmango signature, a list of governor signatures, and an error if any.
-func (p *gitProvider) GetActiveMSR(
+func (p *gitProvider) GetLatestMSR(
 	ctx context.Context,
 	policy *manager.QubmangoPolicy,
 ) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {

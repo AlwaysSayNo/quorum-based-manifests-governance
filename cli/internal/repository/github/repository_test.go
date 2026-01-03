@@ -666,7 +666,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		dummyMSR = &manager.ManifestSigningRequestManifestObject{
 			ObjectMeta: manager.ManifestRef{Name: "test-msr"},
 			Spec: manager.ManifestSigningRequestSpec{
-				Location: manager.Location{GovernancePath: "governance"},
+				Location: manager.Locations{GovernancePath: "governance"},
 			},
 		}
 		// Governance folder in the workspace for writing files

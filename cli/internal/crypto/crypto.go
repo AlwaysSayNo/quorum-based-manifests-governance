@@ -3,6 +3,8 @@ package crypto
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -121,18 +123,26 @@ func GetPGPEntity(
 	}
 	entity := entityList[0]
 
+	// If a passphrase is required but not provided, fail.
+	if secrets.Passphrase == "" {
+		return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
+	}
+
+	passphrase := []byte(secrets.Passphrase)
+
 	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
-		// If a passphrase is required but not provided, fail.
-		if secrets.Passphrase == "" {
-			return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
-		}
-
-		passphrase := []byte(secrets.Passphrase)
-
 		// Attempt to decrypt the private key.
 		err := entity.PrivateKey.Decrypt(passphrase)
 		if err != nil || entity.PrivateKey.Encrypted {
 			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
+		}
+	}
+
+	for i := range entity.Subkeys {
+		if entity.Subkeys[i].PrivateKey != nil && entity.Subkeys[i].PrivateKey.Encrypted {
+			if err := entity.Subkeys[i].PrivateKey.Decrypt(passphrase); err != nil {
+				return nil, fmt.Errorf("failed to decrypt subkey: %w", err)
+			}
 		}
 	}
 
@@ -168,9 +178,30 @@ func CreateDetachedSignatureByEntity(
 	// Generate the detached signature from the file content
 	err = openpgp.DetachSign(armorWriter, signKey, bytes.NewReader(fileContent), nil)
 	if err != nil {
+		armorWriter.Close()
 		return nil, fmt.Errorf("failed to create detached signature: %w", err)
 	}
-	armorWriter.Close()
+
+    if err := armorWriter.Close(); err != nil {
+        return nil, fmt.Errorf("failed to finalize signature: %w", err)
+    }
 
 	return sigBuf.Bytes(), nil
+}
+
+func ConvertPublicKeyToHash(
+	pgpEntity *openpgp.Entity,
+) (string, error) {
+	// Encode the public key to raw bytes
+	pubKeyBuf := new(bytes.Buffer)
+	err := pgpEntity.PrimaryKey.Serialize(pubKeyBuf)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize public key: %w", err)
+	}
+
+	// Hash the public key bytes
+	hasher := sha256.New()
+	hasher.Write(pubKeyBuf.Bytes())
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
