@@ -3,9 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"syscall"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
@@ -13,11 +16,13 @@ import (
 )
 
 var (
-	repoAlias string
-	mrtAlias string
-	cliConfig   config.Config
-	repoManager *manager.Manager
-	ctx context.Context
+	repoAlias     string
+	mrtAlias      string
+	sshPassphrase string
+	pgpPassphrase string
+	cliConfig     config.Config
+	repoManager   *manager.Manager
+	ctx           context.Context
 )
 
 var rootCmd = &cobra.Command{
@@ -69,4 +74,36 @@ func getRepoAlias() (string, error) {
 	}
 
 	return "", fmt.Errorf("no current repository is set")
+}
+
+func getSSHPassphrase(w io.Writer) (string, error) {
+	if sshPassphrase != "" {
+		return sshPassphrase, nil
+	}
+	sshPassphrase, err := getSecretInput(w, "Enter SSH passphrase: ")
+	return sshPassphrase, err
+}
+
+func getPGPPassphrase(w io.Writer) (string, error) {
+	if pgpPassphrase != "" {
+		return pgpPassphrase, nil
+	}
+	pgpPassphrase, err := getSecretInput(w, "Enter PGP passphrase: ")
+	return pgpPassphrase, err
+}
+
+func getSecretInput(
+	w io.Writer,
+	msg string,
+) (string, error) {
+	fmt.Fprint(w, msg)
+
+	// Cast os.Stdin.Fd() to int for the syscall
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", fmt.Errorf("failed to read secret input: %w", err)
+	}
+	fmt.Fprintln(w)
+
+	return string(bytePassword), nil
 }

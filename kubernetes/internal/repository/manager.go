@@ -51,9 +51,8 @@ type GitRepository interface {
 	// Second parameter reflects, whether entry presented in the file before deleting (true if existed). If error occurred - default false.
 	RemoveFromIndexFile(ctx context.Context, operationalFileLocation, governanceIndexAlias string) (string, bool, error)
 
-	// PushSignature commits and pushes a governor's signature to the repository.
-	// This would be used by your CLI/API server.
-	PushSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error)
+	// PushGovernorSignature commits and pushes a qubmango's as a governor signature to the repository.
+	PushGovernorSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
 }
 
 type PgpSecrets struct {

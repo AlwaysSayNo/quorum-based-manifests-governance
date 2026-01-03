@@ -21,3 +21,5 @@ TODO:
 18. Split MRT (maybe MSR, MCA) deletion on sub-steps.
 19. What to do with MSR, MCA after MRT deletion and finish of governance process?
 20. Justify, why default MSR has no signatures and integrate it with CLI (to avoid showing in CLI PENDING)
+21. Implement rejection of ArgoCD requests, when they are rejected by MRT but hit some limit, to avoid dead loops
+22. Fix infinite sync loop (maybe the reason, is that we block sync and allow only the next commit. it partially synced and stopped)

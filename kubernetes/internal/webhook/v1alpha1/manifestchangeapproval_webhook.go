@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
+	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,6 +52,39 @@ var (
 type ManifestChangeApprovalCustomValidator struct {
 	Client  client.Client
 	Decoder admission.Decoder
+	seen    map[string]bool
+	isFirst *bool
+}
+
+func (v *ManifestChangeApprovalCustomValidator) applicationSpecIsTheSame(ctx context.Context, req admission.Request) (bool, error) {
+	if !(req.Kind.Kind == "Application") {
+		return false, nil
+	}
+
+	// Compare Spec for UPDATE operations
+	if req.Operation != admissionv1.Update {
+		return false, nil
+	}
+	oldApp := &argoappv1.Application{}
+	newApp := &argoappv1.Application{}
+
+	// Decode both
+	if err := v.Decoder.DecodeRaw(req.OldObject, oldApp); err != nil {
+		return false, err
+	}
+
+	if err := v.Decoder.Decode(req, newApp); err != nil {
+		return false, err
+	}
+	// CRITICAL: If the Spec hasn't changed (TargetRevision is same),
+	// this is a Status update or Operation termination - allow it.
+	// This lets ArgoCD mark the sync as "Failed" and stop retrying.
+	if reflect.DeepEqual(oldApp.Spec, newApp.Spec) {
+		logger.V(1).Info("Allowing ArgoCD controller to update Application Status/Meta (Spec unchanged)")
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // Handle is the function that gets called for validation admission request.
@@ -59,6 +94,13 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	// }
 
 	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo)
+
+	if ok, err := v.applicationSpecIsTheSame(ctx, req); err == nil && ok {
+		return admission.Allowed("Spec unchanged, allowing status update")
+	} else if err != nil {
+		logger.Error(err, "Error happened")
+		return admission.Denied("Error happened")
+	}
 
 	// Get Application resource for request
 	application, resp, ok := v.getApplication(ctx, req)
@@ -75,13 +117,27 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 		return admission.Allowed("No governing MRT found, allow by default")
 	}
 
+	// Take revision commit hash from Application
+	revision := v.getRevisionFromApplication(application)
+	logger.Info("revision state", "revision", revision)
+
 	if !controllerutil.ContainsFinalizer(mrt, governancecontroller.GovernanceFinalizer) {
 		logger.Info("Governing MRT not initialized yet, wait", "mrtName", mrt.Name, "mrtNamespace", mrt.Namespace)
 		return admission.Denied("Governing MRT not initialized yet, deny by default")
 	}
 
-	// Take revision commit hash from Application
-	revision := v.getRevisionFromApplication(application)
+	// if v.isFirst == nil {
+	// 	tmp := false
+	// 	v.isFirst = &tmp
+	// 	v.seen = make(map[string]bool)
+	// }
+	// if v.seen[revision] {
+	// 	// logger.Info("new obj from request status", "application", application)
+	// 	// logger.Info("old obj from request status", "applicationOld", string(req.OldObject.Raw))
+	// 	return admission.Denied(fmt.Sprintf("Already seen revision: %s", revision))
+	// } else {
+	// 	v.seen[revision] = true
+	// }
 
 	// Get the latest ManifestChangeApproval for current ManifestRequestTemplate
 	mca, resp, ok := v.getMCAForMRT(ctx, mrt)
@@ -97,6 +153,8 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 		return admission.Denied("No MCA found for MRT, deny by default")
 	}
 
+	// TODO: Add here check for old revisions (stop overloading controller)
+
 	// Check, if current revision was approved before (for it exists ManifestChangeApproval)
 	requestedMCAIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
 		return rec.CommitSHA == revision
@@ -108,6 +166,27 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
 			return *resp
 		}
+
+		// // Kill zombi sync, if any
+		// if application.Status.OperationState != nil &&
+		// 	application.Status.OperationState.Phase == synccommon.OperationRunning &&
+		// 	application.Status.OperationState.Operation.Sync != nil {
+
+		// 	syncRevision := application.Status.OperationState.Operation.Sync.Revision
+
+		// 	// If the running sync revision is NOT what the MCA expects
+		// 	if syncRevision != mca.Spec.CommitSHA {
+		// 		logger.Info("Blocking zombie sync operation",
+		// 			"zombieRevision", syncRevision,
+		// 			"expectedRevision", mca.Spec.CommitSHA)
+
+		// 		// We deny it. The MCA Controller will handle the termination.
+		// 		return admission.Denied(fmt.Sprintf(
+		// 			"Aborting stale sync for revision %s. Waiting for sync of %s.",
+		// 			syncRevision, mca.Spec.CommitSHA))
+		// 	}
+		// }
+
 		return admission.Denied(fmt.Sprintf("Change from commit %s has not been approved by the governance board.", revision))
 	}
 

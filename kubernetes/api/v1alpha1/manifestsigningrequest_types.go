@@ -39,10 +39,11 @@ const (
 type MSRActionState string
 
 const (
-	MSRActionStateEmpty              MSRActionState = ""
-	MSRActionStateGitPushMSR         MSRActionState = "MSRActionStateGitPushMSR"
-	MSRActionStateUpdateAfterGitPush MSRActionState = "MSRActionStateUpdateAfterGitPush"
-	MSRActionStateInitSetFinalizer   MSRActionState = "MSRActionStateInitSetFinalizer"
+	MSRActionStateEmpty                     MSRActionState = ""
+	MSRActionStateGitPushMSR                MSRActionState = "MSRActionStateGitPushMSR"
+	MSRActionStateGovernorQubmangoSignature MSRActionState = "MSRActionStateGovernorQubmangoSignature"
+	MSRActionStateUpdateAfterGitPush        MSRActionState = "MSRActionStateUpdateAfterGitPush"
+	MSRActionStateInitSetFinalizer          MSRActionState = "MSRActionStateInitSetFinalizer"
 
 	// Deletion states
 	MSRActionStateDeletion MSRActionState = "MSRActionStateDeletion"

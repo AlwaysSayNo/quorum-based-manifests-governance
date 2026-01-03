@@ -172,6 +172,21 @@ func (mr *MockGitRepositoryMockRecorder) IsNotAfter(ctx, ancestor, child any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNotAfter", reflect.TypeOf((*MockGitRepository)(nil).IsNotAfter), ctx, ancestor, child)
 }
 
+// PushGovernorSignature mocks base method.
+func (m *MockGitRepository) PushGovernorSignature(ctx context.Context, msr *v1alpha1.ManifestSigningRequestManifestObject) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PushGovernorSignature", ctx, msr)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PushGovernorSignature indicates an expected call of PushGovernorSignature.
+func (mr *MockGitRepositoryMockRecorder) PushGovernorSignature(ctx, msr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushGovernorSignature", reflect.TypeOf((*MockGitRepository)(nil).PushGovernorSignature), ctx, msr)
+}
+
 // PushMCA mocks base method.
 func (m *MockGitRepository) PushMCA(ctx context.Context, msr *v1alpha1.ManifestChangeApprovalManifestObject) (string, error) {
 	m.ctrl.T.Helper()
@@ -200,21 +215,6 @@ func (m *MockGitRepository) PushMSR(ctx context.Context, msr *v1alpha1.ManifestS
 func (mr *MockGitRepositoryMockRecorder) PushMSR(ctx, msr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushMSR", reflect.TypeOf((*MockGitRepository)(nil).PushMSR), ctx, msr)
-}
-
-// PushSignature mocks base method.
-func (m *MockGitRepository) PushSignature(ctx context.Context, msr *v1alpha1.ManifestSigningRequest, governorAlias string, signatureData []byte) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PushSignature", ctx, msr, governorAlias, signatureData)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PushSignature indicates an expected call of PushSignature.
-func (mr *MockGitRepositoryMockRecorder) PushSignature(ctx, msr, governorAlias, signatureData any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushSignature", reflect.TypeOf((*MockGitRepository)(nil).PushSignature), ctx, msr, governorAlias, signatureData)
 }
 
 // RemoveFromIndexFile mocks base method.

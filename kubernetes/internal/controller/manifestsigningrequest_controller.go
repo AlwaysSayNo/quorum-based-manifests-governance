@@ -187,12 +187,16 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(
 		// 1. Create an initial MSR file in governance folder in Git repository.
 		r.logger.Info("Pushing initial MSR to Git repository")
 		return r.handleStateGitCommit(ctx, msr)
+	case governancev1alpha1.MSRActionStateGovernorQubmangoSignature:
+		// 2. Create and push qubmango MSR signature as an initial governor.
+		r.logger.Info("Pushing qubmango governor MSR signature to Git repository")
+		return r.handleStateGovernorQubmangoSignature(ctx, msr)
 	case governancev1alpha1.MSRActionStateUpdateAfterGitPush:
-		// 2. Update information in-cluster MSR (add history record) after Git repository push.
+		// 3. Update information in-cluster MSR (add history record) after Git repository push.
 		r.logger.Info("Updating MSR after initial Git push")
 		return r.handleUpdateAfterGitPush(ctx, msr)
 	case governancev1alpha1.MSRActionStateInitSetFinalizer:
-		// 3. Confirm MSR initialization by setting the GovernanceFinalizer.
+		// 4. Confirm MSR initialization by setting the GovernanceFinalizer.
 		r.logger.Info("Setting finalizer to complete initialization")
 		return r.handleStateFinalizer(ctx, msr)
 	default:
@@ -203,7 +207,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(
 }
 
 // handleStateGitCommit pushes the initial MSR manifest to the Git repository.
-// State: MSRStateGitPushMSR → MSRStateUpdateAfterGitPush
+// State: MSRStateGitPushMSR → MSRActionStateGovernorQubmangoSignature
 func (r *ManifestSigningRequestReconciler) handleStateGitCommit(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
@@ -213,9 +217,30 @@ func (r *ManifestSigningRequestReconciler) handleStateGitCommit(
 			r.logger.Info("Saving initial MSR to Git repository", "msr", msr.Name, "namespace", msr.Namespace)
 			if err := r.saveInRepository(ctx, msr); err != nil {
 				r.logger.Error(err, "Failed to save MSR to repository")
-				return "", fmt.Errorf("save MSR in Git repository: %w", err)
+				return "", fmt.Errorf("save MSR to Git repository: %w", err)
 			}
 			r.logger.Info("MSR saved to repository successfully")
+			return governancev1alpha1.MSRActionStateGovernorQubmangoSignature, nil
+		},
+	)
+}
+
+// handleStateQubmangoSignature pushes its own signature, as a governor of MSR to the Git repository.
+// State: MSRActionStateGovernorQubmangoSignature → MSRStateUpdateAfterGitPush
+func (r *ManifestSigningRequestReconciler) handleStateGovernorQubmangoSignature(
+	ctx context.Context,
+	msr *governancev1alpha1.ManifestSigningRequest,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, msr, governancev1alpha1.MSRActionStateGovernorQubmangoSignature, "Pushing qubmango governor MSR signature to Git repository",
+		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
+			r.logger.Info("Saving qubmango governor MSR signature to Git repository", "msr", msr.Name, "namespace", msr.Namespace)
+			repositoryMSR := r.createRepositoryMSR(msr)
+
+			if _, err := r.repository(ctx, msr).PushGovernorSignature(ctx, &repositoryMSR); err != nil {
+				r.logger.Error(err, "Failed to save qubmango governor MSR signature to repository")
+				return "", fmt.Errorf("save qubmango governor MSR signature to Git repository: %w", err)
+			}
+			r.logger.Info("Qubmango governor MSR signature saved to repository successfully")
 			return governancev1alpha1.MSRActionStateUpdateAfterGitPush, nil
 		},
 	)

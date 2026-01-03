@@ -48,6 +48,7 @@ const (
 	GovernanceFinalizer       = "governance.nazar.grynko.com/finalizer"
 	QubmangoOperationalFolder = ".qubmango"
 	QubmangoOperationalFile   = QubmangoOperationalFolder + "/index.yaml"
+	QubmangoGovernanceAlias   = "qubmango"
 )
 
 type RepositoryManager interface {
@@ -568,10 +569,14 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
 				GovernancePath: mrtCopy.Spec.Locations.GovernancePath,
 				SourcePath:     application.Spec.Source.Path,
 			},
-			Changes:   fileChanges,
-			Governors: mrtCopy.Spec.Governors,
-			Require:   mrtCopy.Spec.Require,
-			Status:    governancev1alpha1.Approved,
+			Changes: fileChanges,
+			Governors: governancev1alpha1.GovernorList{
+				Members: []governancev1alpha1.Governor{
+					{Alias: QubmangoGovernanceAlias, PublicKey: mrt.Spec.PGP.PublicKey},
+				},
+			},
+			Require: governancev1alpha1.ApprovalRule{Signer: QubmangoGovernanceAlias},
+			Status:  governancev1alpha1.Approved,
 		},
 	}
 }
@@ -614,9 +619,13 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 				GovernancePath: mrtCopy.Spec.Locations.GovernancePath,
 				SourcePath:     application.Spec.Source.Path,
 			},
-			Changes:   fileChanges,
-			Governors: mrtCopy.Spec.Governors,
-			Require:   mrtCopy.Spec.Require,
+			Changes: fileChanges,
+			Governors: governancev1alpha1.GovernorList{
+				Members: []governancev1alpha1.Governor{
+					{Alias: QubmangoGovernanceAlias, PublicKey: mrt.Spec.PGP.PublicKey},
+				},
+			},
+			Require: governancev1alpha1.ApprovalRule{Signer: QubmangoGovernanceAlias},
 		},
 	}
 }
