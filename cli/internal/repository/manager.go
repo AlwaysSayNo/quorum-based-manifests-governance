@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
@@ -18,6 +19,33 @@ const (
 	DefaultReposPath      = "/tmp/qubmango/git/repos"
 	QubmangoIndexFilePath = ".qubmango/index.yaml"
 )
+
+func NewMyFilePatch(
+	filePatch []diff.FilePatch,
+	message string,
+) *myFilePatch {
+	return &myFilePatch{
+		filePatch: filePatch,
+		message:   message,
+	}
+}
+
+// myFilePatch is a helper struct that implements the diff.Patch interface. This allows to pass arbiter subset of FilePatches to the encoder.
+type myFilePatch struct {
+	filePatch []diff.FilePatch
+	message   string
+}
+
+func (mfp *myFilePatch) FilePatches() []diff.FilePatch {
+	if mfp.filePatch == nil {
+		return nil
+	}
+	return mfp.filePatch
+}
+
+func (mfp *myFilePatch) Message() string {
+	return mfp.message
+}
 
 type GitRepositoryFactory interface {
 	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepositoryProvider, error)
@@ -34,6 +62,7 @@ type GitRepositoryProvider interface {
 	PushGovernorSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
 	GetQubmangoIndex(ctx context.Context) (*QubmangoIndex, error)
 	GetLatestMSR(ctx context.Context, policy *QubmangoPolicy) (*ManifestSigningRequestManifestObject, []byte, SignatureData, []SignatureData, error)
+	GetFileDiffPatchParts(ctx context.Context, msr *ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.

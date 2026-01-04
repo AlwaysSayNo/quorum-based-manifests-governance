@@ -16,6 +16,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"gopkg.in/yaml.v2"
@@ -196,15 +197,9 @@ func (p *gitProvider) GetChangedFilesRaw(
 	}
 
 	// Get fromTree for fromCommit
-	var fromTree *object.Tree
-	if fromCommit == "" {
-		// Handle empty tree case
-		fromTree = &object.Tree{}
-	} else {
-		fromTree, err = p.getTreeForCommit(ctx, fromCommit)
-		if err != nil {
-			return nil, err
-		}
+	fromTree, err := p.getTreeForCommit(ctx, fromCommit)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get patch (file difference) between commits
@@ -220,6 +215,11 @@ func (p *gitProvider) getTreeForCommit(
 	ctx context.Context,
 	hash string,
 ) (*object.Tree, error) {
+	if hash == "" {
+		// Handle empty tree case
+		return &object.Tree{}, nil
+	}
+
 	hashObj := plumbing.NewHash(hash)
 	commitObj, err := p.repo.CommitObject(hashObj)
 	if err != nil {
@@ -243,31 +243,7 @@ func (p *gitProvider) patchToFileChangeList(
 	fromFolderNormalized := filepath.Clean(fromFolder)
 
 	for _, filePatch := range patch.FilePatches() {
-		from, to := filePatch.Files()
-		var path string
-		var status manager.FileChangeStatus
-		var file *object.File
-		var err error
-
-		if from == nil && to != nil {
-			// File was added
-			status = manager.New
-			path = to.Path()
-			file, err = toTree.File(path)
-		} else if from != nil && to == nil {
-			// File was deleted. Take old file information
-			status = manager.Deleted
-			path = from.Path()
-			file, err = fromTree.File(path)
-		} else if from != nil && to != nil {
-			// File was modified
-			status = manager.Updated
-			path = to.Path()
-			file, err = toTree.File(path)
-		} else {
-			continue
-		}
-
+		path, status, file, err := p.getFileMetaInfoForPath(fromTree, toTree, filePatch)
 		if err != nil {
 			return nil, fmt.Errorf("could not get file object for path %s: %w", path, err)
 		}
@@ -288,6 +264,37 @@ func (p *gitProvider) patchToFileChangeList(
 	}
 
 	return result, nil
+}
+
+func (p *gitProvider) getFileMetaInfoForPath(
+	fromTree, toTree *object.Tree,
+	filePatch diff.FilePatch,
+) (string, manager.FileChangeStatus, *object.File, error) {
+	from, to := filePatch.Files()
+	var path string
+	var status manager.FileChangeStatus
+	var file *object.File
+	var err error
+	if from == nil && to != nil {
+		// File was added
+		status = manager.New
+		path = to.Path()
+		file, err = toTree.File(path)
+	} else if from != nil && to == nil {
+		// File was deleted. Take old file information
+		status = manager.Deleted
+		path = from.Path()
+		file, err = fromTree.File(path)
+	} else if from != nil && to != nil {
+		// File was modified
+		status = manager.Updated
+		path = to.Path()
+		file, err = toTree.File(path)
+	} else {
+		err = fmt.Errorf("unsupported patch state: from and to are both nil")
+	}
+
+	return path, status, file, err
 }
 
 func (p *gitProvider) PushGovernorSignature(
@@ -658,4 +665,61 @@ func (p *gitProvider) syncAndLock2(
 	}
 
 	return worktree, rollback, nil
+}
+
+// GetFileDiffPatchParts returns a map<path, patch> for a subset of files in MSR between two commits.
+// Each diff.Patch value in returned map contains only single file patch.
+func (p *gitProvider) GetFileDiffPatchParts(
+	ctx context.Context,
+	msr *manager.ManifestSigningRequestManifestObject,
+	fromCommit, toCommit string,
+) (map[string]diff.Patch, error) {
+	if err := p.Sync(ctx); err != nil {
+		return nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Get toTree for toCommit
+	toTree, err := p.getTreeForCommit(ctx, toCommit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get fromTree for fromCommit
+	fromTree, err := p.getTreeForCommit(ctx, fromCommit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get patch (file difference) between commits
+	patch, err := fromTree.Patch(toTree)
+	if err != nil {
+		return nil, fmt.Errorf("could not compute patch between commits: %w", err)
+	}
+
+	// Create MSR map<path, status>
+	msrFCMap := make(map[string]manager.FileChangeStatus)
+	for _, fc := range msr.Spec.Changes {
+		msrFCMap[fc.Path] = fc.Status
+	}
+
+	// Build result map
+	selectedFilePatches := make(map[string]diff.Patch)
+	for _, filePatch := range patch.FilePatches() {
+		path, status, _, err := p.getFileMetaInfoForPath(fromTree, toTree, filePatch)
+		if err != nil {
+			return nil, fmt.Errorf("could not get file object for path %s: %w", path, err)
+		}
+
+		if msrStatus, exists := msrFCMap[path]; exists && msrStatus == status {
+			selectedFilePatches[path] = manager.NewMyFilePatch([]diff.FilePatch{filePatch}, patch.Message())
+		}
+	}
+
+	// Check, that result and MSR changes have the same length
+	if len(selectedFilePatches) != len(msr.Spec.Changes) {
+		return nil, fmt.Errorf("end file slice is %d elements long, when MSR has %d", len(selectedFilePatches), len(msr.Spec.Changes))
+	}
+	return selectedFilePatches, nil
 }

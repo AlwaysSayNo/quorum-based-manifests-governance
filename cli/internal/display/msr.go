@@ -10,6 +10,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/fatih/color"
+	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/olekukonko/tablewriter"
 	"github.com/xlab/treeprint"
 
@@ -47,6 +48,99 @@ func PrintIfVerifyFails(
 	return nil
 }
 
+// PrintMSRFileDiffs
+// PrintMSRFileDiffs prints a colored git-diff of the files MSR.
+func PrintMSRFileDiffs(
+	w io.Writer,
+	msr *manager.ManifestSigningRequestManifestObject,
+	msrBytes []byte,
+	appSignature manager.SignatureData,
+	governorSignatures []manager.SignatureData,
+	changedFiles map[string]manager.FileBytesWithStatus,
+	patches map[string]diff.Patch,
+) error {
+	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
+	if err != nil {
+		return err
+	}
+
+	// Render MSR general info
+	fmt.Fprintf(w, "Manifest Signing Request: %s v%d\n\n", msr.ObjectMeta.Namespace+":"+msr.ObjectMeta.Name, msr.Spec.Version)
+	fmt.Fprintf(w, "QuBManGo Operator: %s\n", color.GreenString("Verified"))
+	fmt.Fprintf(w, "Changed Files: %s\n", color.GreenString("Verified"))
+	fmt.Fprintln(w, "")
+	fmt.Fprintf(w, "Files Diffs (from commit %s to %s):\n\n", msr.Spec.PreviousCommitSHA[:7], msr.Spec.CommitSHA[:7])
+
+	for _, change := range msr.Spec.Changes {
+		// Print a header for each file
+		fmt.Fprintln(w, strings.Repeat("=", 80))
+		fmt.Fprintln(w, "File:", color.CyanString(change.Path))
+		fmt.Fprintln(w, "Status:", statusColored(change.Status))
+		fmt.Fprintln(w, strings.Repeat("-", 80))
+
+		// Convert patch into string
+		pStr, err := patchToString(patches[change.Path])
+		if err != nil {
+			fmt.Fprintln(w, color.RedString("Could not generate diff: %v", err))
+			continue
+		}
+
+		// Print the colored diff
+		printColoredDiff(w, pStr)
+	}
+
+	return nil
+}
+
+// statusColored converts status enum into colored string based on its value.
+func statusColored(
+	status manager.FileChangeStatus,
+) string {
+	var statusStr string
+	switch status {
+	case manager.New:
+		statusStr = color.GreenString(string(status))
+	case manager.Updated:
+		statusStr = color.YellowString(string(status))
+	case manager.Deleted:
+		statusStr = color.RedString(string(status))
+	default:
+		statusStr = string(status)
+	}
+
+	return statusStr
+}
+
+// printColoredDiff is a helper to print git-style diffs with color.
+func printColoredDiff(w io.Writer, diff string) {
+	lines := strings.Split(diff, "\n")
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "@@"):
+			color.New(color.FgCyan).Fprintln(w, line)
+		case strings.HasPrefix(line, "+"):
+			color.New(color.FgGreen).Fprintln(w, line)
+		case strings.HasPrefix(line, "-"):
+			color.New(color.FgRed).Fprintln(w, line)
+		default:
+			fmt.Fprintln(w, line)
+		}
+	}
+}
+
+// patchToString converts diff.Patch into string.
+func patchToString(
+	patch diff.Patch,
+) (string, error) {
+	var buff bytes.Buffer
+	encoder := diff.NewUnifiedEncoder(&buff, diff.DefaultContextLines)
+	if err := encoder.Encode(patch); err != nil {
+		return "", fmt.Errorf("failed to encode file patch: %w", err)
+	}
+
+	return buff.String(), nil
+}
+
 // PrintMSRRaw prints the raw MSR manifest to the writer.
 func PrintMSRRaw(
 	w io.Writer,
@@ -60,7 +154,7 @@ func PrintMSRRaw(
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = w.Write(msrBytes)
 	return err
 }
@@ -116,7 +210,7 @@ func PrintMSRTable(
 	return nil
 }
 
-// If the MSR itself is not valid, this is a major security warning.
+// printMSRFailed prints failed information, rendering the msg and error. 
 func printMSRFailed(
 	w io.Writer,
 	msr *manager.ManifestSigningRequestManifestObject,
@@ -139,7 +233,7 @@ func printMSRInformation(
 	msr *manager.ManifestSigningRequestManifestObject,
 ) {
 	// Render MSR general info
-	fmt.Fprintf(w, "Active Manifest Signing Request: %s\n\n", msr.ObjectMeta.Namespace+":"+msr.ObjectMeta.Name)
+	fmt.Fprintf(w, "Manifest Signing Request: %s v%d\n\n", msr.ObjectMeta.Namespace+":"+msr.ObjectMeta.Name, msr.Spec.Version)
 	fmt.Fprintf(w, "QuBManGo Operator: %s\n", color.GreenString("Verified"))
 	fmt.Fprintf(w, "Changed Files: %s\n", color.GreenString("Verified"))
 	fmt.Fprintln(w, "")
