@@ -6,8 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	display "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/display"
-	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 )
 
 func init() {
@@ -43,7 +44,7 @@ func init() {
 			if latestMSR.Spec.Version != version {
 				return fmt.Errorf("specified version %d is not the latest", version)
 			}
-			if latestMSR.Spec.Status != manager.InProgress {
+			if latestMSR.Spec.Status != dto.InProgress {
 				return fmt.Errorf("only in-progress MSR can be signed (current status: %s)", latestMSR.Spec.Status)
 			}
 

@@ -1,4 +1,4 @@
-package validator
+package validation
 
 import (
 	"bytes"
@@ -12,12 +12,12 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 
-	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 )
 
 // VerifyMSRSignature checks the detached signature of the MSR against the operator's public key.
 func VerifyMSRSignature(
-	msr *manager.ManifestSigningRequestManifestObject,
+	msr *dto.ManifestSigningRequestManifestObject,
 	msrBytes []byte,
 	signatureData []byte,
 ) (string, error) {
@@ -52,8 +52,8 @@ func VerifyMSRSignature(
 }
 
 func VerifyChangedFiles(
-	msr *manager.ManifestSigningRequestManifestObject,
-	changedFiles map[string]manager.FileBytesWithStatus,
+	msr *dto.ManifestSigningRequestManifestObject,
+	changedFiles map[string]dto.FileBytesWithStatus,
 ) (string, error) {
 	msrChanges := msr.Spec.Changes
 	var err error
@@ -105,7 +105,7 @@ func VerifyChangedFiles(
 	return "", nil
 }
 
-func formatAndSortFiles[T manager.PathStatusGetter](
+func formatAndSortFiles[T dto.PathStatusGetter](
 	files []T,
 ) string {
 	var paths []string

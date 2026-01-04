@@ -11,6 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 )
@@ -52,17 +54,15 @@ type GitRepositoryFactory interface {
 	IdentifyProvider(repoURL string) bool
 }
 
-type SignatureData []byte
-
 type GitRepositoryProvider interface {
 	Sync(ctx context.Context) error
 	HasRevision(ctx context.Context, commit string) (bool, error)
 	GetLatestRevision(ctx context.Context) (string, error)
-	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]FileBytesWithStatus, error)
-	PushGovernorSignature(ctx context.Context, msr *ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
-	GetQubmangoIndex(ctx context.Context) (*QubmangoIndex, error)
-	GetLatestMSR(ctx context.Context, policy *QubmangoPolicy) (*ManifestSigningRequestManifestObject, []byte, SignatureData, []SignatureData, error)
-	GetFileDiffPatchParts(ctx context.Context, msr *ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
+	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]dto.FileBytesWithStatus, error)
+	PushGovernorSignature(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
+	GetQubmangoIndex(ctx context.Context) (*dto.QubmangoIndex, error)
+	GetLatestMSR(ctx context.Context, policy *dto.QubmangoPolicy) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error)
+	GetFileDiffPatchParts(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.

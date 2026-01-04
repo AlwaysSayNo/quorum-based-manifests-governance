@@ -20,6 +20,16 @@ require (
 )
 
 require (
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.0.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.0.0
+)
+
+replace (
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
+)
+
+require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect

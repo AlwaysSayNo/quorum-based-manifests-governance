@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository/github"
@@ -60,7 +62,7 @@ func init() {
 
 func fetchLatestMSR(
 	repoProvider manager.GitRepositoryProvider,
-) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {
+) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
 
 	// Take QubmangoIndex from the repository
 	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
@@ -81,9 +83,9 @@ func fetchLatestMSR(
 // getGovernancePolicy returns specific policy by MRT alias. If QubmangoIndex contains only one policy - alias can be empty string.
 // If QubmangoIndex contains >= 1 policies - alias required.
 func getGovernancePolicy(
-	qubmangoIndex *manager.QubmangoIndex,
+	qubmangoIndex *dto.QubmangoIndex,
 	alias string,
-) (*manager.QubmangoPolicy, error) {
+) (*dto.QubmangoPolicy, error) {
 	if len(qubmangoIndex.Spec.Policies) == 1 && alias == "" {
 		return &qubmangoIndex.Spec.Policies[0], nil
 	}
@@ -93,7 +95,7 @@ func getGovernancePolicy(
 	}
 
 	// Find policy with mrtAlias and fetch governanceFolderPath
-	governanceIndex := slices.IndexFunc(qubmangoIndex.Spec.Policies, func(p manager.QubmangoPolicy) bool {
+	governanceIndex := slices.IndexFunc(qubmangoIndex.Spec.Policies, func(p dto.QubmangoPolicy) bool {
 		return p.Alias == mrtAlias
 	})
 

@@ -182,9 +182,9 @@ func CreateDetachedSignatureByEntity(
 		return nil, fmt.Errorf("failed to create detached signature: %w", err)
 	}
 
-    if err := armorWriter.Close(); err != nil {
-        return nil, fmt.Errorf("failed to finalize signature: %w", err)
-    }
+	if err := armorWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize signature: %w", err)
+	}
 
 	return sigBuf.Bytes(), nil
 }

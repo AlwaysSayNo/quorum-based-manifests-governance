@@ -21,6 +21,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"gopkg.in/yaml.v2"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
@@ -182,7 +184,7 @@ func (p *gitProvider) GetChangedFilesRaw(
 	ctx context.Context,
 	fromCommit, toCommit string,
 	fromFolder string,
-) (map[string]manager.FileBytesWithStatus, error) {
+) (map[string]dto.FileBytesWithStatus, error) {
 	if err := p.Sync(ctx); err != nil {
 		return nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
 	}
@@ -238,8 +240,8 @@ func (p *gitProvider) patchToFileChangeList(
 	fromTree, toTree *object.Tree,
 	patch *object.Patch,
 	fromFolder string,
-) (map[string]manager.FileBytesWithStatus, error) {
-	result := make(map[string]manager.FileBytesWithStatus)
+) (map[string]dto.FileBytesWithStatus, error) {
+	result := make(map[string]dto.FileBytesWithStatus)
 	fromFolderNormalized := filepath.Clean(fromFolder)
 
 	for _, filePatch := range patch.FilePatches() {
@@ -256,7 +258,7 @@ func (p *gitProvider) patchToFileChangeList(
 		if err != nil {
 			return nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
 		}
-		result[path] = manager.FileBytesWithStatus{
+		result[path] = dto.FileBytesWithStatus{
 			Content: []byte(content),
 			Status:  status,
 			Path:    path,
@@ -269,25 +271,25 @@ func (p *gitProvider) patchToFileChangeList(
 func (p *gitProvider) getFileMetaInfoForPath(
 	fromTree, toTree *object.Tree,
 	filePatch diff.FilePatch,
-) (string, manager.FileChangeStatus, *object.File, error) {
+) (string, dto.FileChangeStatus, *object.File, error) {
 	from, to := filePatch.Files()
 	var path string
-	var status manager.FileChangeStatus
+	var status dto.FileChangeStatus
 	var file *object.File
 	var err error
 	if from == nil && to != nil {
 		// File was added
-		status = manager.New
+		status = dto.New
 		path = to.Path()
 		file, err = toTree.File(path)
 	} else if from != nil && to == nil {
 		// File was deleted. Take old file information
-		status = manager.Deleted
+		status = dto.Deleted
 		path = from.Path()
 		file, err = fromTree.File(path)
 	} else if from != nil && to != nil {
 		// File was modified
-		status = manager.Updated
+		status = dto.Updated
 		path = to.Path()
 		file, err = toTree.File(path)
 	} else {
@@ -299,7 +301,7 @@ func (p *gitProvider) getFileMetaInfoForPath(
 
 func (p *gitProvider) PushGovernorSignature(
 	ctx context.Context,
-	msr *manager.ManifestSigningRequestManifestObject,
+	msr *dto.ManifestSigningRequestManifestObject,
 	user config.UserInfo,
 ) (string, error) {
 	worktree, rollback, pgpEntity, err := p.syncAndLock3(ctx)
@@ -418,14 +420,14 @@ func (p *gitProvider) commitAndPush(
 }
 
 func (p *gitProvider) GetQubmangoIndex(ctx context.Context,
-) (*manager.QubmangoIndex, error) {
+) (*dto.QubmangoIndex, error) {
 	return p.getQubmangoIndexWithPath(ctx, manager.QubmangoIndexFilePath)
 }
 
 func (p *gitProvider) getQubmangoIndexWithPath(
 	ctx context.Context,
 	qubmangoFileRepositoryPath string,
-) (*manager.QubmangoIndex, error) {
+) (*dto.QubmangoIndex, error) {
 	_, _, err := p.syncAndLock2(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sync and lock: %w", err)
@@ -450,7 +452,7 @@ func (p *gitProvider) getQubmangoIndexWithPath(
 		return nil, fmt.Errorf("read qubmango index file: %w", err)
 	}
 
-	var qubmangoIndex manager.QubmangoIndex
+	var qubmangoIndex dto.QubmangoIndex
 	if err := yaml.Unmarshal(fileBytes, &qubmangoIndex); err != nil {
 		return nil, fmt.Errorf("unmarshal qubmango index file: %w", err)
 	}
@@ -462,8 +464,8 @@ func (p *gitProvider) getQubmangoIndexWithPath(
 // It returns the parsed MSR, its file content, qubmango signature, a list of governor signatures, and an error if any.
 func (p *gitProvider) GetLatestMSR(
 	ctx context.Context,
-	policy *manager.QubmangoPolicy,
-) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, []manager.SignatureData, error) {
+	policy *dto.QubmangoPolicy,
+) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
 	// Sync and Lock
 	worktree, _, err := p.syncAndLock2(ctx)
 	if err != nil {
@@ -494,7 +496,7 @@ func (p *gitProvider) GetLatestMSR(
 
 func (p *gitProvider) getLatestMSRFolder(
 	worktree *git.Worktree,
-	policy *manager.QubmangoPolicy,
+	policy *dto.QubmangoPolicy,
 ) (string, error) {
 	// Scan for the latest version folder (v_N)
 	fileInfos, err := worktree.Filesystem.ReadDir(policy.GovernancePath)
@@ -534,8 +536,8 @@ func (p *gitProvider) getLatestMSRFolder(
 func (p *gitProvider) getMSRAndSignature(
 	activeMSRFolderPath string,
 	worktree *git.Worktree,
-	policy *manager.QubmangoPolicy,
-) (*manager.ManifestSigningRequestManifestObject, []byte, manager.SignatureData, error) {
+	policy *dto.QubmangoPolicy,
+) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, error) {
 	// Extract MSR Content
 	msrFilePath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml", policy.MSR.Name))
 	msrFile, err := worktree.Filesystem.Open(msrFilePath)
@@ -549,13 +551,13 @@ func (p *gitProvider) getMSRAndSignature(
 		return nil, nil, nil, fmt.Errorf("read msr file content: %w", err)
 	}
 
-	var msr manager.ManifestSigningRequestManifestObject
+	var msr dto.ManifestSigningRequestManifestObject
 	if err := yaml.Unmarshal(msrContent, &msr); err != nil {
 		return nil, nil, nil, fmt.Errorf("unmarshal msr file content: %w", err)
 	}
 
 	// Read msr governance signature (msr.yaml.sig)
-	var msrSignature manager.SignatureData
+	var msrSignature dto.SignatureData
 	appSigPath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MSR.Name))
 
 	msrSigFile, err := worktree.Filesystem.Open(appSigPath)
@@ -569,7 +571,7 @@ func (p *gitProvider) getMSRAndSignature(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("read app signature: %w", err)
 	}
-	msrSignature = manager.SignatureData(sigBytes)
+	msrSignature = dto.SignatureData(sigBytes)
 
 	return &msr, msrContent, msrSignature, nil
 }
@@ -577,10 +579,10 @@ func (p *gitProvider) getMSRAndSignature(
 func (p *gitProvider) readGovernorSignatures(
 	activeMSRFolderPath string,
 	worktree *git.Worktree,
-	policy *manager.QubmangoPolicy,
-) ([]manager.SignatureData, error) {
+	policy *dto.QubmangoPolicy,
+) ([]dto.SignatureData, error) {
 	// Read governor signatures (signatures/msr.yaml.sig.*)
-	var goverSignatures []manager.SignatureData
+	var goverSignatures []dto.SignatureData
 	signaturesFolderPath := filepath.Join(activeMSRFolderPath, "signatures")
 
 	sigFileInfos, err := worktree.Filesystem.ReadDir(signaturesFolderPath)
@@ -612,7 +614,7 @@ func (p *gitProvider) readGovernorSignatures(
 				continue
 			}
 
-			goverSignatures = append(goverSignatures, manager.SignatureData(content))
+			goverSignatures = append(goverSignatures, dto.SignatureData(content))
 		}
 	}
 
@@ -671,7 +673,7 @@ func (p *gitProvider) syncAndLock2(
 // Each diff.Patch value in returned map contains only single file patch.
 func (p *gitProvider) GetFileDiffPatchParts(
 	ctx context.Context,
-	msr *manager.ManifestSigningRequestManifestObject,
+	msr *dto.ManifestSigningRequestManifestObject,
 	fromCommit, toCommit string,
 ) (map[string]diff.Patch, error) {
 	if err := p.Sync(ctx); err != nil {
@@ -699,7 +701,7 @@ func (p *gitProvider) GetFileDiffPatchParts(
 	}
 
 	// Create MSR map<path, status>
-	msrFCMap := make(map[string]manager.FileChangeStatus)
+	msrFCMap := make(map[string]dto.FileChangeStatus)
 	for _, fc := range msr.Spec.Changes {
 		msrFCMap[fc.Path] = fc.Status
 	}
