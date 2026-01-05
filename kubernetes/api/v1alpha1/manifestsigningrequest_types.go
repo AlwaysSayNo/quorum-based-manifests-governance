@@ -142,7 +142,7 @@ type ManifestSigningRequestHistoryRecord struct {
 	// +optional
 	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 
-	// +required
+	// +optional
 	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
@@ -193,7 +193,7 @@ type ManifestSigningRequestStatus struct {
 	// +optional
 	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty" yaml:"requestHistory,omitempty"`
 
-	// +required
+	// +optional
 	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
 
 	// +optional

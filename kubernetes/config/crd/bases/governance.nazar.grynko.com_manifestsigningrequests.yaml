@@ -381,7 +381,6 @@ spec:
                   - governors
                   - previousCommitSha
                   - require
-                  - status
                   - version
                   type: object
                 type: array
@@ -389,8 +388,6 @@ spec:
                 type: string
               status:
                 type: string
-            required:
-            - status
             type: object
         required:
         - spec

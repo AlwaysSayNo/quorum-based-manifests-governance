@@ -8,6 +8,7 @@ import (
 
 type Notifier interface {
 	NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
+	NotifyGovernorsMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error
 }
 
 type slackNotifier struct {
@@ -19,5 +20,9 @@ func NewNotifier() *slackNotifier {
 }
 
 func (s *slackNotifier) NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error {
+	return nil
+}
+
+func (s *slackNotifier) NotifyGovernorsMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error {
 	return nil
 }

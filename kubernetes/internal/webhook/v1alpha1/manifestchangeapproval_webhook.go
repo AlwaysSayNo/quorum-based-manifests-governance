@@ -56,7 +56,7 @@ type ManifestChangeApprovalCustomValidator struct {
 	isFirst *bool
 }
 
-func (v *ManifestChangeApprovalCustomValidator) applicationSpecIsTheSame(ctx context.Context, req admission.Request) (bool, error) {
+func (v *ManifestChangeApprovalCustomValidator) applicationSpecIsTheSame(req admission.Request) (bool, error) {
 	if !(req.Kind.Kind == "Application") {
 		return false, nil
 	}
@@ -95,7 +95,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 
 	logger = logf.FromContext(ctx).WithValues("controller", "AdmissionWebhook", "user", req.UserInfo)
 
-	if ok, err := v.applicationSpecIsTheSame(ctx, req); err == nil && ok {
+	if ok, err := v.applicationSpecIsTheSame(req); err == nil && ok {
 		return admission.Allowed("Spec unchanged, allowing status update")
 	} else if err != nil {
 		logger.Error(err, "Error happened")
@@ -208,7 +208,7 @@ func (v *ManifestChangeApprovalCustomValidator) getApplication(ctx context.Conte
 	if req.Kind.Kind != "Application" {
 		return v.getApplicationFromNonApplicationRequest(ctx, req)
 	} else {
-		return v.getApplicationFromApplicationRequest(ctx, req)
+		return v.getApplicationFromApplicationRequest(req)
 	}
 }
 
@@ -249,7 +249,7 @@ func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplication
 	return application, nil, true
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getApplicationFromApplicationRequest(ctx context.Context, req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
+func (v *ManifestChangeApprovalCustomValidator) getApplicationFromApplicationRequest(req admission.Request) (*argoappv1.Application, *admission.Response, bool) {
 	gvk := v.getGroupVersionKind(req)
 
 	application := &argoappv1.Application{}

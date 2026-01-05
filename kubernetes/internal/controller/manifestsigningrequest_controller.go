@@ -39,8 +39,11 @@ import (
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
+const ScheduledInterval = 5 * time.Minute
+
 type Notifier interface {
 	NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
+	NotifyGovernorsMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error
 }
 
 // MSRStateHandler defines a function that performs work within a state and returns the next state
@@ -113,7 +116,9 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 
 	// Handle normal reconciliation (after initialization)
 	r.logger.Info("MSR initialized, processing normal reconciliation", "actionState", msr.Status.ActionState)
-	return r.reconcileNormal(ctx, msr, req)
+	result, err := r.reconcileNormal(ctx, msr, req)
+
+	return r.handleResult(result, err)
 }
 
 // reconcileDelete handles cleanup when MSR is marked for deletion.
@@ -292,6 +297,25 @@ func (r *ManifestSigningRequestReconciler) handleStateFinalizer(
 			return governancev1alpha1.MSRActionStateEmpty, nil
 		},
 	)
+}
+
+// handleResult acts as a middleware to ensure polling is applied on success
+func (r *ManifestSigningRequestReconciler) handleResult(
+	result ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	// If there is an error, let the controller-runtime handle exponential backoff.
+	if err != nil {
+		return result, err
+	}
+
+	// Skip explicitly requested Requeue.
+	if result.Requeue || result.RequeueAfter > 0 {
+		return result, nil
+	}
+
+	// If the logic returned empty result - use Scheduled interval to requeue later.
+	return ctrl.Result{RequeueAfter: ScheduledInterval}, nil
 }
 
 // reconcileNormal handles reconciliation for initialized MSR resources.
@@ -605,16 +629,16 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 			if !msrvalidation.EvaluateRules(dtoMSR.Spec.Require, verifiedSigners) {
 				// Rules not fulfilled yet - abort the MSRRulesFulfillmentState
 				r.logger.Info("Rules not fulfilled yet, waiting for more signatures", "version", msr.Spec.Version)
-				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil 
+				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
 			}
 
 			// Rules fulfilled. Collect fulfillment signatures
 			r.logger.Info("Updating MSR status to Approved", "version", msr.Spec.Version)
-			
+
 			collectedSigs := r.extractCollectedSignatures(verifiedSigners)
 			msr.Status.CollectedSignatures = collectedSigs
 			msr.Status.Status = governancev1alpha1.Approved
-			
+
 			// Update the latest RequestHistory record with collected signatures
 			if len(msr.Status.RequestHistory) > 0 {
 				latestIdx := len(msr.Status.RequestHistory) - 1

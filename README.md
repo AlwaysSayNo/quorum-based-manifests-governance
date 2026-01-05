@@ -25,3 +25,6 @@ TODO:
 22. Fix infinite sync loop (maybe the reason, is that we block sync and allow only the next commit. it partially synced and stopped)
 23. Remove Status from MSR, because it's not needed. Only latest MSR matters. Or even better move it to Status (CLI) (Done)
 24. Release all locks, in case of failures. (Done)
+25. Move notification from MSR to MCA
+26. Update MCA documentation (create, reconcile)
+27. Add proactive in MRT

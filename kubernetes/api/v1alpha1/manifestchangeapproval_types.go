@@ -43,6 +43,7 @@ const (
 	MCAReconcileNewMCASpecStateGitPushMCA         MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateGitPushMCA"
 	MCAReconcileNewMCASpecStateUpdateArgoCD       MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateArgoCD"
 	MCAReconcileNewMCASpecStateUpdateAfterGitPush MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateAfterGitPush"
+	MCAReconcileNewMCASpecStateNotifyGovernors    MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateNotifyGovernors"
 )
 
 // ManifestChangeApprovalSpec defines the desired state of ManifestChangeApproval

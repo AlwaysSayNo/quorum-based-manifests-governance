@@ -49,6 +49,7 @@ type ManifestChangeApprovalReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
+	Notifier    Notifier
 	logger      logr.Logger
 }
 
@@ -135,9 +136,10 @@ func (r *ManifestChangeApprovalReconciler) isLockForMoreThan(
 
 // reconcileCreate handles initialization of a new MCA.
 // It progresses through these states:
-// 1. MCAStateGitPushMCA: Push initial MCA manifest to Git
-// 2. MCAStateUpdateAfterGitPush: Update in-cluster history after push
-// 3. MCAStateInitSetFinalizer: Set finalizer to complete initialization
+// 1. MCAActionStateGitPushMCA: Push initial MCA manifest to Git
+// 2. MCAActionStateUpdateAfterGitPush: Update in-cluster history after push
+// 3. MCAActionStateUpdateArgoCD: Update ArgoCD Application targetRevision
+// 4. MCAActionStateInitSetFinalizer: Set finalizer to complete initialization
 func (r *ManifestChangeApprovalReconciler) reconcileCreate(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -176,7 +178,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(
 }
 
 // handleStateGitCommit pushes the initial MCA manifest to the Git repository.
-// State: MCAStateGitPushMCA → MCAStateUpdateAfterGitPush
+// State: MCAActionStateGitPushMCA → MCAActionStateUpdateAfterGitPush
 func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -195,7 +197,7 @@ func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
 }
 
 // handleUpdateAfterGitPush updates the in-cluster MCA status with history after Git push.
-// State: MCAStateUpdateAfterGitPush → MCAStateInitSetFinalizer
+// State: MCAActionStateUpdateAfterGitPush → MCAActionStateUpdateArgoCD
 func (r *ManifestChangeApprovalReconciler) handleUpdateAfterGitPush(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -262,7 +264,7 @@ func (r *ManifestChangeApprovalReconciler) handleStateUpdateArgoCD(
 }
 
 // handleStateFinalizer sets the GovernanceFinalizer on the MCA to complete initialization.
-// State: MCAStateInitSetFinalizer → MCAEmptyActionState
+// State: MCAActionStateInitSetFinalizer → MCAActionStateEmpty
 func (r *ManifestChangeApprovalReconciler) handleStateFinalizer(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -328,9 +330,10 @@ func (r *ManifestChangeApprovalReconciler) reconcileNormal(
 
 // handleReconcileNewMCASpec orchestrates processing of a new MCA Spec version.
 // State: MCAReconcileNewMCASpec with sub-states:
-// 1. MCAReconcileStateGitPushMCA: Push updated MCA to Git
-// 2. MCAReconcileRStateUpdateAfterGitPush: Add history record
-// 3. MCAReconcileRStateNotifyGovernors: Notify governors
+// 1. MCAReconcileNewMCASpecStateGitPushMCA: Push updated MCA to Git
+// 2. MCAReconcileNewMCASpecStateUpdateAfterGitPush: Add history record
+// 3. MCAReconcileNewMCASpecStateUpdateArgoCD: Update ArgoCD Application targetRevision
+// 4. MCAReconcileRStateNotifyGovernors: Notify governors
 // Final state: MCAEmptyActionState
 func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 	ctx context.Context,
@@ -360,6 +363,10 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 		return r.handleMCAReconcileStateGitCommit(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush:
 		return r.handleMCAReconcileStateUpdateAfterGitPush(ctx, mca)
+	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateArgoCD:
+		return r.handleReconcileStateUpdateArgoCD(ctx, mca)
+	case governancev1alpha1.MCAReconcileNewMCASpecStateNotifyGovernors:
+		return r.handleReconcileStateNotifyGovernors(ctx, mca)
 	default:
 		err := fmt.Errorf("unknown ReconcileState: %s", string(mca.Status.ReconcileState))
 		r.logger.Error(err, "Invalid reconcile state")
@@ -369,7 +376,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 }
 
 // handleMCAReconcileStateGitCommit pushes the updated MCA manifest to Git repository.
-// Sub-state: MCAReconcileStateGitPushMCA → MCAReconcileRStateUpdateAfterGitPush
+// Sub-state: MCAReconcileNewMCASpecStateGitPushMCA → MCAReconcileNewMCASpecStateUpdateAfterGitPush
 func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -388,7 +395,7 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 }
 
 // handleMCAReconcileStateUpdateAfterGitPush adds a history record after Git push.
-// Sub-state: MCAReconcileRStateUpdateAfterGitPush → MCAReconcileNewMCASpecStateUpdateArgoCD
+// Sub-state: MCAReconcileNewMCASpecStateUpdateAfterGitPush → MCAReconcileNewMCASpecStateUpdateArgoCD
 func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGitPush(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -409,12 +416,12 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGit
 }
 
 // handleReconcileStateUpdateArgoCD updates the ArgoCD Application's targetRevision to the approved Commit SHA.
-// Sub-state: MCAReconcileNewMCASpecStateUpdateArgoCD → MCAReconcileNewMCASpecStateEmpty
+// Sub-state: MCAReconcileNewMCASpecStateUpdateArgoCD → MCAReconcileNewMCASpecStateNotifyGovernors
 func (r *ManifestChangeApprovalReconciler) handleReconcileStateUpdateArgoCD(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) (ctrl.Result, error) {
-	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateEmpty,
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
 			// Get the Application
 			app, err := r.getApplicationForMCA(ctx, mca)
@@ -434,6 +441,25 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileStateUpdateArgoCD(
 			}
 
 			r.logger.Info("ArgoCD Application updated successfully")
+			return governancev1alpha1.MCAReconcileNewMCASpecStateNotifyGovernors, nil
+		},
+	)
+}
+
+// handleReconcileStateNotifyGovernors sends notifications to governors about new approval.
+// Sub-state: MCAReconcileNewMCASpecStateNotifyGovernors → MCAReconcileNewMCASpecStateEmpty
+func (r *ManifestChangeApprovalReconciler) handleReconcileStateNotifyGovernors(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateEmpty,
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
+			r.logger.Info("Sending notifications to governors", "version", mca.Spec.Version, "requireSignatures", mca.Spec.Require)
+			if err := r.Notifier.NotifyGovernorsMCA(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to send notifications to governors", "version", mca.Spec.Version)
+				return "", fmt.Errorf("send notification to governors: %w", err)
+			}
+			r.logger.Info("Notifications sent successfully, spec reconciliation complete", "version", mca.Spec.Version)
 			return governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, nil
 		},
 	)

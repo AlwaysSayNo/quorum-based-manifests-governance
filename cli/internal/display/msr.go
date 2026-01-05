@@ -60,7 +60,7 @@ func PrintMSRFileDiffs(
 	fmt.Fprintf(w, "QuBManGo Operator: %s\n", color.GreenString("Verified"))
 	fmt.Fprintf(w, "Changed Files: %s\n", color.GreenString("Verified"))
 	fmt.Fprintln(w, "")
-	fmt.Fprintf(w, "Files Diffs (from commit %s to %s):\n\n", msr.Spec.PreviousCommitSHA[:7], msr.Spec.CommitSHA[:7])
+	fmt.Fprintf(w, "Files Diffs (from commit %s to %s):\n\n", shortCommitSHA(msr.Spec.PreviousCommitSHA), shortCommitSHA(msr.Spec.CommitSHA))
 
 	for _, change := range msr.Spec.Changes {
 		// Print a header for each file
@@ -81,6 +81,15 @@ func PrintMSRFileDiffs(
 	}
 
 	return nil
+}
+
+func shortCommitSHA(
+	commitSHA string,
+) string {
+	if len(commitSHA) > 7 {
+		return commitSHA[:7]
+	}
+	return commitSHA
 }
 
 // statusColored converts status enum into colored string based on its value.

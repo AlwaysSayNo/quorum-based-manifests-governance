@@ -663,9 +663,6 @@ func (p *gitProvider) FetchMSRByVersion(
 
 	// Extract MSR Content
 	msrFilePath := filepath.Join(msrFolderPath, fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name))
-	if _, err := os.Stat(msrFilePath); os.IsNotExist(err) {
-		return nil, nil, nil, nil, fmt.Errorf("msr file doesn't exist in repository")
-	}
 	msrFile, err := worktree.Filesystem.Open(msrFilePath)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("open msr file %s: %w", msrFilePath, err)
@@ -685,10 +682,6 @@ func (p *gitProvider) FetchMSRByVersion(
 	// Read msr signature (msr.yaml.sig)
 	var msrSignature dto.SignatureData
 	appSigPath := filepath.Join(msrFolderPath, fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Name))
-	if _, err := os.Stat(appSigPath); os.IsNotExist(err) {
-		return nil, nil, nil, nil, fmt.Errorf("msr signature file doesn't exist in repository")
-	}
-
 	msrSigFile, err := worktree.Filesystem.Open(appSigPath)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("open msr signature file: %w", err)
