@@ -151,8 +151,6 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 		return r.reconcileDelete(ctx, mrt)
 	}
 
-	// return ctrl.Result{}, nil
-
 	// Handle initialization (before finalizer is set)
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
 		r.logger.Info("MRT not initialized, starting initialization flow", "actionState", mrt.Status.ActionState)
@@ -576,7 +574,6 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
 				},
 			},
 			Require: governancev1alpha1.ApprovalRule{Signer: QubmangoGovernanceAlias},
-			Status:  governancev1alpha1.Approved,
 		},
 	}
 }
@@ -614,7 +611,6 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 			GitRepository: governancev1alpha1.GitRepository{
 				SSHURL: mrtCopy.Spec.GitRepository.SSHURL,
 			},
-			LastApprovedCommitSHA: revision, // revision, on which MRT should have been created
 			Locations: governancev1alpha1.Locations{
 				GovernancePath: mrtCopy.Spec.Locations.GovernancePath,
 				SourcePath:     application.Spec.Source.Path,
@@ -625,7 +621,8 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 					{Alias: QubmangoGovernanceAlias, PublicKey: mrt.Spec.PGP.PublicKey},
 				},
 			},
-			Require: governancev1alpha1.ApprovalRule{Signer: QubmangoGovernanceAlias},
+			Require:             governancev1alpha1.ApprovalRule{Signer: QubmangoGovernanceAlias},
+			CollectedSignatures: []governancev1alpha1.Signature{{Signer: QubmangoGovernanceAlias}},
 		},
 	}
 }
@@ -826,6 +823,10 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 		// 3. After MSR is updated, finalize and remove event from queue
 		r.logger.V(2).Info("Dispatching to finalization", "revision", revision)
 		return r.handleSubstateFinish(ctx, mrt, revision)
+	case governancev1alpha1.MRTNewRevisionStateAbort:
+		mrt.Status.RevisionProcessingState = governancev1alpha1.MRTNewRevisionStateEmpty
+		_ = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateEmpty)
+		return ctrl.Result{}, err
 	default:
 		// Any unknown RevisionProcessingState during state processing - error
 		err := fmt.Errorf("unknown RevisionProcessingState state: %s", string(mrt.Status.RevisionProcessingState))
@@ -836,7 +837,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 }
 
 // handleSubStatePreflightCheck decides whether the revision should be processed or skipped.
-// Sub-state: StateRevisionPreflightCheck/StateRevisionEmpty → StateRevisionUpdateMSRSpec (or EmptyActionState if skip)
+// Sub-state: MRTNewRevisionStatePreflightCheck/MRTNewRevisionStateEmpty → MRTNewRevisionStateUpdateMSRSpec (or EmptyActionState if skip)
 func (r *ManifestRequestTemplateReconciler) handleSubStatePreflightCheck(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -861,7 +862,7 @@ func (r *ManifestRequestTemplateReconciler) handleSubStatePreflightCheck(
 					return "", err
 				}
 				// Transition back to Empty (handled by caller)
-				return governancev1alpha1.MRTNewRevisionStateEmpty, nil
+				return governancev1alpha1.MRTNewRevisionStateAbort, nil
 			}
 
 			r.logger.Info("Revision passed pre-flight check, proceeding to MSR update", "revision", revision)
@@ -924,7 +925,7 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 }
 
 // handleSubStateUpdateMSR updates the MSR Spec with changes from the new revision.
-// Sub-state: StateRevisionUpdateMSRSpec → StateRevisionAfterMSRUpdate (or EmptyActionState if no changes)
+// Sub-state: MRTNewRevisionStateUpdateMSRSpec → MRTNewRevisionStateAfterMSRUpdate (or EmptyActionState if no changes)
 func (r *ManifestRequestTemplateReconciler) handleSubStateUpdateMSR(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -948,7 +949,7 @@ func (r *ManifestRequestTemplateReconciler) handleSubStateUpdateMSR(
 					return "", err
 				}
 				// Transition back to Empty (handled by caller)
-				return governancev1alpha1.MRTNewRevisionStateEmpty, nil
+				return governancev1alpha1.MRTNewRevisionStateAbort, nil
 			}
 
 			r.logger.Info("MSR update complete, ready to finalize", "revision", revision)
@@ -986,7 +987,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// Get changed alias from git repository.
-	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.LastApprovedCommitSHA, revision, application.Spec.Source.Path)
+	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
 		return false, fmt.Errorf("get changed files: %w", err)
@@ -1045,8 +1046,8 @@ func (r *ManifestRequestTemplateReconciler) hasNoNewUpdates(
 }
 
 // handleSubstateFinish completes revision processing and removes the event from the queue.
-// Sub-state: StateRevisionAfterMSRUpdate → StateRevisionEmpty (final)
-// Transitions ActionState back to EmptyActionState, completing the revision processing cycle.
+// Sub-state: MRTNewRevisionStateAfterMSRUpdate → MRTNewRevisionStateEmpty (final)
+// Transitions ActionState back to MRTActionStateEmpty, completing the revision processing cycle.
 func (r *ManifestRequestTemplateReconciler) handleSubstateFinish(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -1147,7 +1148,6 @@ func (r *ManifestRequestTemplateReconciler) getMSRWithNewVersion(
 	updatedMSR.Spec.Changes = changedFiles
 	updatedMSR.Spec.Governors = mrtSpecCpy.Governors
 	updatedMSR.Spec.Require = mrtSpecCpy.Require
-	updatedMSR.Spec.Status = governancev1alpha1.InProgress
 
 	return updatedMSR
 }

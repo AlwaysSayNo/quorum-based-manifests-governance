@@ -28,6 +28,7 @@ func init() {
 				return fmt.Errorf("get repository provider: %w", err)
 			}
 
+			// Get latest MSR information
 			latestMSR, msrBytes, appSign, governSigns, err := fetchLatestMSR(repoProvider)
 			if err != nil {
 				return fmt.Errorf("get MSR information from repository: %w", err)

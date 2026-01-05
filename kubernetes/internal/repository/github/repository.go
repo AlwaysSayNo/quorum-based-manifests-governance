@@ -7,12 +7,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-logr/logr"
@@ -636,6 +640,107 @@ func (p *gitProvider) InitializeGovernance(
 	return commitHash, true, nil
 }
 
+func (p *gitProvider) FetchMSRByVersion(
+	ctx context.Context,
+	msr *governancev1alpha1.ManifestSigningRequest,
+) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
+	// Sync and Lock
+	if err := p.Sync(ctx); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("sync repository: %w", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	worktree, err := p.repo.Worktree()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("get repository worktree: %w", err)
+	}
+
+	// Construct the path for the specific version
+	// Path format: GovernancePath/v_{Version}/
+	msrFolderPath := filepath.Join(msr.Spec.Locations.GovernancePath, fmt.Sprintf("v_%d", msr.Spec.Version))
+
+	// Extract MSR Content
+	msrFilePath := filepath.Join(msrFolderPath, fmt.Sprintf("%s.yaml", msr.ObjectMeta.Name))
+	if _, err := os.Stat(msrFilePath); os.IsNotExist(err) {
+		return nil, nil, nil, nil, fmt.Errorf("msr file doesn't exist in repository")
+	}
+	msrFile, err := worktree.Filesystem.Open(msrFilePath)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("open msr file %s: %w", msrFilePath, err)
+	}
+	defer msrFile.Close()
+
+	msrContent, err := io.ReadAll(msrFile)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("read msr file content: %w", err)
+	}
+
+	var fetchedMSR dto.ManifestSigningRequestManifestObject
+	if err := yaml.Unmarshal(msrContent, &fetchedMSR); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("unmarshal msr file content: %w", err)
+	}
+
+	// Read msr signature (msr.yaml.sig)
+	var msrSignature dto.SignatureData
+	appSigPath := filepath.Join(msrFolderPath, fmt.Sprintf("%s.yaml.sig", msr.ObjectMeta.Name))
+	if _, err := os.Stat(appSigPath); os.IsNotExist(err) {
+		return nil, nil, nil, nil, fmt.Errorf("msr signature file doesn't exist in repository")
+	}
+
+	msrSigFile, err := worktree.Filesystem.Open(appSigPath)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("open msr signature file: %w", err)
+	}
+	defer msrSigFile.Close()
+
+	sigBytes, err := io.ReadAll(msrSigFile)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("read msr signature: %w", err)
+	}
+	msrSignature = dto.SignatureData(sigBytes)
+
+	// Fetch governor signatures
+	var goverSignatures []dto.SignatureData
+	signaturesFolderPath := filepath.Join(msrFolderPath, "signatures")
+
+	sigFileInfos, err := worktree.Filesystem.ReadDir(signaturesFolderPath)
+	if err != nil && os.IsNotExist(err) {
+		// It's okay if the signatures folder doesn't exist yet (e.g., initial creation)
+		goverSignatures = []dto.SignatureData{}
+	} else if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("read signatures folder: %w", err)
+	} else {
+		// Regex to match: msr.yaml.sig.{suffix}
+		govSigMatcher := regexp.MustCompile(fmt.Sprintf(`^%s\.yaml\.sig\..+$`, msr.ObjectMeta.Name))
+
+		for _, sigFile := range sigFileInfos {
+			if sigFile.IsDir() {
+				continue
+			}
+
+			if govSigMatcher.MatchString(sigFile.Name()) {
+				fPath := filepath.Join(signaturesFolderPath, sigFile.Name())
+				f, err := worktree.Filesystem.Open(fPath)
+				if err != nil {
+					continue // Skip unreadable files
+				}
+
+				content, err := io.ReadAll(f)
+				f.Close()
+				if err != nil {
+					continue
+				}
+
+				goverSignatures = append(goverSignatures, dto.SignatureData(content))
+			}
+		}
+	}
+
+	return &fetchedMSR, msrContent, msrSignature, goverSignatures, nil
+}
+
 func (p *gitProvider) pushWorkflow(
 	ctx context.Context,
 	files []fileToPush,
@@ -848,9 +953,9 @@ func createDetachedSignature(
 		return nil, fmt.Errorf("failed to create detached signature: %w", err)
 	}
 
-    if err := armorWriter.Close(); err != nil {
-        return nil, fmt.Errorf("failed to finalize signature: %w", err)
-    }
+	if err := armorWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize signature: %w", err)
+	}
 
 	return sigBuf.Bytes(), nil
 }

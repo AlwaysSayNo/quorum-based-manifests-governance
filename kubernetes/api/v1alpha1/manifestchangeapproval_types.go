@@ -72,10 +72,6 @@ type ManifestChangeApprovalSpec struct {
 	// +required
 	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
 
-	// Last approved commit SHA
-	// +optional
-	LastApprovedCommitSHA string `json:"lastApprovedCommitSHA,omitempty" yaml:"lastApprovedCommitSHA,omitempty"`
-
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
 	Locations Locations `json:"locations,omitempty" yaml:"locations,omitempty"`
@@ -93,11 +89,17 @@ type ManifestChangeApprovalSpec struct {
 	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// Signers contains all governors, who signed ManifestSigningRequest, related to this approval
+	// +optional
+	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 }
 
 type ManifestChangeApprovalHistoryRecord struct {
 	// CommitSHA is the SHA of the approved commit
+	// +required
 	CommitSHA string `json:"commitSHA" yaml:"commitSHA"`
+
+	// +required
+	PreviousCommitSHA string `json:"previousCommitSha" yaml:"previousCommitSha"`
 
 	// Time is the time when the approval was created
 	Time metav1.Time `json:"time" yaml:"time"`
@@ -115,7 +117,7 @@ type ManifestChangeApprovalHistoryRecord struct {
 	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// +optional
-	Approves ApproverList `json:"approves,omitempty" yaml:"approves,omitempty"`
+	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 }
 
 // ManifestChangeApprovalStatus defines the observed state of ManifestChangeApproval.
@@ -124,9 +126,6 @@ type ManifestChangeApprovalStatus struct {
 	// History of approvals
 	// +optional
 	ApprovalHistory []ManifestChangeApprovalHistoryRecord `json:"approvalHistory,omitempty" yaml:"approvalHistory,omitempty"`
-
-	// +optional
-	Approves ApproverList `json:"approves" yaml:"approves"`
 
 	// +optional
 	ActionState MCAActionState `json:"actionState,omitempty" yaml:"actionState,omitempty"`

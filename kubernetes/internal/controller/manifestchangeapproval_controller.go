@@ -493,13 +493,14 @@ func (r *ManifestChangeApprovalReconciler) createNewMCAHistoryRecordFromSpec(
 	mcaCopy := mca.DeepCopy()
 
 	return governancev1alpha1.ManifestChangeApprovalHistoryRecord{
-		CommitSHA: mcaCopy.Spec.LastApprovedCommitSHA,
-		Time:      metav1.NewTime(time.Now()),
-		Version:   mcaCopy.Spec.Version,
-		Changes:   mcaCopy.Spec.Changes,
-		Governors: mcaCopy.Spec.Governors,
-		Require:   mcaCopy.Spec.Require,
-		Approves:  mcaCopy.Status.Approves,
+		CommitSHA:           mcaCopy.Spec.CommitSHA,
+		PreviousCommitSHA:   mcaCopy.Spec.PreviousCommitSHA,
+		Time:                metav1.NewTime(time.Now()),
+		Version:             mcaCopy.Spec.Version,
+		Changes:             mcaCopy.Spec.Changes,
+		Governors:           mcaCopy.Spec.Governors,
+		Require:             mcaCopy.Spec.Require,
+		CollectedSignatures: mcaCopy.Spec.CollectedSignatures,
 	}
 }
 

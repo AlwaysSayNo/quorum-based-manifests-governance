@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sync"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -53,6 +55,8 @@ type GitRepository interface {
 
 	// PushGovernorSignature commits and pushes a qubmango's as a governor signature to the repository.
 	PushGovernorSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
+
+	FetchMSRByVersion(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error)
 }
 
 type PgpSecrets struct {

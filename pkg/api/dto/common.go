@@ -40,7 +40,6 @@ type SigningRequestStatus string
 
 const (
 	InProgress  SigningRequestStatus = "In Progress"
-	NotApproved SigningRequestStatus = "Not Approved"
 	Approved    SigningRequestStatus = "Approved"
 )
 

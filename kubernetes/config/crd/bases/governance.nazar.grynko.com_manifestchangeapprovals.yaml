@@ -64,6 +64,17 @@ spec:
                   - status
                   type: object
                 type: array
+              collectedSignatures:
+                description: Signers contains all governors, who signed ManifestSigningRequest,
+                  related to this approval
+                items:
+                  properties:
+                    signer:
+                      type: string
+                  required:
+                  - signer
+                  type: object
+                type: array
               commitSha:
                 type: string
               gitRepository:
@@ -112,9 +123,6 @@ spec:
                 required:
                 - members
                 type: object
-              lastApprovedCommitSHA:
-                description: Last approved commit SHA
-                type: string
               locations:
                 description: Location contains information about where to store MSR,
                   MCA and signatures.
@@ -210,27 +218,6 @@ spec:
                 description: History of approvals
                 items:
                   properties:
-                    approves:
-                      properties:
-                        members:
-                          description: List of governors.
-                          items:
-                            properties:
-                              alias:
-                                description: Alias for governor (for easier identification)
-                                minLength: 1
-                                type: string
-                              publicKey:
-                                description: PublicKey of the governor used to verify
-                                  signatures.
-                                minLength: 1
-                                type: string
-                            required:
-                            - alias
-                            - publicKey
-                            type: object
-                          type: array
-                      type: object
                     changes:
                       items:
                         properties:
@@ -253,6 +240,15 @@ spec:
                         - path
                         - sha256
                         - status
+                        type: object
+                      type: array
+                    collectedSignatures:
+                      items:
+                        properties:
+                          signer:
+                            type: string
+                        required:
+                        - signer
                         type: object
                       type: array
                     commitSHA:
@@ -298,6 +294,8 @@ spec:
                       required:
                       - members
                       type: object
+                    previousCommitSha:
+                      type: string
                     require:
                       description: |-
                         ApprovalRule defines nested rules for approvals required.
@@ -337,31 +335,12 @@ spec:
                   - changes
                   - commitSHA
                   - governors
+                  - previousCommitSha
                   - require
                   - time
                   - version
                   type: object
                 type: array
-              approves:
-                properties:
-                  members:
-                    description: List of governors.
-                    items:
-                      properties:
-                        alias:
-                          description: Alias for governor (for easier identification)
-                          minLength: 1
-                          type: string
-                        publicKey:
-                          description: PublicKey of the governor used to verify signatures.
-                          minLength: 1
-                          type: string
-                      required:
-                      - alias
-                      - publicKey
-                      type: object
-                    type: array
-                type: object
               conditions:
                 description: |-
                   conditions represent the current state of the ManifestChangeApproval resource.

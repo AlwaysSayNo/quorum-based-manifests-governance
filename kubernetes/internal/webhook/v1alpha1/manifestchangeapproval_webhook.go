@@ -193,10 +193,10 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(ctx context.Context, req 
 	// Check, if revision corresponds to the latest ManifestChangeApproval
 	// If not, it might be rollback request and it should be handled differently
 	mcaRecord := mca.Status.ApprovalHistory[requestedMCAIdx]
-	if mcaRecord.CommitSHA != mca.Spec.LastApprovedCommitSHA {
-		logger.Info("Application revision is older than last approved commit in MCA", "requestedRevision", revision, "lastApprovedCommitSHA", mca.Spec.LastApprovedCommitSHA)
+	if mcaRecord.CommitSHA != mca.Spec.CommitSHA {
+		logger.Info("Application revision is older than last approved commit in MCA", "requestedRevision", revision, "lastApprovedCommitSHA", mca.Spec.CommitSHA)
 		// TODO: might be rollback, and should be handled differently. Deny for now
-		return admission.Denied(fmt.Sprintf("Change from commit %s is older than last approved commit %s in MCA.", revision, mca.Spec.LastApprovedCommitSHA))
+		return admission.Denied(fmt.Sprintf("Change from commit %s is older than last approved commit %s in MCA.", revision, mca.Spec.CommitSHA))
 	}
 
 	// Otherwise, the request is latest approved and we allow, to apply it

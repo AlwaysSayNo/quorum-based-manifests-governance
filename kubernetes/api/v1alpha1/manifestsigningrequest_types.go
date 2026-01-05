@@ -31,9 +31,9 @@ const (
 type SigningRequestStatus string
 
 const (
-	InProgress  SigningRequestStatus = "In Progress"
-	NotApproved SigningRequestStatus = "Not Approved"
-	Approved    SigningRequestStatus = "Approved"
+	InProgress SigningRequestStatus = "In Progress"
+	Error      SigningRequestStatus = "Error"
+	Approved   SigningRequestStatus = "Approved"
 )
 
 type MSRActionState string
@@ -48,8 +48,11 @@ const (
 	// Deletion states
 	MSRActionStateDeletion MSRActionState = "MSRActionStateDeletion"
 
-	//
+	// Reconcile new version of MSR
 	MSRActionStateNewMSRSpec MSRActionState = "MSRActionStateNewMSRSpec"
+
+	// Check fulfillment of MSR rules
+	MSRActionStateMSRRulesFulfillment MSRActionState = "MSRActionStateMSRRulesFulfillment"
 )
 
 type MSRReconcileNewMSRSpecState string
@@ -60,6 +63,21 @@ const (
 	MSRReconcileNewMSRSpecStateUpdateAfterGitPush MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateUpdateAfterGitPush"
 	MSRReconcileNewMSRSpecStateNotifyGovernors    MSRReconcileNewMSRSpecState = "MSRReconcileNewMSRSpecStateNotifyGovernors"
 )
+
+type MSRRulesFulfillmentState string
+
+const (
+	MSRRulesFulfillmentStateEmpty           MSRRulesFulfillmentState = ""
+	MSRRulesFulfillmentStateCheckSignatures MSRRulesFulfillmentState = "MSRRulesFulfillmentStateCheckSignatures"
+	MSRRulesFulfillmentStateUpdateMCASpec   MSRRulesFulfillmentState = "MSRRulesFulfillmentStateUpdateMCASpec"
+	MSRRulesFulfillmentStateNotifyGovernors MSRRulesFulfillmentState = "MSRRulesFulfillmentStateNotifyGovernors"
+	MSRRulesFulfillmentStateAbort           MSRRulesFulfillmentState = "MSRRulesFulfillmentStateAbort"
+)
+
+type Signature struct {
+	// +required
+	Signer string `json:"signer" yaml:"signer"`
+}
 
 type Locations struct {
 	// GovernancePath where MSR, MCA and Signatures will be stored.
@@ -103,6 +121,11 @@ type ApproverList struct {
 }
 
 type ManifestSigningRequestHistoryRecord struct {
+	// +required
+	CommitSHA string `json:"commitSHA" yaml:"commitSHA"`
+
+	// +required
+	PreviousCommitSHA string `json:"previousCommitSha" yaml:"previousCommitSha"`
 
 	// +required
 	Version int `json:"version" yaml:"version"`
@@ -117,7 +140,7 @@ type ManifestSigningRequestHistoryRecord struct {
 	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// +optional
-	Approves ApproverList `json:"approves" yaml:"approves"`
+	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 
 	// +required
 	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
@@ -162,9 +185,6 @@ type ManifestSigningRequestSpec struct {
 	// Required until ApprovalRuleRef is implemented.
 	// +required
 	Require ApprovalRule `json:"require" yaml:"require"`
-
-	// +required
-	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 // ManifestSigningRequestStatus defines the observed state of ManifestSigningRequest.
@@ -173,14 +193,20 @@ type ManifestSigningRequestStatus struct {
 	// +optional
 	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty" yaml:"requestHistory,omitempty"`
 
+	// +required
+	Status SigningRequestStatus `json:"status,omitempty" yaml:"status,omitempty"`
+
 	// +optional
-	Approves ApproverList `json:"approves" yaml:"approves"`
+	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 
 	// +optional
 	ActionState MSRActionState `json:"actionState,omitempty" yaml:"actionState,omitempty"`
 
 	// +optional
 	ReconcileState MSRReconcileNewMSRSpecState `json:"reconcileState,omitempty" yaml:"reconcileState,omitempty"`
+
+	// +optional
+	RulesFulfillmentState MSRRulesFulfillmentState `json:"rulesFulfillmentState,omitempty" yaml:"rulesFulfillmentState,omitempty"`
 
 	// conditions represent the current state of the ManifestSigningRequest resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.

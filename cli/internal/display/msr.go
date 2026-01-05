@@ -14,6 +14,7 @@ import (
 
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 	msrvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
+	validation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
 )
 
 func PrintIfVerifyFails(
@@ -166,12 +167,15 @@ func PrintMSRTable(
 	}
 
 	// Print MSR information in table, if no error happened.
-	printMSRInformation(w, msr)
+	verifiedSigners, signerWarnings := msrvalidation.GetVerifiedSigners(msr, governorSignatures, msrBytes)
+	status := dto.InProgress
+	if validation.EvaluateRules(msr.Spec.Require, verifiedSigners) {
+		status = dto.Approved
+	}
+	printMSRInformation(w, msr, status)
 
 	// Render the signature status tree
 	fmt.Fprintln(w, "\nApproval Status:")
-
-	verifiedSigners, signerWarnings := msrvalidation.GetVerifiedSigners(msr, governorSignatures, msrBytes)
 
 	// Start the recursive evaluation with the root rule from the MSR Spec.
 	approvalTree := treeprint.New()
@@ -221,6 +225,7 @@ func printMSRFailed(
 func printMSRInformation(
 	w io.Writer,
 	msr *dto.ManifestSigningRequestManifestObject,
+	status dto.SigningRequestStatus,
 ) {
 	// Render MSR general info
 	fmt.Fprintf(w, "Manifest Signing Request: %s v%d\n\n", msr.ObjectMeta.Namespace+":"+msr.ObjectMeta.Name, msr.Spec.Version)
@@ -234,7 +239,7 @@ func printMSRInformation(
 		strconv.Itoa(msr.Spec.Version),
 		msr.Spec.GitRepository.SSHURL,
 		msr.Spec.MRT.Namespace + ":" + msr.Spec.MRT.Name,
-		string(msr.Spec.Status),
+		string(status),
 		msr.Spec.CommitSHA,
 	})
 	msrTable.Render()

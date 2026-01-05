@@ -15,6 +15,7 @@ import (
 
 	v1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	repository "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 	transport "github.com/go-git/go-git/v5/plumbing/transport"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -94,6 +95,24 @@ func NewMockGitRepository(ctrl *gomock.Controller) *MockGitRepository {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockGitRepository) EXPECT() *MockGitRepositoryMockRecorder {
 	return m.recorder
+}
+
+// FetchMSRByVersion mocks base method.
+func (m *MockGitRepository) FetchMSRByVersion(ctx context.Context, msr *v1alpha1.ManifestSigningRequest) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FetchMSRByVersion", ctx, msr)
+	ret0, _ := ret[0].(*dto.ManifestSigningRequestManifestObject)
+	ret1, _ := ret[1].([]byte)
+	ret2, _ := ret[2].(dto.SignatureData)
+	ret3, _ := ret[3].([]dto.SignatureData)
+	ret4, _ := ret[4].(error)
+	return ret0, ret1, ret2, ret3, ret4
+}
+
+// FetchMSRByVersion indicates an expected call of FetchMSRByVersion.
+func (mr *MockGitRepositoryMockRecorder) FetchMSRByVersion(ctx, msr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchMSRByVersion", reflect.TypeOf((*MockGitRepository)(nil).FetchMSRByVersion), ctx, msr)
 }
 
 // GetChangedFiles mocks base method.

@@ -23,3 +23,5 @@ TODO:
 20. Justify, why default MSR has no signatures and integrate it with CLI (to avoid showing in CLI PENDING)
 21. Implement rejection of ArgoCD requests, when they are rejected by MRT but hit some limit, to avoid dead loops
 22. Fix infinite sync loop (maybe the reason, is that we block sync and allow only the next commit. it partially synced and stopped)
+23. Remove Status from MSR, because it's not needed. Only latest MSR matters. Or even better move it to Status (CLI) (Done)
+24. Release all locks, in case of failures. (Done)

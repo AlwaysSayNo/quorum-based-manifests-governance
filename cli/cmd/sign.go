@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+	validation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
 
 	display "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/display"
 )
@@ -44,8 +45,10 @@ func init() {
 			if latestMSR.Spec.Version != version {
 				return fmt.Errorf("specified version %d is not the latest", version)
 			}
-			if latestMSR.Spec.Status != dto.InProgress {
-				return fmt.Errorf("only in-progress MSR can be signed (current status: %s)", latestMSR.Spec.Status)
+
+			verifiedSigners, _ := validation.GetVerifiedSigners(latestMSR, governorSignatures, msrBytes)
+			if validation.EvaluateRules(latestMSR.Spec.Require, verifiedSigners) {
+				return fmt.Errorf("only in-progress MSR can be signed (current status: %s)", dto.InProgress)
 			}
 
 			// Get changed files from repository between previous approved and current commits

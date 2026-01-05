@@ -50,6 +50,7 @@ const (
 	MRTNewRevisionStatePreflightCheck MRTNewRevisionState = "MRTNewRevisionStatePreflightCheck"
 	MRTNewRevisionStateUpdateMSRSpec  MRTNewRevisionState = "MRTNewRevisionStateUpdateMSRSpec"
 	MRTNewRevisionStateAfterMSRUpdate MRTNewRevisionState = "MRTNewRevisionStateAfterMSRUpdate"
+	MRTNewRevisionStateAbort          MRTNewRevisionState = "MRTNewRevisionStateAbort"
 )
 
 type GitRepository struct {

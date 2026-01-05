@@ -133,7 +133,8 @@ func getRepositoryProviderWithInput(
 	var err error
 
 	if requestSSH {
-		sshPass, err = getSSHPassphrase(w)
+		// sshPass, err = getSSHPassphrase(w)
+		sshPass = "Account 123"
 		if err != nil {
 			return nil, fmt.Errorf("get SSH passphrase: %w", err)
 		}
@@ -141,7 +142,8 @@ func getRepositoryProviderWithInput(
 
 	pgpPass := ""
 	if requestPGP {
-		pgpPass, err = getPGPPassphrase(w)
+		// pgpPass, err = getPGPPassphrase(w)
+		pgpPass = "ownerpassphrase"
 		if err != nil {
 			return nil, fmt.Errorf("get PGP passphrase: %w", err)
 		}
