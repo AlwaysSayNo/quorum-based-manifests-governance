@@ -213,10 +213,7 @@ func main() {
 
 		// 1. Existing Generic Handler (remains the same)
 		hookServer.Register("/mca/validate/argocd-requests", &admissionwh.Webhook{
-			Handler: &webhookv1alpha1.ManifestChangeApprovalCustomValidator{
-				Client:  mgr.GetClient(),
-				Decoder: admissionwh.NewDecoder(mgr.GetScheme()),
-			},
+			Handler: webhookv1alpha1.NewManifestChangeApprovalCustomValidator(mgr.GetClient(), admissionwh.NewDecoder(mgr.GetScheme())),
 		})
 
 		// 2. Register MRT Mutating Webhook
