@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -183,4 +185,122 @@ func (r *GovernanceQueueReconciler) getMRTAndQueue(ctx context.Context, event *g
 	}
 
 	return &mrt, &queue, nil
+}
+
+func QueueContainsRevision(
+	ctx context.Context,
+	k8sClient client.Client,
+	revision *string,
+	mrtUID string,
+) (bool, error) {
+	events, err := getAllEventsForQueue(ctx, k8sClient, mrtUID)
+	if err != nil {
+		return false, fmt.Errorf("get all events for queue: %w", err)
+	}
+
+	eventIdx := slices.IndexFunc(events, func(e governancev1alpha1.GovernanceEvent) bool {
+		return e.Spec.NewRevision != nil && e.Spec.NewRevision.CommitSHA == *revision
+	})
+	return eventIdx != -1, nil
+}
+
+func getAllEventsForQueue(
+	ctx context.Context,
+	k8sClient client.Client,
+	mrtUID string,
+) ([]governancev1alpha1.GovernanceEvent, error) {
+	eventList := &governancev1alpha1.GovernanceEventList{}
+
+	// Use label for quick search
+	matchingLabels := client.MatchingLabels{
+		QubmangoMRTUIDAnnotation: string(mrtUID),
+	}
+
+	if err := k8sClient.List(ctx, eventList, matchingLabels); err != nil {
+		return nil, fmt.Errorf("list GovernanceEvents for queue: %w", err)
+	}
+	return eventList.Items, nil
+}
+
+func RevisionsQueueHead(
+	ctx context.Context,
+	k8sClient client.Client,
+	queueRef governancev1alpha1.ManifestRefOptional,
+) (*governancev1alpha1.GovernanceEvent, error) {
+	// Get the queue.
+	var queue governancev1alpha1.GovernanceQueue
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: queueRef.Namespace, Name: queueRef.Name}, &queue); err != nil {
+		return nil, fmt.Errorf("get GovernanceQueue for ManifestRequestTemplate: %w", err)
+	}
+
+	// Check if the queue is empty.
+	if len(queue.Status.Queue) < 1 {
+		return nil, fmt.Errorf("queue is empty: %v", queueRef)
+	}
+
+	// Fetch the head GovernanceEvent object.
+	eventRef := queue.Status.Queue[0]
+	var event governancev1alpha1.GovernanceEvent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: eventRef.Name, Namespace: eventRef.Namespace}, &event); err != nil {
+		return nil, fmt.Errorf("get head GovernanceEvent for GovernanceQueue: %w", err)
+	}
+
+	if event.Spec.Type != governancev1alpha1.EventTypeNewRevision {
+		return nil, fmt.Errorf("unsupported event type: %s", event.Spec.Type)
+	}
+
+	return &event, nil
+}
+
+func RemoveRevisionsQueueHead(
+	ctx context.Context,
+	k8sClient client.Client,
+	queueRef governancev1alpha1.ManifestRefOptional,
+) error {
+	// Get the revision we are working on.
+	event, err := RevisionsQueueHead(ctx, k8sClient, queueRef)
+	if err != nil {
+		return fmt.Errorf("get head of the revision queue: %w", err)
+	}
+
+	// Delete the resource and trigger reconciliation for GovernanceQueue.
+	if err = k8sClient.Delete(ctx, event); err != nil {
+		return fmt.Errorf("delete GovernanceEvent: %w", err)
+	}
+
+	return nil
+}
+
+func CreateNewRevisionEvent(
+	ctx context.Context,
+	k8sClient client.Client,
+	revision *string,
+	mrtRef *governancev1alpha1.ManifestRef,
+	mrtUID string,
+) error {
+	// Create a stable, unique name.
+	eventName := fmt.Sprintf("event-%s-%s-%s", mrtRef.Name, mrtRef.Namespace, *revision)
+
+	revisionEvent := governancev1alpha1.GovernanceEvent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      eventName,
+			Namespace: mrtRef.Namespace,
+			Labels: map[string]string{
+				QubmangoMRTUIDAnnotation: string(mrtUID), // Use UID for a unique, immutable link
+			},
+		},
+		Spec: governancev1alpha1.GovernanceEventSpec{
+			Type: governancev1alpha1.EventTypeNewRevision,
+			MRT:  *mrtRef,
+			NewRevision: &governancev1alpha1.NewRevisionPayload{
+				CommitSHA: *revision,
+			},
+		},
+	}
+
+	if err := k8sClient.Create(ctx, &revisionEvent); err != nil {
+		return fmt.Errorf("create new revision %s event: %w", *revision, err)
+	}
+
+	return nil
 }

@@ -25,7 +25,6 @@ import (
 
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -164,7 +163,7 @@ func (v *ManifestChangeApprovalCustomValidator) validateRevisionApproval(
 	if mca == nil {
 		v.logger.Info("No MCA found for MRT")
 
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
+		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok { // TODO: delete
 			return *resp
 		}
 		return admission.Denied("No MCA found for MRT, deny by default")
@@ -191,7 +190,7 @@ func (v *ManifestChangeApprovalCustomValidator) checkRevisionApprovalStatus(
 	if requestedMCAIdx == -1 {
 		v.logger.V(3).Info("No approval found in MCA for requested revision")
 
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok {
+		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok { // TODO: delete
 			return *resp
 		}
 
@@ -350,14 +349,15 @@ func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(
 ) (*admission.Response, bool) {
 	queueRef := mrt.Status.RevisionQueueRef
 
-	contains, err := v.queueContainsRevision(ctx, revision, mrt)
+	contains, err := governancecontroller.QueueContainsRevision(ctx, v.Client, revision, string(mrt.UID))
 	if err != nil {
 		v.logger.Error(err, "Failed to check, if queue contains revision", "queue", queueRef)
 		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("check, if queue %v contains revision %s: %w", queueRef, *revision, err))
 		return &resp, false
 	}
 	if !contains {
-		if err := v.createRevisionEvent(ctx, revision, mrt); err != nil {
+		mrtRef := &governancev1alpha1.ManifestRef{Name: mrt.Name, Namespace: mrt.Namespace}
+		if err := governancecontroller.CreateNewRevisionEvent(ctx, v.Client, revision, mrtRef, string(mrt.UID)); err != nil {
 			v.logger.Error(err, "Failed to update MRT status with new commit in queue")
 			resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("update MRT %s.%s status with new commit in queue: %w", mrt.Namespace, mrt.Name, err))
 			return &resp, false
@@ -366,75 +366,6 @@ func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(
 	}
 
 	return nil, true
-}
-
-func (v *ManifestChangeApprovalCustomValidator) queueContainsRevision(
-	ctx context.Context,
-	revision *string,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
-) (bool, error) {
-	events, err := v.getAllEventsForQueue(ctx, mrt)
-	if err != nil {
-		return false, fmt.Errorf("get all events for queue: %w", err)
-	}
-
-	eventIdx := slices.IndexFunc(events, func(e governancev1alpha1.GovernanceEvent) bool {
-		return e.Spec.NewRevision != nil && e.Spec.NewRevision.CommitSHA == *revision
-	})
-	return eventIdx != -1, nil
-}
-
-func (v *ManifestChangeApprovalCustomValidator) getAllEventsForQueue(
-	ctx context.Context,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
-) ([]governancev1alpha1.GovernanceEvent, error) {
-	eventList := &governancev1alpha1.GovernanceEventList{}
-
-	// Use label for quick search
-	matchingLabels := client.MatchingLabels{
-		governancecontroller.QubmangoMRTUIDAnnotation: string(mrt.UID),
-	}
-
-	if err := v.Client.List(ctx, eventList, matchingLabels); err != nil {
-		v.logger.Error(err, "Failed to list GovernanceEvents for queue")
-		return nil, fmt.Errorf("list GovernanceEvents for queue: %w", err)
-	}
-	return eventList.Items, nil
-}
-
-func (v *ManifestChangeApprovalCustomValidator) createRevisionEvent(
-	ctx context.Context,
-	revision *string,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
-) error {
-	// Create a stable, unique name.
-	eventName := fmt.Sprintf("event-%s-%s-%s", mrt.Name, mrt.Namespace, *revision)
-
-	revisionEvent := governancev1alpha1.GovernanceEvent{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      eventName,
-			Namespace: mrt.Namespace,
-			Labels: map[string]string{
-				governancecontroller.QubmangoMRTUIDAnnotation: string(mrt.UID), // Use UID for a unique, immutable link
-			},
-		},
-		Spec: governancev1alpha1.GovernanceEventSpec{
-			Type: governancev1alpha1.EventTypeNewRevision,
-			MRT: governancev1alpha1.ManifestRef{
-				Name:      mrt.Name,
-				Namespace: mrt.Namespace,
-			},
-			NewRevision: &governancev1alpha1.NewRevisionPayload{
-				CommitSHA: *revision,
-			},
-		},
-	}
-
-	if err := v.Client.Create(ctx, &revisionEvent); err != nil {
-		return fmt.Errorf("create new revision %s event: %w", *revision, err)
-	}
-
-	return nil
 }
 
 func (v *ManifestChangeApprovalCustomValidator) getGroupVersionKind(
