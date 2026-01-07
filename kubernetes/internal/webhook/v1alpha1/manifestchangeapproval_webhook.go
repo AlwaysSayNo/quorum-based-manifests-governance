@@ -42,8 +42,6 @@ const (
 )
 
 // +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues,verbs=get;list
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;create;
 
 func NewManifestChangeApprovalCustomValidator(
 	client client.Client,
@@ -159,27 +157,21 @@ func (v *ManifestChangeApprovalCustomValidator) validateRevisionApproval(
 		return *resp
 	}
 
-	// No MCA found - add to review queue
+	// No MCA found - deny by default
 	if mca == nil {
 		v.logger.Info("No MCA found for MRT")
-
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok { // TODO: delete
-			return *resp
-		}
 		return admission.Denied("No MCA found for MRT, deny by default")
 	}
 	v.logger.WithValues("mcaName", mca.Name, "mcaNamespace", mca.Namespace)
 
 	// Check if revision is in approval history
-	return v.checkRevisionApprovalStatus(ctx, revision, mca, mrt)
+	return v.checkRevisionApprovalStatus(revision, mca)
 }
 
 // checkRevisionApprovalStatus validates if the requested revision is approved
 func (v *ManifestChangeApprovalCustomValidator) checkRevisionApprovalStatus(
-	ctx context.Context,
 	revision string,
 	mca *governancev1alpha1.ManifestChangeApproval,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) admission.Response {
 	// Find the revision in approval history
 	requestedMCAIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
@@ -189,11 +181,6 @@ func (v *ManifestChangeApprovalCustomValidator) checkRevisionApprovalStatus(
 	// Revision not found in approval history
 	if requestedMCAIdx == -1 {
 		v.logger.V(3).Info("No approval found in MCA for requested revision")
-
-		if resp, ok := v.appendRevisionToMRTCommitQueue(ctx, &revision, mrt); !ok { // TODO: delete
-			return *resp
-		}
-
 		return admission.Denied(fmt.Sprintf("Change from commit %s has not been approved by the governance board.", revision))
 	}
 
@@ -340,32 +327,6 @@ func GetRevisionFromApplication(
 	}
 
 	return revision
-}
-
-func (v *ManifestChangeApprovalCustomValidator) appendRevisionToMRTCommitQueue(
-	ctx context.Context,
-	revision *string,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
-) (*admission.Response, bool) {
-	queueRef := mrt.Status.RevisionQueueRef
-
-	contains, err := governancecontroller.QueueContainsRevision(ctx, v.Client, revision, string(mrt.UID))
-	if err != nil {
-		v.logger.Error(err, "Failed to check, if queue contains revision", "queue", queueRef)
-		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("check, if queue %v contains revision %s: %w", queueRef, *revision, err))
-		return &resp, false
-	}
-	if !contains {
-		mrtRef := &governancev1alpha1.ManifestRef{Name: mrt.Name, Namespace: mrt.Namespace}
-		if err := governancecontroller.CreateNewRevisionEvent(ctx, v.Client, revision, mrtRef, string(mrt.UID)); err != nil {
-			v.logger.Error(err, "Failed to update MRT status with new commit in queue")
-			resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("update MRT %s.%s status with new commit in queue: %w", mrt.Namespace, mrt.Name, err))
-			return &resp, false
-		}
-		v.logger.Info("Added revision to MRT commits queue for approval processing")
-	}
-
-	return nil, true
 }
 
 func (v *ManifestChangeApprovalCustomValidator) getGroupVersionKind(

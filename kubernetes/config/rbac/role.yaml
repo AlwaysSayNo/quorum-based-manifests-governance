@@ -26,13 +26,7 @@ rules:
   - governance.nazar.grynko.com
   resources:
   - governanceevents
-  - governancequeues
-  - manifestchangeapprovals
-  - manifestrequesttemplates
-  - manifestsigningrequests
-  - qubmangoindices
   verbs:
-  - create
   - delete
   - get
   - list
@@ -63,3 +57,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - governance.nazar.grynko.com
+  resources:
+  - governancequeues
+  - manifestchangeapprovals
+  - manifestrequesttemplates
+  - manifestsigningrequests
+  - qubmangoindices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
