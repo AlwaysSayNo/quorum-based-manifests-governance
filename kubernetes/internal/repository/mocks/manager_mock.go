@@ -145,6 +145,21 @@ func (mr *MockGitRepositoryMockRecorder) GetLatestRevision(ctx any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestRevision", reflect.TypeOf((*MockGitRepository)(nil).GetLatestRevision), ctx)
 }
 
+// GetRemoteHeadCommit mocks base method.
+func (m *MockGitRepository) GetRemoteHeadCommit(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRemoteHeadCommit", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRemoteHeadCommit indicates an expected call of GetRemoteHeadCommit.
+func (mr *MockGitRepositoryMockRecorder) GetRemoteHeadCommit(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRemoteHeadCommit", reflect.TypeOf((*MockGitRepository)(nil).GetRemoteHeadCommit), ctx)
+}
+
 // HasRevision mocks base method.
 func (m *MockGitRepository) HasRevision(ctx context.Context, commit string) (bool, error) {
 	m.ctrl.T.Helper()

@@ -45,10 +45,13 @@ import (
 )
 
 const (
-	GovernanceFinalizer       = "governance.nazar.grynko.com/finalizer"
-	QubmangoOperationalFolder = ".qubmango"
-	QubmangoOperationalFile   = QubmangoOperationalFolder + "/index.yaml"
-	QubmangoGovernanceAlias   = "qubmango"
+	GovernanceFinalizer                 = "governance.nazar.grynko.com/finalizer"
+	QubmangoMRTCreationCommitAnnotation = "governance.nazar.grynko.com/mrt-creation-commit-sha"
+	QubmangoOperationalFolder           = ".qubmango"
+	QubmangoOperationalFile             = QubmangoOperationalFolder + "/index.yaml"
+	QubmangoGovernanceAlias             = "qubmango"
+	MRTQueuePrefix                      = "queue-"
+	GitPollInterval                     = 1 * time.Minute
 )
 
 type RepositoryManager interface {
@@ -159,7 +162,9 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	// Handle normal reconciliation (after initialization)
 	r.logger.Info("MRT initialized, processing normal reconciliation", "actionState", mrt.Status.ActionState)
-	return r.reconcileNormal(ctx, mrt)
+	result, err := r.reconcileNormal(ctx, mrt)
+
+	return r.handleResult(result, err)
 }
 
 // withLock wraps state handler logic with lock acquisition and release.
@@ -448,10 +453,10 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(
 		return fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
 	}
 
-	// Fetch the latest revision from the repository.
-	revision, err := r.repository(ctx, mrt).GetLatestRevision(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch latest commit from the repository: %w", err)
+	// Get the creation revision from the annotation.
+	revision := mrt.GetAnnotations()[QubmangoMRTCreationCommitAnnotation]
+	if revision == "" {
+		return fmt.Errorf("missing creation commit annotation on MRT during creation")
 	}
 
 	// Fetch all changed files in the repository, that where created before.
@@ -535,6 +540,25 @@ func (r *ManifestRequestTemplateReconciler) handleStateFinalizing(
 			return governancev1alpha1.MRTActionStateEmpty, nil
 		},
 	)
+}
+
+// handleResult acts as a middleware to ensure polling is applied on success
+func (r *ManifestRequestTemplateReconciler) handleResult(
+	result ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	// If there is an error, let the controller-runtime handle exponential backoff.
+	if err != nil {
+		return result, err
+	}
+
+	// Skip explicitly requested Requeue.
+	if result.Requeue || result.RequeueAfter > 0 {
+		return result, nil
+	}
+
+	// If the logic returned empty result - use Scheduled interval to requeue later.
+	return ctrl.Result{RequeueAfter: ScheduledInterval}, nil
 }
 
 func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
@@ -638,13 +662,112 @@ func (r *ManifestRequestTemplateReconciler) buildInitialGovernanceQueue(
 
 	return &governancev1alpha1.GovernanceQueue{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "queue-" + mrt.Name,
+			Name:      MRTQueuePrefix + mrt.Name,
 			Namespace: mrt.Namespace,
 		},
 		Spec: governancev1alpha1.GovernanceQueueSpec{
 			MRT: mrtMetaRef,
 		},
 	}
+}
+
+// checkForNewCommits helps to compare Remote HEAD vs Local State
+func (r *ManifestRequestTemplateReconciler) checkForNewCommits(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (bool, string, error) {
+
+	// Get Remote HEAD
+	remoteHead, err := r.repository(ctx, mrt).GetRemoteHeadCommit(ctx)
+	if err != nil {
+		return false, "", err
+	}
+
+	// Compare with what we last processed
+	if remoteHead != mrt.Status.LastObservedCommitHash {
+
+		// Check if this revision is already in the Queue
+		isPending, err := r.queueContainsRevision(ctx, &remoteHead, mrt)
+		if err != nil {
+			return false, "", err
+		}
+		if isPending {
+			return false, "", nil
+		}
+
+		return true, remoteHead, nil
+	}
+
+	return false, "", nil
+}
+
+func (r *ManifestRequestTemplateReconciler) queueContainsRevision(
+	ctx context.Context,
+	revision *string,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (bool, error) {
+	events, err := r.getAllEventsForQueue(ctx, mrt)
+	if err != nil {
+		return false, fmt.Errorf("get all events for queue: %w", err)
+	}
+
+	eventIdx := slices.IndexFunc(events, func(e governancev1alpha1.GovernanceEvent) bool {
+		return e.Spec.NewRevision != nil && e.Spec.NewRevision.CommitSHA == *revision
+	})
+	return eventIdx != -1, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) getAllEventsForQueue(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) ([]governancev1alpha1.GovernanceEvent, error) {
+	eventList := &governancev1alpha1.GovernanceEventList{}
+
+	// Use label for quick search
+	matchingLabels := client.MatchingLabels{
+		QubmangoMRTUIDAnnotation: string(mrt.UID),
+	}
+
+	if err := r.Client.List(ctx, eventList, matchingLabels); err != nil {
+		r.logger.Error(err, "Failed to list GovernanceEvents for queue")
+		return nil, fmt.Errorf("list GovernanceEvents for queue: %w", err)
+	}
+	return eventList.Items, nil
+}
+
+func (r *ManifestRequestTemplateReconciler) createRevisionEvent(
+	ctx context.Context,
+	revision *string,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) error {
+	// Create a stable, unique name.
+	eventName := fmt.Sprintf("event-%s-%s-%s", mrt.Name, mrt.Namespace, *revision)
+
+	revisionEvent := governancev1alpha1.GovernanceEvent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      eventName,
+			Namespace: mrt.Namespace,
+			Labels: map[string]string{
+				QubmangoMRTUIDAnnotation: string(mrt.UID), // Use UID for a unique, immutable link
+			},
+		},
+		Spec: governancev1alpha1.GovernanceEventSpec{
+			Type: governancev1alpha1.EventTypeNewRevision,
+			MRT: governancev1alpha1.ManifestRef{
+				Name:      mrt.Name,
+				Namespace: mrt.Namespace,
+			},
+			NewRevision: &governancev1alpha1.NewRevisionPayload{
+				CommitSHA: *revision,
+			},
+		},
+	}
+
+	if err := r.Client.Create(ctx, &revisionEvent); err != nil {
+		return fmt.Errorf("create new revision %s event: %w", *revision, err)
+	}
+
+	return nil
 }
 
 func (r *ManifestRequestTemplateReconciler) reconcileNormal(
@@ -667,11 +790,32 @@ func (r *ManifestRequestTemplateReconciler) reconcileNormal(
 		}
 
 		if newRevision {
+			// If new revision - start MSR process
 			r.logger.Info("New revisions found in queue, starting revision processing")
 			return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateNewRevision)
+		} else {
+			// If no new revision - check for updates in remote repository
+			shouldProcess, newCommit, err := r.checkForNewCommits(ctx, mrt)
+			if err != nil {
+				r.logger.Error(err, "Failed to check git for new commits")
+				// Requeue after poll interval to retry
+				return ctrl.Result{RequeueAfter: GitPollInterval}, nil
+			}
+
+			if shouldProcess {
+				r.logger.Info("Detected new commit in Git, starting governance process", "commit", newCommit)
+
+				// Create the Event
+				if err := r.createRevisionEvent(ctx, &newCommit, mrt); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to create revision event: %w", err)
+				}
+
+				return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateNewRevision)
+			}
 		}
 
 		r.logger.V(3).Info("No new revisions to process")
+		return ctrl.Result{}, nil
 	}
 
 	// Execute action based on current ActionState
@@ -679,6 +823,9 @@ func (r *ManifestRequestTemplateReconciler) reconcileNormal(
 	case governancev1alpha1.MRTActionStateNewRevision:
 		r.logger.V(2).Info("Processing revision")
 		return r.handleStateProcessingRevision(ctx, mrt)
+	case governancev1alpha1.MRTActionStateEmpty:
+		r.logger.V(2).Info("Empty empty state - do nothing", "actionState", mrt.Status.ActionState)
+		return ctrl.Result{}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateEmpty)
 	default:
 		// If the state is unknown - reset to EmptyState
 		r.logger.V(2).Info("Unknown action state, resetting", "actionState", mrt.Status.ActionState)
@@ -705,8 +852,8 @@ func (r *ManifestRequestTemplateReconciler) revisionsQueueHead(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (*governancev1alpha1.GovernanceEvent, error) {
 	// Get the queue.
-	var queue governancev1alpha1.GovernanceQueue
 	queueRef := mrt.Status.RevisionQueueRef
+	var queue governancev1alpha1.GovernanceQueue
 	if err := r.Get(ctx, types.NamespacedName{Namespace: queueRef.Namespace, Name: queueRef.Name}, &queue); err != nil {
 		r.logger.Error(err, "Failed to get GovernanceQueue for MRT")
 		return nil, fmt.Errorf("get GovernanceQueue for ManifestRequestTemplate: %w", err)
@@ -717,17 +864,12 @@ func (r *ManifestRequestTemplateReconciler) revisionsQueueHead(
 		return nil, fmt.Errorf("queue is empty: %v", queueRef)
 	}
 
-	// Get the reference to the head of the queue.
+	// Fetch the head GovernanceEvent object.
 	eventRef := queue.Status.Queue[0]
-	// Fetch the GovernanceEvent object.
-	eventKey := types.NamespacedName{
-		Name:      eventRef.Name,
-		Namespace: eventRef.Namespace, // GovernanceEvents are cluster-scoped
-	}
 	var event governancev1alpha1.GovernanceEvent
-	if err := r.Get(ctx, eventKey, &event); err != nil {
-		r.logger.Error(err, "Failed to get GovernanceEvent for GovernanceQueue")
-		return nil, fmt.Errorf("get GovernanceEvent for GovernanceQueue: %w", err)
+	if err := r.Get(ctx, types.NamespacedName{Name: eventRef.Name, Namespace: eventRef.Namespace}, &event); err != nil {
+		r.logger.Error(err, "Failed to get head GovernanceEvent for GovernanceQueue")
+		return nil, fmt.Errorf("get head GovernanceEvent for GovernanceQueue: %w", err)
 	}
 
 	if event.Spec.Type != governancev1alpha1.EventTypeNewRevision {
@@ -757,10 +899,11 @@ func (r *ManifestRequestTemplateReconciler) removeRevisionsQueueHead(
 
 // handleStateProcessingRevision orchestrates processing of a new revision from the queue.
 // State: StateProcessingRevision with sub-states:
-// 1. StateRevisionPreflightCheck: Evaluate if revision should be processed
-// 2. StateRevisionUpdateMSRSpec: Update MSR with changed files from revision
-// 3. StateRevisionAfterMSRUpdate: Finalize and remove event from queue
-// Final state: EmptyActionState
+// 1. MRTNewRevisionStatePreflightCheck: Evaluate if revision should be processed
+// 2. MRTNewRevisionStateUpdateMSRSpec: Update MSR with changed files from revision
+// 3. MRTNewRevisionStateAfterMSRUpdate: Finalize and remove event from queue
+// Final state: MRTActionStateEmpty + MRTNewRevisionStateEmpty
+// Abort state: MRTNewRevisionStateAbort
 func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -824,6 +967,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 		r.logger.V(2).Info("Dispatching to finalization", "revision", revision)
 		return r.handleSubstateFinish(ctx, mrt, revision)
 	case governancev1alpha1.MRTNewRevisionStateAbort:
+		r.logger.V(2).Info("Dispatching to abort", "revision", revision)
 		mrt.Status.RevisionProcessingState = governancev1alpha1.MRTNewRevisionStateEmpty
 		_ = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateEmpty)
 		return ctrl.Result{}, err

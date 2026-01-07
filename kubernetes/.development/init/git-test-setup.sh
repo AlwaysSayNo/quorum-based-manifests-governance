@@ -62,18 +62,15 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
   ignoreDifferences:
     - group: argoproj.io
       kind: Application
-      name: application-my  # Matches its own name and namespace
+      name: application-my # Matches its own name and namespace
       namespace: argocd
       jsonPointers:
-      - /spec/source/targetRevision
-    - group: governance.nazar.grynko.com
-      kind: ManifestRequestTemplate
-      jsonPointers:
-      - /status
-      - /metadata/finalizers" > app-manifests/app.yaml
+        - /spec/source/targetRevision" > app-manifests/app.yaml
 
 # Replace placeholder with actual repo URL
 sed -i'' -e "s|#{REPO_URL}#|$repo_url|g" app-manifests/app.yaml

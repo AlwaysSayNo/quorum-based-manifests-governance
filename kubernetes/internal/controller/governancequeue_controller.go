@@ -34,6 +34,10 @@ import (
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 )
 
+const (
+	QubmangoMRTUIDAnnotation = "governance.nazar.grynko.com/mrt-uid"
+)
+
 // GovernanceQueueReconciler reconciles a GovernanceQueue object
 type GovernanceQueueReconciler struct {
 	client.Client
@@ -152,7 +156,7 @@ func (r *GovernanceQueueReconciler) getAllEventsForQueue(ctx context.Context, qu
 
 	// Use label for quick search
 	matchingLabels := client.MatchingLabels{
-		"governance.nazar.grynko.com/mrt-uid": string(mrt.UID),
+		QubmangoMRTUIDAnnotation: string(mrt.UID),
 	}
 
 	if err := r.List(ctx, eventList, matchingLabels); err != nil {

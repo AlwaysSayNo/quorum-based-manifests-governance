@@ -38,6 +38,10 @@ import (
 	governancecontroller "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
 )
 
+const (
+	ArgoCDTrackIDAnnotation = "argocd.argoproj.io/tracking-id"
+)
+
 // +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=mca-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues,verbs=get;list
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;create;
@@ -85,7 +89,7 @@ func (v *ManifestChangeApprovalCustomValidator) Handle(
 	}
 
 	// Check if MRT is initialized
-	revision := v.getRevisionFromApplication(application)
+	revision := GetRevisionFromApplication(application)
 	v.logger.WithValues("mrtName", mrt.Name, "mrtNamespace", mrt.Namespace, "requestedRevision", revision)
 
 	if resp := v.validateMRTInitialization(mrt, revision); resp != nil {
@@ -231,7 +235,7 @@ func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplication
 		return nil, &resp
 	}
 
-	trackingID := unstruct.GetAnnotations()["argocd.argoproj.io/tracking-id"]
+	trackingID := unstruct.GetAnnotations()[ArgoCDTrackIDAnnotation]
 	if trackingID == "" {
 		v.logger.Info("ArgoCD tracking-id not found; denying by default to avoid unapproved applies", "resource", gvk.Kind, "name", req.Name, "namespace", req.Namespace)
 		resp := admission.Denied("ArgoCD tracking-id not found; unable to verify approval for this resource")
@@ -246,11 +250,11 @@ func (v *ManifestChangeApprovalCustomValidator) getApplicationFromNonApplication
 	}
 
 	// Fetch the ArgoCD Application
-	application := &argoappv1.Application{}
 	appKey := types.NamespacedName{Name: appName, Namespace: appNamespace}
+	application := &argoappv1.Application{}
 	if err := v.Client.Get(ctx, appKey, application); err != nil {
 		v.logger.Error(err, "Failed to fetch ArgoCD Application for tracking-id", "name", appName, "namespace", appNamespace)
-		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("get App %s.%s: %w", appNamespace, appName, err))
+		resp := admission.Errored(http.StatusInternalServerError, fmt.Errorf("get Application %s:%s: %w", appNamespace, appName, err))
 		return nil, &resp
 	}
 
@@ -323,7 +327,7 @@ func (v *ManifestChangeApprovalCustomValidator) getMCAForMRT(
 	return nil, nil
 }
 
-func (v *ManifestChangeApprovalCustomValidator) getRevisionFromApplication(
+func GetRevisionFromApplication(
 	applicationObj *argoappv1.Application,
 ) string {
 	// TODO: extra checks when do rollback or sync to previous revision
@@ -388,7 +392,7 @@ func (v *ManifestChangeApprovalCustomValidator) getAllEventsForQueue(
 
 	// Use label for quick search
 	matchingLabels := client.MatchingLabels{
-		"governance.nazar.grynko.com/mrt-uid": string(mrt.UID),
+		governancecontroller.QubmangoMRTUIDAnnotation: string(mrt.UID),
 	}
 
 	if err := v.Client.List(ctx, eventList, matchingLabels); err != nil {
@@ -411,7 +415,7 @@ func (v *ManifestChangeApprovalCustomValidator) createRevisionEvent(
 			Name:      eventName,
 			Namespace: mrt.Namespace,
 			Labels: map[string]string{
-				"governance.nazar.grynko.com/mrt-uid": string(mrt.UID), // Use UID for a unique, immutable link
+				governancecontroller.QubmangoMRTUIDAnnotation: string(mrt.UID), // Use UID for a unique, immutable link
 			},
 		},
 		Spec: governancev1alpha1.GovernanceEventSpec{

@@ -210,7 +210,7 @@ func (r *ManifestSigningRequestReconciler) reconcileCreate(
 	case governancev1alpha1.MSRActionStateInitSetFinalizer:
 		// 4. Confirm MSR initialization by setting the GovernanceFinalizer.
 		r.logger.Info("Setting finalizer to complete initialization")
-		return r.handleStateFinalizer(ctx, msr)
+		return r.handleStateFinalizing(ctx, msr)
 	default:
 		err := fmt.Errorf("unknown initialization state: %s", string(msr.Status.ActionState))
 		r.logger.Error(err, "Invalid state for initialization")
@@ -279,9 +279,9 @@ func (r *ManifestSigningRequestReconciler) handleUpdateAfterGitPush(
 	)
 }
 
-// handleStateFinalizer sets the GovernanceFinalizer on the MSR to complete initialization.
+// handleStateFinalizing sets the GovernanceFinalizer on the MSR to complete initialization.
 // State: MSRStateInitSetFinalizer → MSREmptyActionState
-func (r *ManifestSigningRequestReconciler) handleStateFinalizer(
+func (r *ManifestSigningRequestReconciler) handleStateFinalizing(
 	ctx context.Context,
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) (ctrl.Result, error) {

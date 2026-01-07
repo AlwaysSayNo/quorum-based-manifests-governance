@@ -57,6 +57,8 @@ type GitRepository interface {
 	PushGovernorSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
 
 	FetchMSRByVersion(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error)
+
+	GetRemoteHeadCommit(ctx context.Context) (string, error)
 }
 
 type PgpSecrets struct {

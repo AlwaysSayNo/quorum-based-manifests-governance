@@ -98,7 +98,8 @@ func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ct
 		return r.reconcileCreate(ctx, mca, req)
 	}
 
-	// Handle normal reconciliation
+	// Handle normal reconciliation (after initialization)
+	r.logger.Info("MCA initialized, processing normal reconciliation", "actionState", mca.Status.ActionState)
 	return r.reconcileNormal(ctx, mca, req)
 }
 
@@ -236,21 +237,6 @@ func (r *ManifestChangeApprovalReconciler) handleStateUpdateArgoCD(
 
 			patch := client.MergeFrom(app.DeepCopy())
 			app.Spec.Source.TargetRevision = mca.Spec.CommitSHA
-
-			// TODO: didn't help. Remove
-			// If ArgoCD is currently RUNNING a sync for a DIFFERENT revision, we must terminate it.
-			// if app.Status.OperationState != nil &&
-			// 	app.Status.OperationState.Phase == synccommon.OperationRunning &&
-			// 	app.Status.OperationState.Operation.Sync != nil &&
-			// 	app.Status.OperationState.Operation.Sync.Revision != mca.Spec.CommitSHA {
-
-			// 	r.logger.Info("Detected stale running operation. Issuing TERMINATE command.",
-			// 		"staleRevision", app.Status.OperationState.Operation.Sync.Revision)
-
-			// 	// This annotation tells the ArgoCD controller to kill the current operation immediately.
-			// 	// Once killed, AutoSync (selfHeal) will pick up the NEW targetRevision we just set.
-			// 	metav1.SetMetaDataAnnotation(&app.ObjectMeta, "argocd.argoproj.io/operation-action", "terminate")
-			// }
 
 			if err := r.Patch(ctx, app, patch); err != nil {
 				r.logger.Error(err, "Failed to patch ArgoCD Application")

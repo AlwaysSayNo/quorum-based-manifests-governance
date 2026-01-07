@@ -18,19 +18,21 @@ import (
 
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 type fileToPush struct {
@@ -215,6 +217,48 @@ func (p *gitProvider) IsNotAfter(
 	isTheSame := ancestorCommit.Hash.String() == childCommit.String()
 
 	return !isChild || isTheSame, nil
+}
+
+// GetRemoteHeadCommit returns the SHA of the HEAD branch. Uses ls-remote.
+func (p *gitProvider) GetRemoteHeadCommit(
+	ctx context.Context,
+) (string, error) {
+	// Create the remote
+	rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{p.remoteURL},
+	})
+
+	// List references
+	refs, err := rem.List(&git.ListOptions{
+		Auth: p.auth,
+	})
+	if err != nil {
+		return "", fmt.Errorf("list remotes: %w", err)
+	}
+
+	refMap := make(map[string]*plumbing.Reference)
+	for _, ref := range refs {
+		refMap[ref.Name().String()] = ref
+	}
+
+	// Find HEAD
+	headRef, found := refMap["HEAD"]
+	if !found {
+		return "", fmt.Errorf("HEAD reference not found")
+	}
+
+	// Resolve Symbolic Reference
+	if headRef.Type() == plumbing.SymbolicReference {
+		targetName := headRef.Target().String()
+		targetRef, found := refMap[targetName]
+		if !found {
+			return "", fmt.Errorf("HEAD targets %s, but it was not found in refs", targetName)
+		}
+		return targetRef.Hash().String(), nil
+	}
+
+	return headRef.Hash().String(), nil
 }
 
 // GetLatestRevision takes head of the default branch and returns it's commit hash
