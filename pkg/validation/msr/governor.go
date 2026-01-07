@@ -2,6 +2,8 @@ package validation
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -28,9 +30,8 @@ func GetVerifiedSigners(
 	for _, gov := range msr.Spec.Governors.Members {
 		verifiedSigners[gov.Alias] = common.Pending
 	}
-	// Any warnings found.
-	signerWarnings := make(map[string]string)
 
+	signerWarnings := checkPublicKeysCorrectness(msr.Spec.Governors.Members, verifiedSigners)
 	for _, sigData := range governorSignatures {
 		// For each signature, try to verify it against every known governor's public key.
 		for alias, pubKeyStr := range governorKeys {
@@ -64,4 +65,36 @@ func GetVerifiedSigners(
 	}
 
 	return verifiedSigners, signerWarnings
+}
+
+func checkPublicKeysCorrectness(
+	members []dto.Governor,
+	signers map[string]common.SignatureStatus,
+) map[string]string {
+	// Any warnings found.
+	signerWarnings := make(map[string]string)
+	for _, gov := range members {
+		entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(gov.PublicKey))
+		if err != nil {
+			signerWarnings[gov.Alias] = fmt.Errorf("failed to parse armored key ring: %w", err).Error()
+			continue
+		}
+		if len(entityList) < 1 {
+			signerWarnings[gov.Alias] = fmt.Errorf("no OpenPGP entities found in the provided key string").Error()
+			continue
+		}
+
+		entity := entityList[0]
+		if entity.PrimaryKey == nil {
+			signerWarnings[gov.Alias] = fmt.Errorf("PGP entity does not contain a primary key").Error()
+			continue
+		}
+	}
+
+	// Update signers statuses
+	for alias := range signerWarnings {
+		signers[alias] = common.MalformedPublicKey
+	}
+
+	return signerWarnings
 }

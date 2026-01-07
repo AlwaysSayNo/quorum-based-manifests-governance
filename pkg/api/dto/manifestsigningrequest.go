@@ -43,11 +43,11 @@ type ApprovalRule struct {
 }
 
 type ManifestSigningRequestHistoryRecord struct {
-	Version   int                  `json:"version" yaml:"version"`
-	Changes   []FileChange         `json:"changes" yaml:"changes"`
-	Governors GovernorList         `json:"governors" yaml:"governors"`
-	Require   ApprovalRule         `json:"require" yaml:"require"`
-	Approves  ApproverList         `json:"approves" yaml:"approves"`
+	Version   int          `json:"version" yaml:"version"`
+	Changes   []FileChange `json:"changes" yaml:"changes"`
+	Governors GovernorList `json:"governors" yaml:"governors"`
+	Require   ApprovalRule `json:"require" yaml:"require"`
+	Approves  ApproverList `json:"approves" yaml:"approves"`
 }
 
 type ManifestSigningRequestSpec struct {

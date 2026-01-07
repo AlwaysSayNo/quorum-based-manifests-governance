@@ -21,10 +21,10 @@ TODO (Done):
 - Add proactive in MRT
 - Prevent ArgoCD from syncing targetRevision from repository (added `syncOptions: RespectIgnoreDifferences=true`)
 - MRT / MSR should point to the exact git of the request, not the next one 
+- Implement history overview commands
 
 
 TODO: 
-- Implement history overview commands
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
 - How can we trust the key from MSR and MRT as a CLI user?
 - Review all controller transactional methods. Fix / Improve them, if needed
@@ -41,3 +41,4 @@ TODO:
 - GovernanceFolder cannot be changed after creation. Or think about scenario, how it could be changed. It would require: what to do with old MSRs, MCAs. Change entry in the index file on update.
 - Snapshot governor signatures for old MSRs (when new MSR is created, we should snapshot the signatures for the previous MSR)
 - If secrets names change - we should reestablish repository
+- Default MRT values and ArgoCD sync diff
