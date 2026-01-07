@@ -32,10 +32,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	msrvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation"
+	commonvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation"
+	validationmsr "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1/converter"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
@@ -607,26 +608,26 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 			repo := r.repository(ctx, msr)
 
 			// Fetch MSR from repository for the current version
-			_, msrBytes, msrSig, govSigs, err := repo.FetchMSRByVersion(ctx, msr)
+			repoMSR, msrBytes, msrSig, govSigs, err := repo.FetchMSRByVersion(ctx, msr)
 			if err != nil {
 				r.logger.Error(err, "Failed to fetch MSR from repository", "version", msr.Spec.Version)
 				return "", fmt.Errorf("fetch MSR from repository: %w", err)
+			} else if repoMSR.Spec.PublicKey != msr.Spec.PublicKey {
+				r.logger.Error(err, "Repository and in-cluster MSR public keys are different")
+				return "", fmt.Errorf("repository and in-cluster MSR public keys are different")
 			}
 
-			// Convert in-cluster MSR to DTO for verification
-			dtoMSR := converter.K8sToDTO(msr)
-
 			// Verify MSR signature against in-cluster MSR
-			if _, err := msrvalidation.VerifyMSRSignature(dtoMSR, msrBytes, msrSig); err != nil {
+			if _, err := commonvalidation.VerifySignature(msr.Spec.PublicKey, msrBytes, msrSig); err != nil {
 				r.logger.Error(err, "MSR signature verification failed", "version", msr.Spec.Version)
 				return "", fmt.Errorf("MSR signature verification failed: %w", err)
 			}
 
 			// Get verified signers from governor signatures
-			verifiedSigners, _ := msrvalidation.GetVerifiedSigners(dtoMSR, govSigs, msrBytes)
+			verifiedSigners, _ := validationmsr.GetVerifiedSigners(repoMSR, govSigs, msrBytes)
 
 			// Evaluate rules
-			if !msrvalidation.EvaluateRules(dtoMSR.Spec.Require, verifiedSigners) {
+			if !validation.EvaluateRules(repoMSR.Spec.Require, verifiedSigners) {
 				// Rules not fulfilled yet - abort the MSRRulesFulfillmentState
 				r.logger.Info("Rules not fulfilled yet, waiting for more signatures", "version", msr.Spec.Version)
 				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
@@ -659,11 +660,11 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 
 // extractCollectedSignatures extracts signatures that contributed to rule fulfillment.
 func (r *ManifestSigningRequestReconciler) extractCollectedSignatures(
-	verifiedSigners map[string]msrvalidation.SignatureStatus,
+	verifiedSigners map[string]validation.SignatureStatus,
 ) []governancev1alpha1.Signature {
 	signatures := []governancev1alpha1.Signature{}
 	for alias, status := range verifiedSigners {
-		if status != msrvalidation.Verified {
+		if status != validation.Signed {
 			continue
 		}
 

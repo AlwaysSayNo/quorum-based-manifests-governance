@@ -29,22 +29,23 @@ func init() {
 			}
 
 			// Get latest MSR information
-			latestMSR, msrBytes, appSign, governSigns, err := fetchLatestMSR(repoProvider)
+			msrInfo, err := fetchLatestMSR(repoProvider)
 			if err != nil {
 				return fmt.Errorf("get MSR information from repository: %w", err)
 			}
+			msr := msrInfo.Obj
 
-			// Get changed files from repository between previous approved and current commits 
-			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, latestMSR.Spec.PreviousCommitSHA, latestMSR.Spec.CommitSHA, latestMSR.Spec.Locations.SourcePath)
+			// Get changed files from repository between previous approved and current commits
+			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)
 			if err != nil {
 				return fmt.Errorf("get changed files from repository: %w", err)
 			}
 
 			// Display the output based on the format flag
 			if outputFormat == "raw" {
-				return display.PrintMSRRaw(cmd.OutOrStdout(), latestMSR, msrBytes, appSign, governSigns, changedFilesGit)
+				return display.PrintMSRRaw(cmd.OutOrStdout(), msrInfo, changedFilesGit)
 			}
-			return display.PrintMSRTable(cmd.OutOrStdout(), latestMSR, msrBytes, appSign, governSigns, changedFilesGit)
+			return display.PrintMSRTable(cmd.OutOrStdout(), msrInfo, changedFilesGit)
 		},
 	}
 
@@ -58,25 +59,26 @@ func init() {
 				return fmt.Errorf("get repository provider: %w", err)
 			}
 
-			latestMSR, msrBytes, appSign, governSigns, err := fetchLatestMSR(repoProvider)
+			msrInfo, err := fetchLatestMSR(repoProvider)
 			if err != nil {
 				return fmt.Errorf("get MSR information from repository: %w", err)
 			}
+			msr := msrInfo.Obj
 
-			// Get changed files from repository between previous approved and current commits 
-			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, latestMSR.Spec.PreviousCommitSHA, latestMSR.Spec.CommitSHA, latestMSR.Spec.Locations.SourcePath)
+			// Get changed files from repository between previous approved and current commits
+			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)
 			if err != nil {
 				return fmt.Errorf("get changed files from repository: %w", err)
 			}
 
 			// Get patches for files from MSR
-			patches, err := repoProvider.GetFileDiffPatchParts(ctx, latestMSR, latestMSR.Spec.PreviousCommitSHA, latestMSR.Spec.CommitSHA)
+			patches, err := repoProvider.GetFileDiffPatchParts(ctx, msr, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA)
 			if err != nil {
-				return fmt.Errorf("get diff for MSR version %d", latestMSR.Spec.Version)
+				return fmt.Errorf("get diff for MSR version %d", msr.Spec.Version)
 			}
-			
+
 			// Display the file diffs
-			return display.PrintMSRFileDiffs(cmd.OutOrStdout(), latestMSR, msrBytes, appSign, governSigns, changedFilesGit, patches)
+			return display.PrintMSRFileDiffs(cmd.OutOrStdout(), msrInfo, changedFilesGit, patches)
 		},
 	}
 

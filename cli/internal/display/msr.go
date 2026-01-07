@@ -13,26 +13,26 @@ import (
 	"github.com/xlab/treeprint"
 
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
-	msrvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
-	validation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
+
+	validationcommon "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation"
+	validationmsr "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
+
+	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 )
 
 func PrintIfVerifyFails(
 	w io.Writer,
-	msr *dto.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	appSignature dto.SignatureData,
-	governorSignatures []dto.SignatureData,
+	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
 ) error {
 	// Verify, that MSR was signed by the MRT publicKey (from MSR Spec).
-	msg, err := msrvalidation.VerifyMSRSignature(msr, msrBytes, appSignature)
+	msg, err := validationcommon.VerifySignature(msrInfo.Obj.Spec.PublicKey, msrInfo.Content, msrInfo.Sign)
 	// Verify, that files' content isn't changed.
 	if err == nil {
-		msg, err = msrvalidation.VerifyChangedFiles(msr, changedFiles)
+		msg, err = validationmsr.VerifyChangedFiles(msrInfo.Obj, changedFiles)
 	}
 	if err != nil {
-		printMSRFailed(w, msr, msg, err)
+		printMSRFailed(w, msrInfo.Obj, msg, err)
 		return err
 	}
 
@@ -43,17 +43,16 @@ func PrintIfVerifyFails(
 // PrintMSRFileDiffs prints a colored git-diff of the files MSR.
 func PrintMSRFileDiffs(
 	w io.Writer,
-	msr *dto.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	appSignature dto.SignatureData,
-	governorSignatures []dto.SignatureData,
+	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
 	patches map[string]diff.Patch,
 ) error {
-	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
 	if err != nil {
 		return err
 	}
+
+	msr := msrInfo.Obj
 
 	// Render MSR general info
 	fmt.Fprintf(w, "Manifest Signing Request: %s v%d\n\n", msr.ObjectMeta.Namespace+":"+msr.ObjectMeta.Name, msr.Spec.Version)
@@ -144,18 +143,15 @@ func patchToString(
 // PrintMSRRaw prints the raw MSR manifest to the writer.
 func PrintMSRRaw(
 	w io.Writer,
-	msr *dto.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	appSignature dto.SignatureData,
-	governorSignatures []dto.SignatureData,
+	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
 ) error {
-	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
 	if err != nil {
 		return err
 	}
 
-	_, err = w.Write(msrBytes)
+	_, err = w.Write(msrInfo.Content)
 	return err
 }
 
@@ -164,21 +160,19 @@ func PrintMSRRaw(
 // It verifies, if changed files are not tampered with.
 func PrintMSRTable(
 	w io.Writer,
-	msr *dto.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	appSignature dto.SignatureData,
-	governorSignatures []dto.SignatureData,
+	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
 ) error {
-	err := PrintIfVerifyFails(w, msr, msrBytes, appSignature, governorSignatures, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
 	if err != nil {
 		return err
 	}
+	msr := msrInfo.Obj
 
 	// Print MSR information in table, if no error happened.
-	verifiedSigners, signerWarnings := msrvalidation.GetVerifiedSigners(msr, governorSignatures, msrBytes)
+	verifiedSigners, signerWarnings := validationmsr.GetVerifiedSigners(msr, msrInfo.GovernorsSigns, msrInfo.Content)
 	status := dto.InProgress
-	if validation.EvaluateRules(msr.Spec.Require, verifiedSigners) {
+	if validationcommon.EvaluateRules(msr.Spec.Require, verifiedSigners) {
 		status = dto.Approved
 	}
 	printMSRInformation(w, msr, status)
@@ -188,7 +182,7 @@ func PrintMSRTable(
 
 	// Start the recursive evaluation with the root rule from the MSR Spec.
 	approvalTree := treeprint.New()
-	isOverallApproved := msrvalidation.EvaluateAndBuildRuleTree(msr.Spec.Require, verifiedSigners, approvalTree)
+	isOverallApproved := validationcommon.EvaluateAndBuildRuleTree(msr.Spec.Require, verifiedSigners, approvalTree)
 
 	// Print the tree and summary status.
 	fmt.Fprintln(w, approvalTree.String())

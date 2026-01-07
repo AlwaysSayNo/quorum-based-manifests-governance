@@ -22,6 +22,19 @@ const (
 	QubmangoIndexFilePath = ".qubmango/index.yaml"
 )
 
+type MCAInfo struct {
+	Obj     *dto.ManifestChangeApprovalManifestObject
+	Content []byte
+	Sign    dto.SignatureData
+}
+
+type MSRInfo struct {
+	Obj            *dto.ManifestSigningRequestManifestObject
+	Content        []byte
+	Sign           dto.SignatureData
+	GovernorsSigns []dto.SignatureData
+}
+
 func NewMyFilePatch(
 	filePatch []diff.FilePatch,
 	message string,
@@ -61,7 +74,8 @@ type GitRepositoryProvider interface {
 	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]dto.FileBytesWithStatus, error)
 	PushGovernorSignature(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
 	GetQubmangoIndex(ctx context.Context) (*dto.QubmangoIndex, error)
-	GetLatestMSR(ctx context.Context, policy *dto.QubmangoPolicy) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error)
+	GetLatestMSR(ctx context.Context, policy *dto.QubmangoPolicy) (*MSRInfo, error)
+	GetMCAHistory(ctx context.Context, policy *dto.QubmangoPolicy) ([]MCAInfo, error)
 	GetFileDiffPatchParts(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
 }
 

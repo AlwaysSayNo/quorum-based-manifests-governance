@@ -1,7 +1,6 @@
 package validation
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -9,47 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 )
-
-// VerifyMSRSignature checks the detached signature of the MSR against the operator's public key.
-func VerifyMSRSignature(
-	msr *dto.ManifestSigningRequestManifestObject,
-	msrBytes []byte,
-	signatureData []byte,
-) (string, error) {
-	msg := "CRITICAL WARNING: The Manifest Signing Request itself is invalid or has been tampered with. Do not proceed"
-	if len(signatureData) == 0 {
-		return msg, fmt.Errorf("operator signature is missing")
-	}
-
-	// The MSR spec must contain the public key of the operator that signed it.
-	operatorPubKeyStr := msr.Spec.PublicKey
-	if operatorPubKeyStr == "" {
-		return msg, fmt.Errorf("operator public key is not present in the MSR spec")
-	}
-
-	keyRing, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(operatorPubKeyStr)))
-	if err != nil {
-		return msg, fmt.Errorf("failed to parse operator public key: %w", err)
-	}
-
-	// De-armor the signature before verification
-	armorBlock, err := armor.Decode(bytes.NewReader(signatureData))
-	if err != nil {
-		return msg, fmt.Errorf("failed to decode armored signature: %w", err)
-	}
-
-	_, err = openpgp.CheckDetachedSignature(keyRing, bytes.NewReader(msrBytes), armorBlock.Body, nil)
-	if err != nil {
-		return msg, fmt.Errorf("signature verification failed: %w", err)
-	}
-
-	return "", nil
-}
 
 func VerifyChangedFiles(
 	msr *dto.ManifestSigningRequestManifestObject,

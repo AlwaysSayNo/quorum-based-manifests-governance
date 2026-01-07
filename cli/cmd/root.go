@@ -60,20 +60,40 @@ func Execute() {
 func init() {
 }
 
-func fetchLatestMSR(
+func fetchAllMCA(
 	repoProvider manager.GitRepositoryProvider,
-) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
+) ([]manager.MCAInfo, error) {
 
 	// Take QubmangoIndex from the repository
 	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("get QubmangoIndex: %w", err)
+		return nil, fmt.Errorf("get QubmangoIndex: %w", err)
 	}
 
 	// Get policy from qubmango index
 	policy, err := getGovernancePolicy(qubmangoIndex, mrtAlias)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("get governance policy: %w", err)
+		return nil, fmt.Errorf("get governance policy: %w", err)
+	}
+
+	// Fetch the latest MSR and its signature
+	return repoProvider.GetMCAHistory(ctx, policy)
+}
+
+func fetchLatestMSR(
+	repoProvider manager.GitRepositoryProvider,
+) (*manager.MSRInfo, error) {
+
+	// Take QubmangoIndex from the repository
+	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get QubmangoIndex: %w", err)
+	}
+
+	// Get policy from qubmango index
+	policy, err := getGovernancePolicy(qubmangoIndex, mrtAlias)
+	if err != nil {
+		return nil, fmt.Errorf("get governance policy: %w", err)
 	}
 
 	// Fetch the latest MSR, its and governors signatures
