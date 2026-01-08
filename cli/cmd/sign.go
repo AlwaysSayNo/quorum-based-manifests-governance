@@ -44,9 +44,11 @@ func init() {
 			}
 			msr := msrInfo.Obj
 
-			// TODO: refactor
-			currRepo, _ := getRepoAlias()
-			repoInfo, _ := cliConfig.GetRepository(currRepo)
+			// Get current repo config info
+			repoInfo, err := getCurrentRepo()
+			if err != nil {
+				return fmt.Errorf("get current repo: %w", err)
+			}
 
 			if msr.Spec.Version != version {
 				return fmt.Errorf("specified version %d is not the latest", version)

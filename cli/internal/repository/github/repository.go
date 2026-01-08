@@ -420,52 +420,11 @@ func (p *gitProvider) commitAndPush(
 	return commitHash.String(), nil
 }
 
-func (p *gitProvider) GetQubmangoIndex(ctx context.Context,
-) (*dto.QubmangoIndex, error) {
-	return p.getQubmangoIndexWithPath(ctx, manager.QubmangoIndexFilePath)
-}
-
-func (p *gitProvider) getQubmangoIndexWithPath(
-	ctx context.Context,
-	qubmangoFileRepositoryPath string,
-) (*dto.QubmangoIndex, error) {
-	_, _, err := p.syncAndLock2(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sync and lock: %w", err)
-	}
-	defer p.mu.Unlock()
-
-	fullFilePath := filepath.Join(p.localPath, qubmangoFileRepositoryPath)
-
-	// Check correctness of operational file name (a yaml file with non-empty name)
-	fileName := filepath.Base(fullFilePath)
-	if !strings.HasSuffix(fileName, ".yaml") || fileName == ".yaml" {
-		return nil, fmt.Errorf("incorrect operational .yaml file name %s", fileName)
-	}
-
-	if _, err := os.Stat(fullFilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("index file doesn't exist in %s", fullFilePath)
-	}
-
-	// File exists - read and unmarshal
-	fileBytes, err := os.ReadFile(fullFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("read qubmango index file: %w", err)
-	}
-
-	var qubmangoIndex dto.QubmangoIndex
-	if err := yaml.Unmarshal(fileBytes, &qubmangoIndex); err != nil {
-		return nil, fmt.Errorf("unmarshal qubmango index file: %w", err)
-	}
-
-	return &qubmangoIndex, nil
-}
-
 // GetLatestMSR finds the most recent MSR in the repository and its associated signatures.
 // It returns the parsed MSR, its file content, qubmango signature, a list of governor signatures, and an error if any.
 func (p *gitProvider) GetLatestMSR(
 	ctx context.Context,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) (*manager.MSRInfo, error) {
 	// Sync and Lock
 	worktree, _, err := p.syncAndLock2(ctx)
@@ -507,10 +466,10 @@ func (p *gitProvider) GetLatestMSR(
 func (p *gitProvider) getMSRAndSignature(
 	activeMSRFolderPath string,
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, error) {
 	// Extract MSR Content
-	msrFilePath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml", policy.MSR.Name))
+	msrFilePath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml", policy.MSRName))
 	msrFile, err := worktree.Filesystem.Open(msrFilePath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open msr file %s: %w", msrFilePath, err)
@@ -529,7 +488,7 @@ func (p *gitProvider) getMSRAndSignature(
 
 	// Read msr governance signature (msr.yaml.sig)
 	var msrSignature dto.SignatureData
-	appSigPath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MSR.Name))
+	appSigPath := filepath.Join(activeMSRFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MSRName))
 
 	msrSigFile, err := worktree.Filesystem.Open(appSigPath)
 	if err != nil {
@@ -550,7 +509,7 @@ func (p *gitProvider) getMSRAndSignature(
 func (p *gitProvider) readGovernorSignatures(
 	activeMSRFolderPath string,
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) ([]dto.SignatureData, error) {
 	// Read governor signatures (signatures/msr.yaml.sig.*)
 	var goverSignatures []dto.SignatureData
@@ -565,7 +524,7 @@ func (p *gitProvider) readGovernorSignatures(
 	}
 
 	// Regex to match: msr.yaml.sig.{suffix}
-	govSigMatcher := regexp.MustCompile(fmt.Sprintf(`^%s\.yaml\.sig\..+$`, policy.MSR.Name))
+	govSigMatcher := regexp.MustCompile(fmt.Sprintf(`^%s\.yaml\.sig\..+$`, policy.MSRName))
 
 	for _, sigFile := range sigFileInfos {
 		if sigFile.IsDir() {
@@ -596,7 +555,7 @@ func (p *gitProvider) readGovernorSignatures(
 // It returns the list of parsed MCA, their file content, qubmango signature, and an error if any.
 func (p *gitProvider) GetMCAHistory(
 	ctx context.Context,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) ([]manager.MCAInfo, error) {
 	// Sync and Lock
 	worktree, _, err := p.syncAndLock2(ctx)
@@ -620,13 +579,13 @@ func (p *gitProvider) GetMCAHistory(
 func (p *gitProvider) getMCAAndSignatureList(
 	folders []string,
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) ([]manager.MCAInfo, error) {
 	var mcaHistory []manager.MCAInfo
 
 	// Iterate through all version folders
 	for _, folder := range folders {
-		mcaFilePath := filepath.Join(folder, fmt.Sprintf("%s.yaml", policy.MCA.Name))
+		mcaFilePath := filepath.Join(folder, fmt.Sprintf("%s.yaml", policy.MCAName))
 		if _, err := worktree.Filesystem.Stat(mcaFilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("fetch mca file from repository %s: %w", mcaFilePath, err)
 		} else if err != nil && errors.Is(err, os.ErrNotExist) {
@@ -656,10 +615,10 @@ func (p *gitProvider) getMCAAndSignatureList(
 func (p *gitProvider) getMCAAndSignature(
 	versionFolderPath string,
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) (*dto.ManifestChangeApprovalManifestObject, []byte, dto.SignatureData, error) {
 	// Extract MCA Content
-	mcaFilePath := filepath.Join(versionFolderPath, fmt.Sprintf("%s.yaml", policy.MCA.Name))
+	mcaFilePath := filepath.Join(versionFolderPath, fmt.Sprintf("%s.yaml", policy.MCAName))
 	mcaFile, err := worktree.Filesystem.Open(mcaFilePath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open mca file %s: %w", mcaFilePath, err)
@@ -678,7 +637,7 @@ func (p *gitProvider) getMCAAndSignature(
 
 	// Read mca qubmango signature (mca.yaml.sig)
 	var mcaSignature dto.SignatureData
-	appSigPath := filepath.Join(versionFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MCA.Name))
+	appSigPath := filepath.Join(versionFolderPath, fmt.Sprintf("%s.yaml.sig", policy.MCAName))
 
 	mcaSigFile, err := worktree.Filesystem.Open(appSigPath)
 	if err != nil {
@@ -698,7 +657,7 @@ func (p *gitProvider) getMCAAndSignature(
 
 func (p *gitProvider) getGovernanceVersionedFoldersSortedList(
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) ([]string, error) {
 	// Get versioned map<version, folder>
 	versionedFolders, err := p.getGovernanceVersionedFolders(worktree, policy)
@@ -724,7 +683,7 @@ func (p *gitProvider) getGovernanceVersionedFoldersSortedList(
 
 func (p *gitProvider) getGovernanceVersionedFolders(
 	worktree *git.Worktree,
-	policy *dto.QubmangoPolicy,
+	policy *manager.GovernancePolicy,
 ) (map[int]string, error) {
 	// Scan for all version folders (v_N) in governance path
 	fileInfos, err := worktree.Filesystem.ReadDir(policy.GovernancePath)

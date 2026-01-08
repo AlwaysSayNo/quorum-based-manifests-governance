@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-
-	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
@@ -63,17 +60,17 @@ func init() {
 func fetchAllMCA(
 	repoProvider manager.GitRepositoryProvider,
 ) ([]manager.MCAInfo, error) {
-
-	// Take QubmangoIndex from the repository
-	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
+	// Get the repo info for repoAlias
+	repoInfo, err := getCurrentRepo()
 	if err != nil {
-		return nil, fmt.Errorf("get QubmangoIndex: %w", err)
+		return nil, fmt.Errorf("get current repo: %w", err)
 	}
 
-	// Get policy from qubmango index
-	policy, err := getGovernancePolicy(qubmangoIndex, mrtAlias)
-	if err != nil {
-		return nil, fmt.Errorf("get governance policy: %w", err)
+	// Convert current repo information to governance policy
+	policy := &manager.GovernancePolicy{
+		GovernancePath: repoInfo.GovernanceFolderPath,
+		MSRName:        repoInfo.MSRName,
+		MCAName:        repoInfo.MCAName,
 	}
 
 	// Fetch the latest MSR and its signature
@@ -83,47 +80,21 @@ func fetchAllMCA(
 func fetchLatestMSR(
 	repoProvider manager.GitRepositoryProvider,
 ) (*manager.MSRInfo, error) {
-
-	// Take QubmangoIndex from the repository
-	qubmangoIndex, err := repoProvider.GetQubmangoIndex(ctx)
+	// Get the repo info for repoAlias
+	repoInfo, err := getCurrentRepo()
 	if err != nil {
-		return nil, fmt.Errorf("get QubmangoIndex: %w", err)
+		return nil, fmt.Errorf("get current repo: %w", err)
 	}
 
-	// Get policy from qubmango index
-	policy, err := getGovernancePolicy(qubmangoIndex, mrtAlias)
-	if err != nil {
-		return nil, fmt.Errorf("get governance policy: %w", err)
+	// Convert current repo information to governance policy
+	policy := &manager.GovernancePolicy{
+		GovernancePath: repoInfo.GovernanceFolderPath,
+		MSRName:        repoInfo.MSRName,
+		MCAName:        repoInfo.MCAName,
 	}
 
 	// Fetch the latest MSR, its and governors signatures
 	return repoProvider.GetLatestMSR(ctx, policy)
-}
-
-// getGovernancePolicy returns specific policy by MRT alias. If QubmangoIndex contains only one policy - alias can be empty string.
-// If QubmangoIndex contains >= 1 policies - alias required.
-func getGovernancePolicy(
-	qubmangoIndex *dto.QubmangoIndex,
-	alias string,
-) (*dto.QubmangoPolicy, error) {
-	if len(qubmangoIndex.Spec.Policies) == 1 && alias == "" {
-		return &qubmangoIndex.Spec.Policies[0], nil
-	}
-
-	if len(qubmangoIndex.Spec.Policies) > 1 && alias == "" {
-		return nil, fmt.Errorf("index file contains more than 1 entry and no mrtAlias was provided")
-	}
-
-	// Find policy with mrtAlias and fetch governanceFolderPath
-	governanceIndex := slices.IndexFunc(qubmangoIndex.Spec.Policies, func(p dto.QubmangoPolicy) bool {
-		return p.Alias == mrtAlias
-	})
-
-	if governanceIndex == -1 || len(qubmangoIndex.Spec.Policies) == 0 {
-		return nil, fmt.Errorf("no ManifestRequestTemplate index found for mrtAlias %s", mrtAlias)
-	}
-
-	return &qubmangoIndex.Spec.Policies[governanceIndex], nil
 }
 
 func repositoryManager() *manager.Manager {
@@ -153,8 +124,7 @@ func getRepositoryProviderWithInput(
 	var err error
 
 	if requestSSH {
-		// sshPass, err = getSSHPassphrase(w)
-		sshPass = "Account 123"
+		sshPass, err = getSSHPassphrase(w)
 		if err != nil {
 			return nil, fmt.Errorf("get SSH passphrase: %w", err)
 		}
@@ -162,8 +132,7 @@ func getRepositoryProviderWithInput(
 
 	pgpPass := ""
 	if requestPGP {
-		// pgpPass, err = getPGPPassphrase(w)
-		pgpPass = "ownerpassphrase"
+		// pgpPass = "ownerpassphrase"
 		if err != nil {
 			return nil, fmt.Errorf("get PGP passphrase: %w", err)
 		}
@@ -176,14 +145,9 @@ func getRepositoryProvider(
 	sshPass, pgpPass string,
 ) (manager.GitRepositoryProvider, error) {
 	// Get the repo info for repoAlias
-	alias, err := getRepoAlias()
+	repositoryInfo, err := getCurrentRepo()
 	if err != nil {
-		return nil, fmt.Errorf("get repository alias: %w", err)
-	}
-
-	repositoryInfo, err := cliConfig.GetRepository(alias)
-	if err != nil {
-		return nil, fmt.Errorf("get repository by alias %s: %w", alias, err)
+		return nil, fmt.Errorf("get current repo: %w", err)
 	}
 
 	// Initialize the repository provider
@@ -195,6 +159,20 @@ func getRepositoryProvider(
 		PGPPassphrase:    pgpPass,
 	}
 	return repoManager.GetProvider(ctx, conf)
+}
+
+func getCurrentRepo() (*config.GitRepository, error) {
+	alias, err := getRepoAlias()
+	if err != nil {
+		return nil, fmt.Errorf("get repository alias: %w", err)
+	}
+
+	repositoryInfo, err := cliConfig.GetRepository(alias)
+	if err != nil {
+		return nil, fmt.Errorf("get repository by alias %s: %w", alias, err)
+	}
+
+	return &repositoryInfo, nil
 }
 
 func getSSHPassphrase(

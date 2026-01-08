@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,9 +28,9 @@ func init() {
 	}
 
 	addRepoCmd := &cobra.Command{
-		Use:   "add-repo <alias> <url> <ssh-key-path> <pgp-key-path> <governance-key-path>",
+		Use:   "add-repo <alias> <url> <ssh-key-path> <pgp-key-path> <governance-key-path> <msr-name> <mca-name>",
 		Short: "Add a new repository configuration",
-		Args:  cobra.ExactArgs(5),
+		Args:  cobra.ExactArgs(7),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			goverKey, err := readFile(args[4])
 			if err != nil {
@@ -43,6 +43,8 @@ func init() {
 				SSHKeyPath:          args[2],
 				PGPKeyPath:          args[3],
 				GovernancePublicKey: goverKey,
+				MSRName:             args[5],
+				MCAName:             args[6],
 			}
 
 			// Load config, add the new repo, and save the config file.
@@ -54,26 +56,39 @@ func init() {
 	var editSSHKeyPath string
 	var editPGPKeyPath string
 	var editGovernanceKeyPath string
+	var editGovernanceFolderPath string
+	var msrName string
+	var mcaName string
 
 	editRepoCmd := &cobra.Command{
 		Use:   "edit-repo <alias>",
 		Short: "Edit existing repository configuration",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if editSSHURL == "" && editSSHKeyPath == "" && editPGPKeyPath == "" && editGovernanceKeyPath == "" {
+			// Check, that at least any flag provided
+			if emptyAll([]string{editSSHURL, editSSHKeyPath, editPGPKeyPath, editGovernanceKeyPath, editGovernanceFolderPath, msrName, mcaName}) {
 				return fmt.Errorf("no edit field was passed")
 			}
-			goverKey, err := readFile(editGovernanceKeyPath)
-			if err != nil {
-				return fmt.Errorf("extract governance public key: %w", err)
+
+			// Read governance public key, if flag provided
+			goverKey := ""
+			if editGovernanceKeyPath != "" {
+				var err error
+				goverKey, err = readFile(editGovernanceKeyPath)
+				if err != nil {
+					return fmt.Errorf("extract governance public key: %w", err)
+				}
 			}
 
 			repository := config.GitRepository{
-				Alias:               args[0],
-				URL:                 editSSHURL,
-				SSHKeyPath:          editSSHKeyPath,
-				PGPKeyPath:          editPGPKeyPath,
-				GovernancePublicKey: goverKey,
+				Alias:                args[0],
+				URL:                  editSSHURL,
+				SSHKeyPath:           editSSHKeyPath,
+				PGPKeyPath:           editPGPKeyPath,
+				GovernancePublicKey:  goverKey,
+				GovernanceFolderPath: editGovernanceFolderPath,
+				MSRName:              msrName,
+				MCAName:              mcaName,
 			}
 
 			// Load config, edit existing repo, and save the config file.
@@ -121,6 +136,9 @@ func init() {
 	editRepoCmd.Flags().StringVarP(&editSSHKeyPath, "ssh-key-path", "", "", "Absolute path to private SSH key, used to connect to the repository")
 	editRepoCmd.Flags().StringVarP(&editPGPKeyPath, "pgp-key-path", "", "", "Absolute path to private PGP key, used for signing")
 	editRepoCmd.Flags().StringVarP(&editGovernanceKeyPath, "governance-key-path", "", "", "Absolute path to public PGP key of the governance tool")
+	editRepoCmd.Flags().StringVarP(&editGovernanceFolderPath, "governance-folder-path", "", "", "Git repository path to governance folder, containing MSRs, MCAs")
+	editRepoCmd.Flags().StringVarP(&msrName, "msr-name", "", "", "Name of Manifest Signature Request, provided in Manifest Request Template")
+	editRepoCmd.Flags().StringVarP(&mcaName, "mca-name", "", "", "Name of Manifest Change Approval, provided in Manifest Request Template")
 
 	configCmd.AddCommand(showConfigCmd)
 	configCmd.AddCommand(addRepoCmd)
@@ -146,11 +164,20 @@ func readFile(path string) (string, error) {
 		path = filepath.Join(homeDir, path[2:])
 	}
 
-	// Read file 
+	// Read file
 	keyBytes, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read key file '%s': %w", path, err)
 	}
 
 	return string(keyBytes), nil
+}
+
+func emptyAll(strs []string) bool {
+	for _, s := range strs {
+		if s != "" {
+			return false
+		}
+	}
+	return true
 }

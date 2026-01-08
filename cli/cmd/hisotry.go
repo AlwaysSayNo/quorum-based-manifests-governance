@@ -26,9 +26,11 @@ func init() {
 				return fmt.Errorf("get MSR information from repository: %w", err)
 			}
 			
-			// TODO: refactor
-			currRepo, _ := getRepoAlias()
-			repoInfo, _ := cliConfig.GetRepository(currRepo)
+			// Get current repo config info
+			repoInfo, err := getCurrentRepo()
+			if err != nil {
+				return fmt.Errorf("get current repo: %w", err)
+			}
 
 			// Display the output
 			return display.PrintMCAHistoryTable(cmd.OutOrStdout(), mcaInfos, repoInfo.GovernancePublicKey)

@@ -35,6 +35,12 @@ type MSRInfo struct {
 	GovernorsSigns []dto.SignatureData
 }
 
+type GovernancePolicy struct {
+	GovernancePath string
+	MSRName        string
+	MCAName        string
+}
+
 func NewMyFilePatch(
 	filePatch []diff.FilePatch,
 	message string,
@@ -73,9 +79,8 @@ type GitRepositoryProvider interface {
 	GetLatestRevision(ctx context.Context) (string, error)
 	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]dto.FileBytesWithStatus, error)
 	PushGovernorSignature(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
-	GetQubmangoIndex(ctx context.Context) (*dto.QubmangoIndex, error)
-	GetLatestMSR(ctx context.Context, policy *dto.QubmangoPolicy) (*MSRInfo, error)
-	GetMCAHistory(ctx context.Context, policy *dto.QubmangoPolicy) ([]MCAInfo, error)
+	GetLatestMSR(ctx context.Context, policy *GovernancePolicy) (*MSRInfo, error)
+	GetMCAHistory(ctx context.Context, policy *GovernancePolicy) ([]MCAInfo, error)
 	GetFileDiffPatchParts(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
 }
 

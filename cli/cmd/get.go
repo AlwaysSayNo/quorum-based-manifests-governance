@@ -35,9 +35,11 @@ func init() {
 			}
 			msr := msrInfo.Obj
 			
-			// TODO: refactor
-			currRepo, _ := getRepoAlias()
-			repoInfo, _ := cliConfig.GetRepository(currRepo)
+			// Get current repo config info
+			repoInfo, err := getCurrentRepo()
+			if err != nil {
+				return fmt.Errorf("get current repo: %w", err)
+			}
 
 			// Get changed files from repository between previous approved and current commits
 			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)
@@ -69,9 +71,11 @@ func init() {
 			}
 			msr := msrInfo.Obj
 
-			// TODO: refactor
-			currRepo, _ := getRepoAlias()
-			repoInfo, _ := cliConfig.GetRepository(currRepo)
+			// Get current repo config info
+			repoInfo, err := getCurrentRepo()
+			if err != nil {
+				return fmt.Errorf("get current repo: %w", err)
+			}
 
 			// Get changed files from repository between previous approved and current commits
 			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)

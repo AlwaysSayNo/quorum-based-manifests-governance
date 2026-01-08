@@ -27,11 +27,14 @@ type UserInfo struct {
 }
 
 type GitRepository struct {
-	Alias               string `yaml:"alias"`
-	URL                 string `yaml:"url"`
-	SSHKeyPath          string `yaml:"sshKeyPath"` // absolute path to SSH key file
-	PGPKeyPath          string `yaml:"pgpKeyPath"` // absolute path to PGP key file
-	GovernancePublicKey string `yaml:"governancePublicKey"`
+	Alias                string `yaml:"alias"`
+	URL                  string `yaml:"url"`
+	SSHKeyPath           string `yaml:"sshKeyPath"` // absolute path to SSH key file
+	PGPKeyPath           string `yaml:"pgpKeyPath"` // absolute path to PGP key file
+	GovernancePublicKey  string `yaml:"governancePublicKey"`
+	GovernanceFolderPath string `yaml:"governanceFolderPath"`
+	MSRName              string `yaml:"msrName"`
+	MCAName              string `yaml:"mcaName"`
 }
 
 type ConfigData struct {
@@ -154,8 +157,16 @@ func defaulted(
 		dst.PGPKeyPath = src.PGPKeyPath
 	}
 	if dst.GovernancePublicKey == "" {
-
 		dst.GovernancePublicKey = src.GovernancePublicKey
+	}
+	if dst.GovernanceFolderPath == "" {
+		dst.GovernanceFolderPath = src.GovernanceFolderPath
+	}
+	if dst.MCAName == "" {
+		dst.MCAName = src.MCAName
+	}
+	if dst.MSRName == "" {
+		dst.MSRName = src.MSRName
 	}
 
 	return dst
