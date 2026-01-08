@@ -22,23 +22,27 @@ TODO (Done):
 - Prevent ArgoCD from syncing targetRevision from repository (added `syncOptions: RespectIgnoreDifferences=true`)
 - MRT / MSR should point to the exact git of the request, not the next one 
 - Implement history overview commands
+- How can we trust the key from MSR and MRT as a CLI user? -- We add this key to config in CLI manually
+- Use flags for repository editing
 
 
 TODO: 
+- Remove LastObservedCommitHash, replace with timed set, that stores old revisions
+- Manual vs automatic governancePath CLI declaration
+- Remove QubmangoIndex logic from CLI. Declare the governance path manually.
+- GovernanceFolder cannot be changed after creation. Or think about scenario, how it could be changed. It would require: what to do with old MSRs, MCAs. Change entry in the index file on update.
+- Remove defaults from some fields (argocd problem)
+- Generate concat documents
+- Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
+
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
-- How can we trust the key from MSR and MRT as a CLI user?
 - Review all controller transactional methods. Fix / Improve them, if needed
 - Split MRT (maybe MSR, MCA) deletion on sub-steps.
-- Generate concat documents
 - Interactive pull intervals
-- Remove LastObservedCommitHash, replace with timed set, that stores old revisions
-- Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
 - Move all Taskfile from inside to outside (or just to the subproject root)
 - What to do with MSR, MCA after MRT deletion and finish of governance process? Should we remove signatures from the repository, leave for now, because it is additional logic, leave and backup?
 - Make support of any argocd namespace (what was the error?)
 - What should we do with rollback to previously approved changes (MCA v_k -> MCA v_k-1)?
 - Refactor queue and queue usage (now we expect queue to have only one type of events)
-- GovernanceFolder cannot be changed after creation. Or think about scenario, how it could be changed. It would require: what to do with old MSRs, MCAs. Change entry in the index file on update.
 - Snapshot governor signatures for old MSRs (when new MSR is created, we should snapshot the signatures for the previous MSR)
 - If secrets names change - we should reestablish repository
-- Default MRT values and ArgoCD sync diff

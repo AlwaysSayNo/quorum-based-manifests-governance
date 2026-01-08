@@ -34,6 +34,10 @@ func init() {
 				return fmt.Errorf("get MSR information from repository: %w", err)
 			}
 			msr := msrInfo.Obj
+			
+			// TODO: refactor
+			currRepo, _ := getRepoAlias()
+			repoInfo, _ := cliConfig.GetRepository(currRepo)
 
 			// Get changed files from repository between previous approved and current commits
 			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)
@@ -43,9 +47,9 @@ func init() {
 
 			// Display the output based on the format flag
 			if outputFormat == "raw" {
-				return display.PrintMSRRaw(cmd.OutOrStdout(), msrInfo, changedFilesGit)
+				return display.PrintMSRRaw(cmd.OutOrStdout(), msrInfo, changedFilesGit, repoInfo.GovernancePublicKey)
 			}
-			return display.PrintMSRTable(cmd.OutOrStdout(), msrInfo, changedFilesGit)
+			return display.PrintMSRTable(cmd.OutOrStdout(), msrInfo, changedFilesGit, repoInfo.GovernancePublicKey)
 		},
 	}
 
@@ -65,6 +69,10 @@ func init() {
 			}
 			msr := msrInfo.Obj
 
+			// TODO: refactor
+			currRepo, _ := getRepoAlias()
+			repoInfo, _ := cliConfig.GetRepository(currRepo)
+
 			// Get changed files from repository between previous approved and current commits
 			changedFilesGit, err := repoProvider.GetChangedFilesRaw(ctx, msr.Spec.PreviousCommitSHA, msr.Spec.CommitSHA, msr.Spec.Locations.SourcePath)
 			if err != nil {
@@ -78,7 +86,7 @@ func init() {
 			}
 
 			// Display the file diffs
-			return display.PrintMSRFileDiffs(cmd.OutOrStdout(), msrInfo, changedFilesGit, patches)
+			return display.PrintMSRFileDiffs(cmd.OutOrStdout(), msrInfo, changedFilesGit, patches, repoInfo.GovernancePublicKey)
 		},
 	}
 

@@ -19,9 +19,20 @@ import (
 func PrintIfMCAVerifyFails(
 	w io.Writer,
 	mcaInfo *manager.MCAInfo,
+	trustedGovernanceKey string,
 ) error {
-	// Verify, that MCA was signed by the MRT publicKey (from MCA Spec).
-	msg, err := validationcommon.VerifySignature(mcaInfo.Obj.Spec.PublicKey, mcaInfo.Content, mcaInfo.Sign)
+	var msg string
+	var err error
+
+	if mcaInfo.Obj.Spec.PublicKey != trustedGovernanceKey {
+		msg = "CRITICAL WARNING: The MCA public key is different from trusted governance key. Do not proceed"
+		err = fmt.Errorf("mca public key is different from trusted key")
+	}
+	if err == nil {
+		// Verify, that MCA was signed by the MRT publicKey (from MCA Spec).
+		msg, err = validationcommon.VerifySignature(mcaInfo.Obj.Spec.PublicKey, mcaInfo.Content, mcaInfo.Sign)
+	}
+
 	// Verify, that files' content isn't changed.
 	if err != nil {
 		printMCAFailed(w, mcaInfo.Obj, msg, err)
@@ -53,6 +64,7 @@ func printMCAFailed(
 func PrintMCAHistoryTable(
 	w io.Writer,
 	mcaInfos []manager.MCAInfo,
+	trustedGovernanceKey string,
 ) error {
 	if len(mcaInfos) == 0 {
 		fmt.Fprintln(w, "No MCA history found")
@@ -63,7 +75,7 @@ func PrintMCAHistoryTable(
 		mca := mcaInfo.Obj
 
 		// Verify MCA signature
-		err := PrintIfMCAVerifyFails(w, &mcaInfo)
+		err := PrintIfMCAVerifyFails(w, &mcaInfo, trustedGovernanceKey)
 		if err != nil {
 			continue
 		} else {

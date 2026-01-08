@@ -44,6 +44,10 @@ func init() {
 			}
 			msr := msrInfo.Obj
 
+			// TODO: refactor
+			currRepo, _ := getRepoAlias()
+			repoInfo, _ := cliConfig.GetRepository(currRepo)
+
 			if msr.Spec.Version != version {
 				return fmt.Errorf("specified version %d is not the latest", version)
 			}
@@ -59,7 +63,7 @@ func init() {
 				return fmt.Errorf("get changed files from repository: %w", err)
 			}
 
-			err = display.PrintIfVerifyFails(cmd.OutOrStdout(), msrInfo, changedFilesGit)
+			err = display.PrintIfVerifyFails(cmd.OutOrStdout(), msrInfo, changedFilesGit, repoInfo.GovernancePublicKey)
 			if err != nil {
 				return err
 			}

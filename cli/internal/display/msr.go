@@ -24,13 +24,25 @@ func PrintIfVerifyFails(
 	w io.Writer,
 	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
+	trustedGovernanceKey string,
 ) error {
-	// Verify, that MSR was signed by the MRT publicKey (from MSR Spec).
-	msg, err := validationcommon.VerifySignature(msrInfo.Obj.Spec.PublicKey, msrInfo.Content, msrInfo.Sign)
+	var msg string
+	var err error
+
+	if msrInfo.Obj.Spec.PublicKey != trustedGovernanceKey {
+		msg = "CRITICAL WARNING: The MSR public key is different from trusted governance key. Do not proceed"
+		err = fmt.Errorf("msr public key is different from trusted key")
+	}
+
+	if err == nil {
+		// Verify, that MSR was signed by the MRT publicKey (from MSR Spec).
+		msg, err = validationcommon.VerifySignature(msrInfo.Obj.Spec.PublicKey, msrInfo.Content, msrInfo.Sign)
+	}
 	// Verify, that files' content isn't changed.
 	if err == nil {
 		msg, err = validationmsr.VerifyChangedFiles(msrInfo.Obj, changedFiles)
 	}
+	
 	if err != nil {
 		printMSRFailed(w, msrInfo.Obj, msg, err)
 		return err
@@ -46,8 +58,9 @@ func PrintMSRFileDiffs(
 	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
 	patches map[string]diff.Patch,
+	trustedGovernanceKey string,
 ) error {
-	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles, trustedGovernanceKey)
 	if err != nil {
 		return err
 	}
@@ -145,8 +158,9 @@ func PrintMSRRaw(
 	w io.Writer,
 	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
+	trustedGovernanceKey string,
 ) error {
-	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles, trustedGovernanceKey)
 	if err != nil {
 		return err
 	}
@@ -162,8 +176,9 @@ func PrintMSRTable(
 	w io.Writer,
 	msrInfo *manager.MSRInfo,
 	changedFiles map[string]dto.FileBytesWithStatus,
+	trustedGovernanceKey string,
 ) error {
-	err := PrintIfVerifyFails(w, msrInfo, changedFiles)
+	err := PrintIfVerifyFails(w, msrInfo, changedFiles, trustedGovernanceKey)
 	if err != nil {
 		return err
 	}

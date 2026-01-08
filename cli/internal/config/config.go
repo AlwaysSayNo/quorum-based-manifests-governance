@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
-
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
 
 type Config interface {
 	GetData() ConfigData
-	AddRepository(alias, url, sshKeyPath, pgpKeyPath string) error
-	EditRepository(alias, url, sshKeyPath, pgpKeyPath string) error
+	AddRepository(repository GitRepository) error
+	EditRepository(repository GitRepository) error
 	RemoveRepository(alias string) error
 	UseRepository(alias string) error
 	SetUser(username, email string) error
@@ -28,10 +27,11 @@ type UserInfo struct {
 }
 
 type GitRepository struct {
-	Alias      string `yaml:"alias"`
-	URL        string `yaml:"url"`
-	SSHKeyPath string `yaml:"sshKeyPath"` // absolute path to SSH key file
-	PGPKeyPath string `yaml:"pgpKeyPath"` // absolute path to PGP key file
+	Alias               string `yaml:"alias"`
+	URL                 string `yaml:"url"`
+	SSHKeyPath          string `yaml:"sshKeyPath"` // absolute path to SSH key file
+	PGPKeyPath          string `yaml:"pgpKeyPath"` // absolute path to PGP key file
+	GovernancePublicKey string `yaml:"governancePublicKey"`
 }
 
 type ConfigData struct {
@@ -63,7 +63,9 @@ func LoadConfig() (Config, error) {
 	return LoadConfigWithPath(DefaultConfigPath + DefaultConfigFileName)
 }
 
-func LoadConfigWithPath(configPath string) (Config, error) {
+func LoadConfigWithPath(
+	configPath string,
+) (Config, error) {
 	// Config file requires yaml format
 	if !strings.HasSuffix(configPath, ".yaml") {
 		return nil, fmt.Errorf("config file supports only .yaml format")
@@ -105,43 +107,63 @@ func (c *config) GetData() ConfigData {
 	return c.Data
 }
 
-func (c *config) AddRepository(alias, url, sshKeyPath, pgpKeyPath string) error {
+func (c *config) AddRepository(
+	repository GitRepository,
+) error {
 	// Check if alias already exists
-	exist, _ := c.checkAliasExists(alias)
+	exist, _ := c.checkAliasExists(repository.Alias)
 	if exist {
-		return fmt.Errorf("repository with alias %s already exists", alias)
+		return fmt.Errorf("repository with alias %s already exists", repository.Alias)
 	}
 
 	// Append new repository to config data
-	c.Data.Repositories = append(c.Data.Repositories, GitRepository{
-		Alias:      alias,
-		URL:        url,
-		SSHKeyPath: sshKeyPath,
-		PGPKeyPath: pgpKeyPath,
-	})
-
+	c.Data.Repositories = append(c.Data.Repositories, repository)
 	return c.saveData()
 }
 
-func (c *config) EditRepository(alias, url, sshKeyPath, pgpKeyPath string) error {
+func (c *config) EditRepository(
+	repository GitRepository,
+) error {
 	// Check if alias already exists
-	exist, idx := c.checkAliasExists(alias)
+	exist, idx := c.checkAliasExists(repository.Alias)
 	if !exist {
-		return fmt.Errorf("repository with alias %s does not exist", alias)
+		return fmt.Errorf("repository with alias %s does not exist", repository.Alias)
 	}
+
+	src := c.Data.Repositories[idx]
+	repository = defaulted(src, repository)
 
 	// Update existing repository with new values
-	c.Data.Repositories[idx] = GitRepository{
-		Alias:      alias,
-		URL:        url,
-		SSHKeyPath: sshKeyPath,
-		PGPKeyPath: pgpKeyPath,
-	}
-
+	c.Data.Repositories[idx] = defaulted(src, repository)
 	return c.saveData()
 }
 
-func (c *config) RemoveRepository(alias string) error {
+func defaulted(
+	src, dst GitRepository,
+) GitRepository {
+	if dst.Alias == "" {
+		dst.Alias = src.Alias
+	}
+	if dst.URL == "" {
+		dst.URL = src.URL
+	}
+	if dst.SSHKeyPath == "" {
+		dst.SSHKeyPath = src.SSHKeyPath
+	}
+	if dst.PGPKeyPath == "" {
+		dst.PGPKeyPath = src.PGPKeyPath
+	}
+	if dst.GovernancePublicKey == "" {
+
+		dst.GovernancePublicKey = src.GovernancePublicKey
+	}
+
+	return dst
+}
+
+func (c *config) RemoveRepository(
+	alias string,
+) error {
 	// Check if alias already exists
 	exist, idx := c.checkAliasExists(alias)
 	if !exist {
@@ -151,10 +173,17 @@ func (c *config) RemoveRepository(alias string) error {
 	// Remove existing repository
 	c.Data.Repositories = append(c.Data.Repositories[:idx], c.Data.Repositories[idx+1:]...)
 
+	// If alias is currently used repository - remove it
+	if alias == c.Data.CurrentRepository {
+		c.Data.CurrentRepository = ""
+	}
+
 	return c.saveData()
 }
 
-func (c *config) UseRepository(alias string) error {
+func (c *config) UseRepository(
+	alias string,
+) error {
 	// Check if alias already exists (empty alias is allowed to unset current repo)
 	if alias != "" {
 		exist, _ := c.checkAliasExists(alias)
@@ -167,7 +196,9 @@ func (c *config) UseRepository(alias string) error {
 	return c.saveData()
 }
 
-func (c *config) SetUser(username, email string) error {
+func (c *config) SetUser(
+	username, email string,
+) error {
 	c.Data.User = UserInfo{
 		Name:  username,
 		Email: email,
@@ -189,7 +220,9 @@ func (c *config) saveData() error {
 	return nil
 }
 
-func (c *config) checkAliasExists(alias string) (bool, int) {
+func (c *config) checkAliasExists(
+	alias string,
+) (bool, int) {
 	exist := false
 	idx := -1
 	for i, repo := range c.Data.Repositories {
@@ -203,7 +236,9 @@ func (c *config) checkAliasExists(alias string) (bool, int) {
 	return exist, idx
 }
 
-func (c *config) GetRepository(alias string) (GitRepository, error) {
+func (c *config) GetRepository(
+	alias string,
+) (GitRepository, error) {
 	// Check if alias already exists
 	exist, idx := c.checkAliasExists(alias)
 	if !exist {
