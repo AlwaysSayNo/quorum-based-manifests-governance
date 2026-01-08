@@ -24,16 +24,17 @@ TODO (Done):
 - Implement history overview commands
 - How can we trust the key from MSR and MRT as a CLI user? -- We add this key to config in CLI manually
 - Use flags for repository editing
+- Manual vs automatic governancePath CLI declaration
+- Totally removed LastObservedCommitHash
+- Remove QubmangoIndex logic from CLI. Declare the governance path manually.
 
 
 TODO: 
-- Remove LastObservedCommitHash, replace with timed set, that stores old revisions
-- Manual vs automatic governancePath CLI declaration
-- Remove QubmangoIndex logic from CLI. Declare the governance path manually.
 - GovernanceFolder cannot be changed after creation. Or think about scenario, how it could be changed. It would require: what to do with old MSRs, MCAs. Change entry in the index file on update.
 - Remove defaults from some fields (argocd problem)
 - Generate concat documents
 - Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
+- Remove index file from kubernetes part
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
 - Review all controller transactional methods. Fix / Improve them, if needed

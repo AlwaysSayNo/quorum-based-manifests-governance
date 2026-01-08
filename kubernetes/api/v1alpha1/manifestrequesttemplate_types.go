@@ -252,9 +252,6 @@ type ManifestRequestTemplateStatus struct {
 	// +optional
 	RevisionQueueRef ManifestRefOptional `json:"revisionQueueRef,omitempty" yaml:"revisionQueueRef,omitempty"`
 
-	// LastObservedCommitHash is the last observed commit hash from the git repository
-	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty" yaml:"lastObservedCommitHash,omitempty"`
-
 	// LastMSRVersion is the version of the last created MSR resource
 	LastMSRVersion int `json:"lastMSR,omitempty" yaml:"lastMSR,omitempty"`
 

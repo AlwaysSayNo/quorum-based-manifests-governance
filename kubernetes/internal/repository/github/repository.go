@@ -261,6 +261,23 @@ func (p *gitProvider) GetRemoteHeadCommit(
 	return headRef.Hash().String(), nil
 }
 
+// GetLocalHeadCommit returns the SHA of the local HEAD branch.
+func (p *gitProvider) GetLocalHeadCommit(ctx context.Context) (string, error) {
+	if p.repo == nil {
+		return "", fmt.Errorf("repository has not been initialized; call Sync() first")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Get the reference for HEAD.
+	headRef, err := p.repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD reference from local repository: %w", err)
+	}
+
+	return headRef.Hash().String(), nil
+}
+
 // GetLatestRevision takes head of the default branch and returns it's commit hash
 func (p *gitProvider) GetLatestRevision(
 	ctx context.Context,
