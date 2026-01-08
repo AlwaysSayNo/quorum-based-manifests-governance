@@ -177,6 +177,9 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 	if oldMRT.Spec.Locations.GovernancePath != newMRT.Spec.Locations.GovernancePath {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("locations").Child("governanceFolder"), "governanceFolder is immutable and cannot be changed after creation"))
 	}
+	if oldMRT.Spec.ArgoCDApplication != newMRT.Spec.ArgoCDApplication {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("argoCDApplication"), "argoCDApplication is immutable and cannot be changed after creation"))
+	}
 
 	// Check nested approval rules
 

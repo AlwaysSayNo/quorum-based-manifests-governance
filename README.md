@@ -27,14 +27,15 @@ TODO (Done):
 - Manual vs automatic governancePath CLI declaration
 - Totally removed LastObservedCommitHash
 - Remove QubmangoIndex logic from CLI. Declare the governance path manually.
+- GovernanceFolder cannot be changed after creation.
 
 
 TODO: 
-- GovernanceFolder cannot be changed after creation. Or think about scenario, how it could be changed. It would require: what to do with old MSRs, MCAs. Change entry in the index file on update.
-- Remove defaults from some fields (argocd problem)
 - Generate concat documents
+- Remove defaults from some fields (argocd problem)
 - Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
 - Remove index file from kubernetes part
+- MSR, MCA validating webhooks 
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
 - Review all controller transactional methods. Fix / Improve them, if needed
