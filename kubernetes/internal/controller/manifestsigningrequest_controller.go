@@ -614,7 +614,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 				return "", fmt.Errorf("fetch MSR from repository: %w", err)
 			} else if repoMSR.Spec.PublicKey != msr.Spec.PublicKey {
 				r.logger.Error(err, "Repository and in-cluster MSR public keys are different")
-				return "", fmt.Errorf("repository and in-cluster MSR public keys are different")
+				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
 			}
 
 			// Verify MSR signature against in-cluster MSR

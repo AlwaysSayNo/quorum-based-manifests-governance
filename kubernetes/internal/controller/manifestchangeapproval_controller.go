@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
@@ -35,6 +36,13 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+)
+
+const (
+	ApplySummaryFileName  = "apply-summary.yaml"
+	ApplySummaryHeader    = "# Summary of NEW and MODIFIED resources"
+	DeleteSummaryFileName = "delete-summary.yaml"
+	DeleteSummaryHeader   = "# Summary of DELETED resources"
 )
 
 // MCAStateHandler defines a function that performs work within a state and returns the next state
@@ -159,16 +167,20 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(
 		// 1. Create an initial MCA file in governance folder in Git repository.
 		r.logger.Info("Pushing initial MCA to Git repository")
 		return r.handleStateGitCommit(ctx, mca)
+	case governancev1alpha1.MCAActionStatePushSummaryFiles:
+		// 2. Create and push summary files (apply and delete manifests).
+		r.logger.Info("Pushing summary files to repository")
+		return r.handleStatePushSummaryFiles(ctx, mca)
 	case governancev1alpha1.MCAActionStateUpdateAfterGitPush:
-		// 2. Update information in-cluster MCA (add history record) after Git repository push.
+		// 3. Update information in-cluster MCA (add history record) after Git repository push.
 		r.logger.Info("Updating MCA after initial Git push")
 		return r.handleUpdateAfterGitPush(ctx, mca)
 	case governancev1alpha1.MCAActionStateUpdateArgoCD:
-		// 3. Update ArgoCD Application targetRevision.
+		// 4. Update ArgoCD Application targetRevision.
 		r.logger.Info("Updating ArgoCD Application target revision")
 		return r.handleStateUpdateArgoCD(ctx, mca)
 	case governancev1alpha1.MCAActionStateInitSetFinalizer:
-		// 4. Confirm MCA initialization by setting the GovernanceFinalizer.
+		// 5. Confirm MCA initialization by setting the GovernanceFinalizer.
 		r.logger.Info("Setting finalizer to complete initialization")
 		return r.handleStateFinalizer(ctx, mca)
 	default:
@@ -179,7 +191,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileCreate(
 }
 
 // handleStateGitCommit pushes the initial MCA manifest to the Git repository.
-// State: MCAActionStateGitPushMCA → MCAActionStateUpdateAfterGitPush
+// State: MCAActionStateGitPushMCA → MCAActionStatePushSummaryFiles
 func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -192,6 +204,25 @@ func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
 				return "", fmt.Errorf("save MCA in Git repository: %w", err)
 			}
 			r.logger.Info("MCA saved to repository successfully")
+			return governancev1alpha1.MCAActionStatePushSummaryFiles, nil
+		},
+	)
+}
+
+// handleStatePushSummaryFiles creates and pushes summary files (apply and delete manifests).
+// State: MCAActionStatePushSummaryFiles → MCAActionStateUpdateAfterGitPush
+func (r *ManifestChangeApprovalReconciler) handleStatePushSummaryFiles(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStatePushSummaryFiles, "Creating and pushing summary files to repository",
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
+			r.logger.Info("Creating and pushing summary files", "mca", mca.Name, "version", mca.Spec.Version)
+			if err := r.saveSummaryChanges(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to save summary changes")
+				return "", fmt.Errorf("save summary changes: %w", err)
+			}
+			r.logger.Info("Summary files pushed to repository successfully")
 			return governancev1alpha1.MCAActionStateUpdateAfterGitPush, nil
 		},
 	)
@@ -347,6 +378,8 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 	switch mca.Status.ReconcileState {
 	case governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, governancev1alpha1.MCAReconcileNewMCASpecStateGitPushMCA:
 		return r.handleMCAReconcileStateGitCommit(ctx, mca)
+	case governancev1alpha1.MCAReconcileNewMCASpecStatePushSummaryFiles:
+		return r.handleMCAReconcileStatePushSummaryFiles(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush:
 		return r.handleMCAReconcileStateUpdateAfterGitPush(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateArgoCD:
@@ -362,7 +395,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 }
 
 // handleMCAReconcileStateGitCommit pushes the updated MCA manifest to Git repository.
-// Sub-state: MCAReconcileNewMCASpecStateGitPushMCA → MCAReconcileNewMCASpecStateUpdateAfterGitPush
+// Sub-state: MCAReconcileNewMCASpecStateGitPushMCA → MCAReconcileNewMCASpecStatePushSummaryFiles
 func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
@@ -374,7 +407,26 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 				r.logger.Error(err, "Failed to push MCA to repository", "version", mca.Spec.Version)
 				return "", fmt.Errorf("save MCA in Git repository: %w", err)
 			}
-			r.logger.Info("MCA pushed to repository, transitioning to update state", "version", mca.Spec.Version)
+			r.logger.Info("MCA pushed to repository, transitioning to push summary files", "version", mca.Spec.Version)
+			return governancev1alpha1.MCAReconcileNewMCASpecStatePushSummaryFiles, nil
+		},
+	)
+}
+
+// handleMCAReconcileStatePushSummaryFiles creates and pushes summary files (apply and delete manifests).
+// Sub-state: MCAReconcileNewMCASpecStatePushSummaryFiles → MCAReconcileNewMCASpecStateUpdateAfterGitPush
+func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStatePushSummaryFiles(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) (ctrl.Result, error) {
+	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
+		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
+			r.logger.Info("Creating and pushing summary files", "version", mca.Spec.Version)
+			if err := r.saveSummaryChanges(ctx, mca); err != nil {
+				r.logger.Error(err, "Failed to save summary changes", "version", mca.Spec.Version)
+				return "", fmt.Errorf("save summary changes: %w", err)
+			}
+			r.logger.Info("Summary files pushed to repository, transitioning to update history", "version", mca.Spec.Version)
 			return governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush, nil
 		},
 	)
@@ -462,6 +514,76 @@ func (r *ManifestChangeApprovalReconciler) saveInRepository(
 	}
 
 	return nil
+}
+
+func (r *ManifestChangeApprovalReconciler) saveSummaryChanges(
+	ctx context.Context,
+	mca *governancev1alpha1.ManifestChangeApproval,
+) error {
+	fileChanges, content, err := r.repository(ctx, mca).GetChangedFiles(ctx, mca.Spec.PreviousCommitSHA, mca.Spec.CommitSHA, mca.Spec.Locations.SourcePath)
+	if err != nil {
+		r.logger.Error(err, "Failed to get changed files from repository")
+		return fmt.Errorf("get changed files: %w", err)
+	}
+
+	applyContent := r.createApplyManifest(fileChanges, content)
+	if applyContent != "" {
+		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, applyContent, ApplySummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+		if err != nil {
+			return fmt.Errorf("push apply summary manifest: %w", err)
+		}
+	}
+	deleteContent := r.createDeleteManifest(fileChanges, content)
+	if deleteContent != "" {
+		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, deleteContent, ApplySummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+		if err != nil {
+			return fmt.Errorf("push apply summary manifest: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *ManifestChangeApprovalReconciler) createApplyManifest(
+	fileChanges []governancev1alpha1.FileChange,
+	content map[string]string,
+) string {
+	var manifests []string
+
+	for _, f := range fileChanges {
+		if f.Status == governancev1alpha1.Deleted {
+			continue
+		}
+
+		manifests = append(manifests, content[f.Path])
+	}
+
+	if len(manifests) == 0 {
+		return ""
+	}
+
+	return ApplySummaryHeader + "\n" + strings.Join(manifests, "---\n")
+}
+
+func (r *ManifestChangeApprovalReconciler) createDeleteManifest(
+	fileChanges []governancev1alpha1.FileChange,
+	content map[string]string,
+) string {
+	var manifests []string
+
+	for _, f := range fileChanges {
+		if f.Status != governancev1alpha1.Deleted {
+			continue
+		}
+
+		manifests = append(manifests, content[f.Path])
+	}
+
+	if len(manifests) == 0 {
+		return ""
+	}
+
+	return DeleteSummaryHeader + "\n" + strings.Join(manifests, "---\n")
 }
 
 func (r *ManifestChangeApprovalReconciler) createRepositoryMCA(

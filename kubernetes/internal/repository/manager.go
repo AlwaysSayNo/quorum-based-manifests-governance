@@ -36,9 +36,8 @@ type GitRepository interface {
 	// GetLatestRevision return the last observed revision for the repository.
 	GetLatestRevision(ctx context.Context) (string, error)
 
-	// GetChangedFiles returns a list of files that changed between two commits.
-	// TODO: change type from FileChange. Because it bounds it straight to the governance module
-	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, error)
+	// GetChangedFiles returns a list of files that changed between two commits and a map of their path to content.
+	GetChangedFiles(ctx context.Context, fromCommit, toCommit string, fromFolder string) ([]governancev1alpha1.FileChange, map[string]string, error)
 
 	// PushMSR commits and pushes the generated MSR manifest to the correct folder in the repo along with its signature.
 	PushMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
@@ -61,6 +60,8 @@ type GitRepository interface {
 	GetRemoteHeadCommit(ctx context.Context) (string, error)
 
 	GetLocalHeadCommit(ctx context.Context) (string, error)
+
+	PushSummaryFile(ctx context.Context, content, fileName, toFolder string, version int) (string, error)
 }
 
 type PgpSecrets struct {

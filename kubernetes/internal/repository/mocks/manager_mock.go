@@ -116,12 +116,13 @@ func (mr *MockGitRepositoryMockRecorder) FetchMSRByVersion(ctx, msr any) *gomock
 }
 
 // GetChangedFiles mocks base method.
-func (m *MockGitRepository) GetChangedFiles(ctx context.Context, fromCommit, toCommit, fromFolder string) ([]v1alpha1.FileChange, error) {
+func (m *MockGitRepository) GetChangedFiles(ctx context.Context, fromCommit, toCommit, fromFolder string) ([]v1alpha1.FileChange, map[string]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetChangedFiles", ctx, fromCommit, toCommit, fromFolder)
 	ret0, _ := ret[0].([]v1alpha1.FileChange)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(map[string]string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // GetChangedFiles indicates an expected call of GetChangedFiles.
@@ -143,6 +144,21 @@ func (m *MockGitRepository) GetLatestRevision(ctx context.Context) (string, erro
 func (mr *MockGitRepositoryMockRecorder) GetLatestRevision(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestRevision", reflect.TypeOf((*MockGitRepository)(nil).GetLatestRevision), ctx)
+}
+
+// GetLocalHeadCommit mocks base method.
+func (m *MockGitRepository) GetLocalHeadCommit(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLocalHeadCommit", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLocalHeadCommit indicates an expected call of GetLocalHeadCommit.
+func (mr *MockGitRepositoryMockRecorder) GetLocalHeadCommit(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalHeadCommit", reflect.TypeOf((*MockGitRepository)(nil).GetLocalHeadCommit), ctx)
 }
 
 // GetRemoteHeadCommit mocks base method.
@@ -249,6 +265,21 @@ func (m *MockGitRepository) PushMSR(ctx context.Context, msr *v1alpha1.ManifestS
 func (mr *MockGitRepositoryMockRecorder) PushMSR(ctx, msr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushMSR", reflect.TypeOf((*MockGitRepository)(nil).PushMSR), ctx, msr)
+}
+
+// PushSummaryFile mocks base method.
+func (m *MockGitRepository) PushSummaryFile(ctx context.Context, content, fileName, toFolder string, version int) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PushSummaryFile", ctx, content, fileName, toFolder, version)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PushSummaryFile indicates an expected call of PushSummaryFile.
+func (mr *MockGitRepositoryMockRecorder) PushSummaryFile(ctx, content, fileName, toFolder, version any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushSummaryFile", reflect.TypeOf((*MockGitRepository)(nil).PushSummaryFile), ctx, content, fileName, toFolder, version)
 }
 
 // RemoveFromIndexFile mocks base method.

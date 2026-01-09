@@ -301,9 +301,9 @@ func (p *gitProvider) GetChangedFiles(
 	ctx context.Context,
 	fromCommit, toCommit string,
 	fromFolder string,
-) ([]governancev1alpha1.FileChange, error) {
+) ([]governancev1alpha1.FileChange, map[string]string, error) {
 	if err := p.Sync(ctx); err != nil {
-		return nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
+		return nil, nil, fmt.Errorf("failed to sync repository before getting changed files: %w", err)
 	}
 
 	p.mu.Lock()
@@ -312,7 +312,7 @@ func (p *gitProvider) GetChangedFiles(
 	// Get toTree for toCommit
 	toTree, err := p.getTreeForCommit(ctx, toCommit)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Get fromTree for fromCommit
@@ -323,14 +323,14 @@ func (p *gitProvider) GetChangedFiles(
 	} else {
 		fromTree, err = p.getTreeForCommit(ctx, fromCommit)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	// Get patch (file difference) between commits
 	patch, err := fromTree.Patch(toTree)
 	if err != nil {
-		return nil, fmt.Errorf("could not compute patch between commits: %w", err)
+		return nil, nil, fmt.Errorf("could not compute patch between commits: %w", err)
 	}
 
 	return p.patchToFileChangeList(fromTree, toTree, patch, fromFolder)
@@ -359,8 +359,9 @@ func (p *gitProvider) patchToFileChangeList(
 	toTree *object.Tree,
 	patch *object.Patch,
 	fromFolder string,
-) ([]governancev1alpha1.FileChange, error) {
+) ([]governancev1alpha1.FileChange, map[string]string, error) {
 	var changes []governancev1alpha1.FileChange
+	contentMap := make(map[string]string)
 	fromFolderNormalized := filepath.Clean(fromFolder)
 
 	for _, filePatch := range patch.FilePatches() {
@@ -390,7 +391,7 @@ func (p *gitProvider) patchToFileChangeList(
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("could not get file object for path %s: %w", path, err)
+			return nil, nil, fmt.Errorf("could not get file object for path %s: %w", path, err)
 		}
 
 		if !strings.HasPrefix(path, fromFolderNormalized+"/") {
@@ -401,23 +402,21 @@ func (p *gitProvider) patchToFileChangeList(
 		var sha256Hex string
 		var meta k8sObjectMetadata
 
-		if file != nil {
-			content, err := file.Contents()
-			if err != nil {
-				return nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
-			}
-
-			if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
-				// Could be a non-k8s file, or malformed. Log and skip for now.
-				p.logger.Error(err, fmt.Sprintf("could not unmarshal k8s metadata from %s, skipping: %v\n", path, err))
-				continue
-			}
-
-			// Calculate SHA256
-			hasher := sha256.New()
-			hasher.Write([]byte(content))
-			sha256Hex = hex.EncodeToString(hasher.Sum(nil))
+		content, err := file.Contents()
+		if err != nil {
+			return nil, nil, fmt.Errorf("could not read file contents for %s: %w", path, err)
 		}
+
+		if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
+			// Could be a non-k8s file, or malformed. Log and skip for now.
+			p.logger.Error(err, fmt.Sprintf("could not unmarshal k8s metadata from %s, skipping: %v\n", path, err))
+			continue
+		}
+
+		// Calculate SHA256
+		hasher := sha256.New()
+		hasher.Write([]byte(content))
+		sha256Hex = hex.EncodeToString(hasher.Sum(nil))
 
 		changes = append(changes, governancev1alpha1.FileChange{
 			Path:      path,
@@ -427,9 +426,10 @@ func (p *gitProvider) patchToFileChangeList(
 			Namespace: meta.Metadata.Namespace,
 			SHA256:    sha256Hex,
 		})
+		contentMap[path] = content
 	}
 
-	return changes, nil
+	return changes, contentMap, nil
 }
 
 func (p *gitProvider) PushMSR(
@@ -452,6 +452,34 @@ func (p *gitProvider) PushMCA(
 	}
 	msg := fmt.Sprintf("New ManifestChangeApproval: create manifest change approval %s with version %d", mca.ObjectMeta.Name, mca.Spec.Version)
 	return p.pushWorkflow(ctx, files, msg)
+}
+
+// PushSummaryFile creates, signs and pushes summary files (apply or delete manifests) to the Git repository.
+// It handles raw content (string) and creates both the manifest file and its signature.
+func (p *gitProvider) PushSummaryFile(
+	ctx context.Context,
+	content, fileName, governanceFolder string,
+	version int,
+) (string, error) {
+	worktree, rollback, pgpEntity, err := p.syncAndLock(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	if err := p.createYAMLFileWithSignatureAndAttach(worktree, pgpEntity, []byte(content), fileName, governanceFolder, version); err != nil {
+		return "", fmt.Errorf("add file %s to worktree: %w", fileName, err)
+	}
+
+	// Create signed commit and push it to the remote repo
+	commitMsg := fmt.Sprintf("Add summary file: %s version %d", fileName, version)
+	commitHash, err := p.commitAndPush(ctx, worktree, commitMsg, pgpEntity)
+	if err != nil {
+		rollback()
+		return "", fmt.Errorf("commit and push: %w", err)
+	}
+
+	return commitHash, nil
 }
 
 func (p *gitProvider) RemoveFromIndexFile(
@@ -864,7 +892,12 @@ func (p *gitProvider) stageGovernanceFiles(
 	files []fileToPush,
 ) error {
 	for _, f := range files {
-		if err := p.createYAMLFileWithSignatureAndAttach(worktree, pgpEntity, f.Object, f.Name, f.Folder, f.Version); err != nil {
+		fileBytes, err := yaml.Marshal(f.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal file to YAML: %w", err)
+		}
+
+		if err := p.createYAMLFileWithSignatureAndAttach(worktree, pgpEntity, fileBytes, f.Name, f.Folder, f.Version); err != nil {
 			return fmt.Errorf("add file %s to worktree: %w", f.Name, err)
 		}
 	}
@@ -874,23 +907,21 @@ func (p *gitProvider) stageGovernanceFiles(
 func (p *gitProvider) createYAMLFileWithSignatureAndAttach(
 	worktree *git.Worktree,
 	pgpEntity *openpgp.Entity,
-	file any,
-	fileName, inRepoFolderPath string,
+	fileBytes []byte,
+	fileName, governanceFolder string,
 	version int,
 ) error {
 	// Create folder for new file and signature
-	repoRequestFolderPath := filepath.Join(inRepoFolderPath, fmt.Sprintf("v_%d", version))
-	os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644)
+	repoRequestFolderPath := filepath.Join(governanceFolder, fmt.Sprintf("v_%d", version))
+	if err := os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644); err != nil {
+		return fmt.Errorf("create governance folder: %w", err)
+	}
 
 	// Write file and sig files into repo folder
 	fileNameExtended := fmt.Sprintf("%s.yaml", fileName)
 	sigFileName := fmt.Sprintf("%s.yaml.sig", fileName)
 
 	// Convert file object to bytes
-	fileBytes, err := yaml.Marshal(file)
-	if err != nil {
-		return fmt.Errorf("failed to marshal file to YAML: %w", err)
-	}
 	// Create detached signature from the bytes
 	signatureBytes, err := createDetachedSignature(fileBytes, pgpEntity)
 	if err != nil {

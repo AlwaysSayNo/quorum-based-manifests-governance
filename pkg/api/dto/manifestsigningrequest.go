@@ -55,7 +55,7 @@ type ManifestSigningRequestSpec struct {
 	CommitSHA         string               `json:"commitSha" yaml:"commitSha"`
 	PreviousCommitSHA string               `json:"previousCommitSha" yaml:"previousCommitSha"`
 	MRT               VersionedManifestRef `json:"mrt" yaml:"mrt"`
-	PublicKey         string               `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
+	PublicKey         string               `json:"publicKey" yaml:"publicKey"`
 	GitRepository     GitRepository        `json:"gitRepository" yaml:"gitRepository"`
 	Locations         Locations            `json:"locations" yaml:"locations"`
 	Changes           []FileChange         `json:"changes" yaml:"changes"`

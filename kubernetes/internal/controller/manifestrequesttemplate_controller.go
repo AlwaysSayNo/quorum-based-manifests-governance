@@ -128,7 +128,7 @@ func (r *ManifestRequestTemplateReconciler) findMRTForQueue(ctx context.Context,
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governancequeues/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;update;patch;delete
+// +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=governanceevents/status,verbs=get;update;patch
 
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -453,7 +453,7 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(
 	}
 
 	// Fetch all changed files in the repository, that where created before.
-	fileChanges, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision, application.Spec.Source.Path)
+	fileChanges, _, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision, application.Spec.Source.Path)
 	if err != nil {
 		return fmt.Errorf("fetch changes between init commit and %s: %w", revision, err)
 	}
@@ -1005,7 +1005,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// Get changed alias from git repository.
-	changedFiles, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
+	changedFiles, _, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
 		return false, fmt.Errorf("get changed files: %w", err)
@@ -1023,7 +1023,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// Created updated version of MSR with higher version
-	updatedMSR := r.getMSRWithNewVersion(mrt, msr, application, revision, changedFiles)
+	updatedMSR := r.getMSRWithNewVersion(mrt, msr, application, revision, mca.Spec.CommitSHA, changedFiles)
 
 	// Update MSR spec in cluster. Trigger so push of new MSR to git repository from MSR controller
 	if err := r.Update(ctx, updatedMSR); err != nil {
@@ -1131,15 +1131,15 @@ func (r *ManifestRequestTemplateReconciler) getMSRWithNewVersion(
 	msr *governancev1alpha1.ManifestSigningRequest,
 	application *argocdv1alpha1.Application,
 	revision string,
+	prevRevision string,
 	changedFiles []governancev1alpha1.FileChange,
 ) *governancev1alpha1.ManifestSigningRequest {
 	mrtSpecCpy := mrt.Spec.DeepCopy()
 	updatedMSR := msr.DeepCopy()
-	previousCommitSHA := updatedMSR.Spec.CommitSHA
 
 	updatedMSR.Spec.Version = updatedMSR.Spec.Version + 1
 	updatedMSR.Spec.CommitSHA = revision
-	updatedMSR.Spec.PreviousCommitSHA = previousCommitSHA
+	updatedMSR.Spec.PreviousCommitSHA = prevRevision
 	updatedMSR.Spec.MRT = governancev1alpha1.VersionedManifestRef{
 		Name:      mrt.ObjectMeta.Name,
 		Namespace: mrt.ObjectMeta.Namespace,

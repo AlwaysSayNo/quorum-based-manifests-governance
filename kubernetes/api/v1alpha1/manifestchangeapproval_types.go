@@ -25,6 +25,7 @@ type MCAActionState string
 const (
 	MCAActionStateEmpty              MCAActionState = ""
 	MCAActionStateGitPushMCA         MCAActionState = "MCAActionStateGitPushMCA"
+	MCAActionStatePushSummaryFiles   MCAActionState = "MCAActionStatePushSummaryFiles"
 	MCAActionStateUpdateAfterGitPush MCAActionState = "MCAActionStateUpdateAfterGitPush"
 	MCAActionStateUpdateArgoCD       MCAActionState = "MCAActionStateUpdateArgoCD"
 	MCAActionStateInitSetFinalizer   MCAActionState = "MCAActionStateInitSetFinalizer"
@@ -41,6 +42,7 @@ type MCAReconcileNewMCASpecState string
 const (
 	MCAReconcileNewMCASpecStateEmpty              MCAReconcileNewMCASpecState = ""
 	MCAReconcileNewMCASpecStateGitPushMCA         MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateGitPushMCA"
+	MCAReconcileNewMCASpecStatePushSummaryFiles   MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStatePushSummaryFiles"
 	MCAReconcileNewMCASpecStateUpdateArgoCD       MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateArgoCD"
 	MCAReconcileNewMCASpecStateUpdateAfterGitPush MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateUpdateAfterGitPush"
 	MCAReconcileNewMCASpecStateNotifyGovernors    MCAReconcileNewMCASpecState = "MCAReconcileNewMCASpecStateNotifyGovernors"
