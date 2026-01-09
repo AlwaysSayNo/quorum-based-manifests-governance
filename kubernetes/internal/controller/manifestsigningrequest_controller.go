@@ -607,6 +607,16 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 
 			repo := r.repository(ctx, msr)
 
+			// Check, that it's new commit hash
+			remoteHead, err := repo.GetRemoteHeadCommit(ctx)
+			if err != nil {
+				r.logger.Error(err, "Failed to get remote repository HEAD")
+				return "", fmt.Errorf("get remote repository HEAD: %w", err)
+			}
+			if msr.Status.LastObservedCommitHash == remoteHead {
+				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
+			}
+
 			// Fetch MSR from repository for the current version
 			repoMSR, msrBytes, msrSig, govSigs, err := repo.FetchMSRByVersion(ctx, msr)
 			if err != nil {
@@ -639,6 +649,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 			collectedSigs := r.extractCollectedSignatures(verifiedSigners)
 			msr.Status.CollectedSignatures = collectedSigs
 			msr.Status.Status = governancev1alpha1.Approved
+			msr.Status.LastObservedCommitHash = remoteHead
 
 			// Update the latest RequestHistory record with collected signatures
 			if len(msr.Status.RequestHistory) > 0 {

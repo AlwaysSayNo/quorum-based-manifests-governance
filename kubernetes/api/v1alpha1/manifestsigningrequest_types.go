@@ -190,6 +190,9 @@ type ManifestSigningRequestSpec struct {
 // ManifestSigningRequestStatus defines the observed state of ManifestSigningRequest.
 type ManifestSigningRequestStatus struct {
 
+	// LastObservedCommitHash is the last observed commit hash from the git repository
+	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty" yaml:"lastObservedCommitHash,omitempty"`
+
 	// +optional
 	RequestHistory []ManifestSigningRequestHistoryRecord `json:"requestHistory,omitempty" yaml:"requestHistory,omitempty"`
 

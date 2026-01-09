@@ -276,14 +276,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              lastAcceptedMSR:
-                description: LastAcceptedMSRVersion is the version of the last accepted
-                  MSR resource
-                type: integer
-              lastMSR:
-                description: LastMSRVersion is the version of the last created MSR
-                  resource
-                type: integer
+              lastObservedCommitHash:
+                description: LastObservedCommitHash is the last observed commit hash
+                  from the git repository
+                type: string
               revisionProcessingStep:
                 description: RevisionProcessingState tracks the progress of the revision
                   processing.

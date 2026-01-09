@@ -335,7 +335,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 
 	switch mrt.Status.ActionState {
 	case governancev1alpha1.MRTActionStateEmpty, governancev1alpha1.MRTActionStateGitGovernanceInitialization:
-		// 1. Create an entry in QubmangoOperationalFile.
+		// 1. Create an entry in QubmangoOperationalFile and save the commit as LastObservedCommitHash.
 		r.logger.V(2).Info("Proceeding to Git initialization")
 		return r.handleInitStateGitCommit(ctx, mrt)
 	case governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision:
@@ -384,6 +384,14 @@ func (r *ManifestRequestTemplateReconciler) handleInitStateGitCommit(
 					r.logger.Error(err, "Failed to get latest revision when index already exists")
 					return "", fmt.Errorf("take latest commit, when index already exists in repository: %w", err)
 				}
+			}
+
+			// Update MRT with commit hash
+			r.logger.V(2).Info("Saving LastObservedCommitHash", "commitHash", commitHash)
+			mrt.Status.LastObservedCommitHash = commitHash
+			if err := r.Status().Update(ctx, mrt); err != nil {
+				r.logger.Error(err, "Failed to update LastObservedCommitHash")
+				return "", fmt.Errorf("update MRT LastObservedCommitHash: %w", err)
 			}
 
 			r.logger.Info("Git initialization complete", "commitHash", commitHash)
@@ -670,20 +678,14 @@ func (r *ManifestRequestTemplateReconciler) checkForNewCommits(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (bool, string, error) {
 
-	// Get Local HEAD
-	localHead, err := r.repository(ctx, mrt).GetLocalHeadCommit(ctx)
-	if err != nil {
-		return false, "", err
-	}
-
 	// Get Remote HEAD
 	remoteHead, err := r.repository(ctx, mrt).GetRemoteHeadCommit(ctx)
 	if err != nil {
 		return false, "", err
 	}
 
-	// Compare with what we last seen
-	if localHead != remoteHead {
+	// Compare with what we last processed
+	if remoteHead != mrt.Status.LastObservedCommitHash {
 		// Check if this revision is already in the Queue
 		isPending, err := QueueContainsRevision(ctx, r.Client, &remoteHead, string(mrt.UID))
 		if err != nil {
@@ -917,6 +919,12 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 		r.logger.Info("Revision corresponds to a non latest MCA from History. Might be rollback. No support yet. Do nothing", "revision", revision) // TODO: rollback case
 		return true, "Revision corresponds to a non latest MCA from History. Might be rollback. No support yet", nil
 	}
+	
+	// Verify, if revision was already processed.
+	if revision == mrt.Status.LastObservedCommitHash {
+		r.logger.Info("Revision corresponds to the latest processed revision. Do nothing", "revision", revision)
+		return true, "Revision corresponds to the latest processed revision", nil
+	}
 
 	// Check if revision exists in the repository.
 	if hasRevision, err := r.repository(ctx, mrt).HasRevision(ctx, revision); err != nil {
@@ -1015,9 +1023,11 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	changedFiles = r.filterNonManifestFiles(changedFiles, mrt)
 	// If there is no files for governance - skip this revision.
 	if len(changedFiles) == 0 {
+		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("No manifest file changes detected between commits. Skipping MSR creation.")
 		return false, nil
 	} else if r.hasNoNewUpdates(msr, changedFiles) {
+		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("No manifest file changes detected between commits. Skipping MSR creation.")
 		return false, nil
 	}
@@ -1073,6 +1083,9 @@ func (r *ManifestRequestTemplateReconciler) handleSubstateFinish(
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.MRTNewRevisionState, error) {
 			r.logger.Info("Finalizing revision processing", "revision", revision)
 
+			// Update LastObservedCommitHash
+			mrt.Status.LastObservedCommitHash = revision
+			
 			// Delete the revision event from queue
 			r.logger.Info("Removing revision event from queue")
 			if err := RemoveRevisionsQueueHead(ctx, r.Client, mrt.Status.RevisionQueueRef); err != nil {

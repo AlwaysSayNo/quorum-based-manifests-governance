@@ -240,23 +240,12 @@ type ManifestRequestTemplateSpec struct {
 // ManifestRequestTemplateStatus defines the observed state of ManifestRequestTemplate.
 type ManifestRequestTemplateStatus struct {
 
-	// conditions represent the current state of the ManifestRequestTemplate resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
-
 	// RevisionsQueueRef is the reference to the dedicated queue CRD.
 	// +optional
 	RevisionQueueRef ManifestRefOptional `json:"revisionQueueRef,omitempty" yaml:"revisionQueueRef,omitempty"`
 
-	// LastMSRVersion is the version of the last created MSR resource
-	LastMSRVersion int `json:"lastMSR,omitempty" yaml:"lastMSR,omitempty"`
-
-	// LastAcceptedMSRVersion is the version of the last accepted MSR resource
-	LastAcceptedMSRVersion int `json:"lastAcceptedMSR,omitempty" yaml:"lastAcceptedMSR,omitempty"`
+	// LastObservedCommitHash is the last observed commit hash from the git repository
+	LastObservedCommitHash string `json:"lastObservedCommitHash,omitempty" yaml:"lastObservedCommitHash,omitempty"`
 
 	// ActionState tracks the progress of the main reconcile.
 	// +optional
@@ -267,6 +256,14 @@ type ManifestRequestTemplateStatus struct {
 	RevisionProcessingState MRTNewRevisionState `json:"revisionProcessingStep,omitempty" yaml:"revisionProcessingStep,omitempty"`
 
 	ApplicationInitTargetRevision string `json:"applicationInitTargetRevision,omitempty" yaml:"applicationInitTargetRevision,omitempty"`
+
+	// conditions represent the current state of the ManifestRequestTemplate resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	// The status of each condition is one of True, False, or Unknown.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

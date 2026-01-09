@@ -28,14 +28,18 @@ TODO (Done):
 - Totally removed LastObservedCommitHash
 - Remove QubmangoIndex logic from CLI. Declare the governance path manually.
 - GovernanceFolder cannot be changed after creation.
+- Generate concat documents
 
 
 TODO: 
-- Generate concat documents
+- Notify governors per slack controller
 - Remove defaults from some fields (argocd problem)
+- Expect governance folder to be empty in the beginning of the governance process
 - Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
 - Remove index file from kubernetes part
 - MSR, MCA validating webhooks 
+- Check if change of pgp key works
+- Remove declaration of governance folder. Create it always in the project root.
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
 - Review all controller transactional methods. Fix / Improve them, if needed
