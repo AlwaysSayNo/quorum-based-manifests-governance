@@ -59,36 +59,36 @@ func (s *slackNotifier) NotifyGovernorsMSR(
 	headerSection := slack.NewSectionBlock(headerText, nil, nil)
 
 	// Body
-	fields := []*slack.TextBlockObject{
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false),
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false),
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(msr.Spec.CommitSHA)), false, false),
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Changed Files:* %d", len(msr.Spec.Changes)), false, false),
-	}
-	fieldsSection := slack.NewSectionBlock(nil, fields, nil)
+	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false)
+	bodySection1 := slack.NewSectionBlock(bodyText1, nil, nil)
+	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false)
+	bodySection2 := slack.NewSectionBlock(bodyText2, nil, nil)
+	bodyText3 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(msr.Spec.CommitSHA)), false, false)
+	bodySection3 := slack.NewSectionBlock(bodyText3, nil, nil)
+	bodyText4 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Changed Files:* %d", len(msr.Spec.Changes)), false, false)
+	bodySection4 := slack.NewSectionBlock(bodyText4, nil, nil)
 
 	// Footer
 	contextText := slack.NewTextBlockObject("mrkdwn", "Please review and sign using the `qubmango` CLI.", false, false)
 	contextSection := slack.NewContextBlock("", contextText)
 
-	msg := slack.NewBlockMessage(
-		headerSection,
-		fieldsSection,
-		contextSection,
-	)
+	attachment := slack.Attachment{
+		Color: "#ffffff",
+		Blocks: slack.Blocks{BlockSet: []slack.Block{
+			// Header
+			headerSection,
+			// Body
+			bodySection1,
+			bodySection2,
+			bodySection3,
+			bodySection4,
+			// Footer
+			contextSection,
+		}},
+	}
 
 	// Send the message to all channels.
-	for _, channel := range msr.Spec.Governors.NotificationChannels {
-		if channel.Slack != nil && channel.Slack.ChannelID != "" {
-			channelID := channel.Slack.ChannelID
-			_, _, err := api.PostMessageContext(ctx, channelID, slack.MsgOptionBlocks(msg.Blocks.BlockSet...))
-			if err != nil {
-				s.logger.V(2).Error(err, "Failed to send Slack notification", "channelID", channelID)
-			} else {
-				s.logger.V(2).Info("Successfully sent Slack notification", "channelID", channelID)
-			}
-		}
-	}
+	s.sendAttachment(ctx, api, mrt, attachment)
 
 	return nil
 }
@@ -123,15 +123,15 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 
 	// Header
 	headerText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf(":white_check_mark: Manifest Change *Approved*: `%s`", mca.Name), false, false)
-
 	headerSection := slack.NewSectionBlock(headerText, nil, nil)
 
 	// Body
-	fields := []*slack.TextBlockObject{
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false),
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false),
-		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(mca.Spec.CommitSHA)), false, false),
-	}
+	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false)
+	bodySection1 := slack.NewSectionBlock(bodyText1, nil, nil)
+	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false)
+	bodySection2 := slack.NewSectionBlock(bodyText2, nil, nil)
+	bodyText3 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(mca.Spec.CommitSHA)), false, false)
+	bodySection3 := slack.NewSectionBlock(bodyText3, nil, nil)
 
 	// List the approvers
 	var approverAliases []string
@@ -142,20 +142,35 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 	if len(approverAliases) > 0 {
 		approversText = strings.Join(approverAliases, ", ")
 	}
-	fields = append(fields, slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Approved by:* %s", approversText), false, false))
-
-	fieldsSection := slack.NewSectionBlock(nil, fields, nil)
+	bodyText4 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Approved by:* %s", approversText), false, false)
+	bodySection4 := slack.NewSectionBlock(bodyText4, nil, nil)
 
 	// Slack attachments allow for a colored border.
 	attachment := slack.Attachment{
 		Color: "#2E8B57",
 		Blocks: slack.Blocks{BlockSet: []slack.Block{
+			// Header
 			headerSection,
-			fieldsSection,
+			// Body
+			bodySection1,
+			bodySection2,
+			bodySection3,
+			bodySection4,
 		}},
 	}
 
 	// Send the message to all channels.
+	s.sendAttachment(ctx, api, mrt, attachment)
+
+	return nil
+}
+
+func (s *slackNotifier) sendAttachment(
+	ctx context.Context,
+	api *slack.Client,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	attachment slack.Attachment,
+) {
 	for _, channel := range mrt.Spec.Governors.NotificationChannels {
 		if channel.Slack != nil && channel.Slack.ChannelID != "" {
 			channelID := channel.Slack.ChannelID
@@ -170,7 +185,6 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 		}
 	}
 
-	return nil
 }
 
 func (s *slackNotifier) getToken(
