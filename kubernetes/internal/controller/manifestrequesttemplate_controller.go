@@ -51,7 +51,7 @@ const (
 	QubmangoOperationalFile             = QubmangoOperationalFolder + "/index.yaml"
 	QubmangoGovernanceAlias             = "qubmango"
 	MRTQueuePrefix                      = "queue-"
-	GitPollInterval                     = 1 * time.Minute
+	GitPollInterval                     = 5 * time.Minute
 )
 
 type RepositoryManager interface {
@@ -919,7 +919,7 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 		r.logger.Info("Revision corresponds to a non latest MCA from History. Might be rollback. No support yet. Do nothing", "revision", revision) // TODO: rollback case
 		return true, "Revision corresponds to a non latest MCA from History. Might be rollback. No support yet", nil
 	}
-	
+
 	// Verify, if revision was already processed.
 	if revision == mrt.Status.LastObservedCommitHash {
 		r.logger.Info("Revision corresponds to the latest processed revision. Do nothing", "revision", revision)
@@ -1085,7 +1085,7 @@ func (r *ManifestRequestTemplateReconciler) handleSubstateFinish(
 
 			// Update LastObservedCommitHash
 			mrt.Status.LastObservedCommitHash = revision
-			
+
 			// Delete the revision event from queue
 			r.logger.Info("Removing revision event from queue")
 			if err := RemoveRevisionsQueueHead(ctx, r.Client, mrt.Status.RevisionQueueRef); err != nil {

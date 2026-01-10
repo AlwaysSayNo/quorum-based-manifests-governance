@@ -108,6 +108,20 @@ type MCA struct {
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
+type SlackSecret struct {
+	// SecretsRef points to the Secret containing the 'token' key for the Slack Bot.
+	// +required
+	SecretsRef ManifestRef `json:"secretsRef" yaml:"secretsRef"`
+}
+
+// NotificationConfig holds the configuration for different notification providers.
+type NotificationConfig struct {
+	// Slack contains the configuration for Slack notifications, including the token secret.
+	// If this field is omitted, Slack notifications will be disabled.
+	// +optional
+	Slack *SlackSecret `json:"slack,omitempty" yaml:"slack,omitempty"`
+}
+
 type SlackChannel struct {
 	// Slack channel ID to notify (e.g., S01234567)
 	// +kubebuilder:validation:MinLength=1
@@ -207,8 +221,12 @@ type ManifestRequestTemplateSpec struct {
 	// +required
 	PGP *PGPPrivateKeySecret `json:"pgp" yaml:"pgp"`
 
+	// TODO: move to the repository
 	// +required
 	SSH *SSHPrivateKeySecret `json:"ssh" yaml:"ssh"`
+
+	// +optional
+	Notifications *NotificationConfig `json:"notifications,omitempty" yaml:"notifications,omitempty"`
 
 	// ArgoCDApplicationName is the name of the ArgoCD Application.
 	// It should contain information about the git repository, branch and path where manifests are stored.

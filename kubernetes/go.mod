@@ -21,6 +21,7 @@ require (
 require (
 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.0.0
 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.0.0-00010101000000-000000000000
+	github.com/slack-go/slack v0.16.0
 )
 
 replace (

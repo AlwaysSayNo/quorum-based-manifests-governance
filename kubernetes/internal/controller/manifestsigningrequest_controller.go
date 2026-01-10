@@ -37,15 +37,11 @@ import (
 	validationmsr "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
-const ScheduledInterval = 5 * time.Minute
-
-type Notifier interface {
-	NotifyGovernors(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
-	NotifyGovernorsMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error
-}
+const ScheduledInterval = 1 * time.Minute
 
 // MSRStateHandler defines a function that performs work within a state and returns the next state
 type MSRStateHandler func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error)
@@ -63,7 +59,7 @@ type ManifestSigningRequestReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
-	Notifier    Notifier
+	Notifier    notifier.Notifier
 	logger      logr.Logger
 }
 
@@ -466,7 +462,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRReconcileStateNotifyGovernor
 	return r.withReconcileLock(ctx, msr, governancev1alpha1.MSRActionStateNewMSRSpec, governancev1alpha1.MSRActionStateEmpty,
 		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRReconcileNewMSRSpecState, error) {
 			r.logger.Info("Sending notifications to governors", "version", msr.Spec.Version, "requireSignatures", msr.Spec.Require)
-			if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
+			if err := r.Notifier.NotifyGovernorsMSR(ctx, msr); err != nil {
 				r.logger.Error(err, "Failed to send notifications to governors", "version", msr.Spec.Version)
 				return "", fmt.Errorf("send notification to governors: %w", err)
 			}
@@ -745,7 +741,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateNotifyG
 		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRRulesFulfillmentState, error) {
 			r.logger.Info("Notifying governors about rules fulfillment", "version", msr.Spec.Version)
 
-			if err := r.Notifier.NotifyGovernors(ctx, msr); err != nil {
+			if err := r.Notifier.NotifyGovernorsMSR(ctx, msr); err != nil {
 				r.logger.Error(err, "Failed to notify governors", "version", msr.Spec.Version)
 				return "", fmt.Errorf("notify governors: %w", err)
 			}

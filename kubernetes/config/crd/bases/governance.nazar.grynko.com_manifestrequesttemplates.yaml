@@ -133,6 +133,31 @@ spec:
                   namespace:
                     type: string
                 type: object
+              notifications:
+                description: NotificationConfig holds the configuration for different
+                  notification providers.
+                properties:
+                  slack:
+                    description: |-
+                      Slack contains the configuration for Slack notifications, including the token secret.
+                      If this field is omitted, Slack notifications will be disabled.
+                    properties:
+                      secretsRef:
+                        description: SecretsRef points to the Secret containing the
+                          'token' key for the Slack Bot.
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                    required:
+                    - secretsRef
+                    type: object
+                type: object
               pgp:
                 properties:
                   publicKey:

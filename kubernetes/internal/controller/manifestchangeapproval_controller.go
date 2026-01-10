@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
@@ -57,7 +58,7 @@ type ManifestChangeApprovalReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
-	Notifier    Notifier
+	Notifier    notifier.Notifier
 	logger      logr.Logger
 }
 
@@ -535,9 +536,9 @@ func (r *ManifestChangeApprovalReconciler) saveSummaryChanges(
 	}
 	deleteContent := r.createDeleteManifest(fileChanges, content)
 	if deleteContent != "" {
-		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, deleteContent, ApplySummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, deleteContent, DeleteSummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
 		if err != nil {
-			return fmt.Errorf("push apply summary manifest: %w", err)
+			return fmt.Errorf("push delete summary manifest: %w", err)
 		}
 	}
 

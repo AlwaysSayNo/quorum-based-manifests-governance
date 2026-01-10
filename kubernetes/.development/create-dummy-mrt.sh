@@ -64,6 +64,12 @@ spec:
     secretsRef:
       name: ssh-secret-my
       namespace: test-ns
+  
+  notifications:
+    slack:
+      secretsRef:
+        name: slack-secret-my
+        namespace: test-ns
 
   argoCDApplication:
     name: application-my
@@ -83,7 +89,9 @@ spec:
   governors:
     notificationChannels:
       - slack:
-          channelID: C87654321
+          channelID: C87654321AS
+      - slack:
+          channelID: U0A7X5NDR28
     members:
       - alias: owner 
         publicKey: |
