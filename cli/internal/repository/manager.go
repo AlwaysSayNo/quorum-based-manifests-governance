@@ -19,7 +19,6 @@ import (
 
 const (
 	DefaultReposPath      = "/tmp/qubmango/git/repos"
-	QubmangoIndexFilePath = ".qubmango/index.yaml"
 )
 
 type MCAInfo struct {

@@ -13,8 +13,11 @@ import (
 	context "context"
 	reflect "reflect"
 
+	config "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
 	crypto "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 	repository "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+	diff "github.com/go-git/go-git/v5/plumbing/format/diff"
 	transport "github.com/go-git/go-git/v5/plumbing/transport"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -96,29 +99,11 @@ func (m *MockGitRepositoryProvider) EXPECT() *MockGitRepositoryProviderMockRecor
 	return m.recorder
 }
 
-// GetActiveMSR mocks base method.
-func (m *MockGitRepositoryProvider) GetActiveMSR(ctx context.Context, policy *repository.QubmangoPolicy) (*repository.ManifestSigningRequestManifestObject, []byte, repository.SignatureData, []repository.SignatureData, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetActiveMSR", ctx, policy)
-	ret0, _ := ret[0].(*repository.ManifestSigningRequestManifestObject)
-	ret1, _ := ret[1].([]byte)
-	ret2, _ := ret[2].(repository.SignatureData)
-	ret3, _ := ret[3].([]repository.SignatureData)
-	ret4, _ := ret[4].(error)
-	return ret0, ret1, ret2, ret3, ret4
-}
-
-// GetActiveMSR indicates an expected call of GetActiveMSR.
-func (mr *MockGitRepositoryProviderMockRecorder) GetActiveMSR(ctx, policy any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveMSR", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetActiveMSR), ctx, policy)
-}
-
 // GetChangedFilesRaw mocks base method.
-func (m *MockGitRepositoryProvider) GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit, fromFolder string) (map[string]repository.FileBytesWithStatus, error) {
+func (m *MockGitRepositoryProvider) GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit, fromFolder string) (map[string]dto.FileBytesWithStatus, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetChangedFilesRaw", ctx, fromCommit, toCommit, fromFolder)
-	ret0, _ := ret[0].(map[string]repository.FileBytesWithStatus)
+	ret0, _ := ret[0].(map[string]dto.FileBytesWithStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -127,6 +112,36 @@ func (m *MockGitRepositoryProvider) GetChangedFilesRaw(ctx context.Context, from
 func (mr *MockGitRepositoryProviderMockRecorder) GetChangedFilesRaw(ctx, fromCommit, toCommit, fromFolder any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangedFilesRaw", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetChangedFilesRaw), ctx, fromCommit, toCommit, fromFolder)
+}
+
+// GetFileDiffPatchParts mocks base method.
+func (m *MockGitRepositoryProvider) GetFileDiffPatchParts(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFileDiffPatchParts", ctx, msr, fromCommit, toCommit)
+	ret0, _ := ret[0].(map[string]diff.Patch)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFileDiffPatchParts indicates an expected call of GetFileDiffPatchParts.
+func (mr *MockGitRepositoryProviderMockRecorder) GetFileDiffPatchParts(ctx, msr, fromCommit, toCommit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFileDiffPatchParts", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetFileDiffPatchParts), ctx, msr, fromCommit, toCommit)
+}
+
+// GetLatestMSR mocks base method.
+func (m *MockGitRepositoryProvider) GetLatestMSR(ctx context.Context, policy *repository.GovernancePolicy) (*repository.MSRInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLatestMSR", ctx, policy)
+	ret0, _ := ret[0].(*repository.MSRInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLatestMSR indicates an expected call of GetLatestMSR.
+func (mr *MockGitRepositoryProviderMockRecorder) GetLatestMSR(ctx, policy any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestMSR", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetLatestMSR), ctx, policy)
 }
 
 // GetLatestRevision mocks base method.
@@ -144,19 +159,19 @@ func (mr *MockGitRepositoryProviderMockRecorder) GetLatestRevision(ctx any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestRevision", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetLatestRevision), ctx)
 }
 
-// GetQubmangoIndex mocks base method.
-func (m *MockGitRepositoryProvider) GetQubmangoIndex(ctx context.Context) (*repository.QubmangoIndex, error) {
+// GetMCAHistory mocks base method.
+func (m *MockGitRepositoryProvider) GetMCAHistory(ctx context.Context, policy *repository.GovernancePolicy) ([]repository.MCAInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetQubmangoIndex", ctx)
-	ret0, _ := ret[0].(*repository.QubmangoIndex)
+	ret := m.ctrl.Call(m, "GetMCAHistory", ctx, policy)
+	ret0, _ := ret[0].([]repository.MCAInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetQubmangoIndex indicates an expected call of GetQubmangoIndex.
-func (mr *MockGitRepositoryProviderMockRecorder) GetQubmangoIndex(ctx any) *gomock.Call {
+// GetMCAHistory indicates an expected call of GetMCAHistory.
+func (mr *MockGitRepositoryProviderMockRecorder) GetMCAHistory(ctx, policy any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQubmangoIndex", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetQubmangoIndex), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMCAHistory", reflect.TypeOf((*MockGitRepositoryProvider)(nil).GetMCAHistory), ctx, policy)
 }
 
 // HasRevision mocks base method.
@@ -174,19 +189,19 @@ func (mr *MockGitRepositoryProviderMockRecorder) HasRevision(ctx, commit any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasRevision", reflect.TypeOf((*MockGitRepositoryProvider)(nil).HasRevision), ctx, commit)
 }
 
-// PushSignature mocks base method.
-func (m *MockGitRepositoryProvider) PushSignature(ctx context.Context, msr *repository.ManifestSigningRequestManifestObject, signatureData repository.SignatureData) (string, error) {
+// PushGovernorSignature mocks base method.
+func (m *MockGitRepositoryProvider) PushGovernorSignature(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, user config.UserInfo) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PushSignature", ctx, msr, signatureData)
+	ret := m.ctrl.Call(m, "PushGovernorSignature", ctx, msr, user)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// PushSignature indicates an expected call of PushSignature.
-func (mr *MockGitRepositoryProviderMockRecorder) PushSignature(ctx, msr, signatureData any) *gomock.Call {
+// PushGovernorSignature indicates an expected call of PushGovernorSignature.
+func (mr *MockGitRepositoryProviderMockRecorder) PushGovernorSignature(ctx, msr, user any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushSignature", reflect.TypeOf((*MockGitRepositoryProvider)(nil).PushSignature), ctx, msr, signatureData)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushGovernorSignature", reflect.TypeOf((*MockGitRepositoryProvider)(nil).PushGovernorSignature), ctx, msr, user)
 }
 
 // Sync mocks base method.

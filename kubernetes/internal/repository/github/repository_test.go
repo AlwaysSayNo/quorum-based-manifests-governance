@@ -876,7 +876,6 @@ var _ = Describe("gitProvider InitializeGovernance Method", func() {
 		It("should return an error", func() {
 			// SETUP
 			// Pre-populate the workspace with an index file containing the alias
-			initialIndexContent := "{apiVersion: governance.nazar.grynko.com/v1alpha1, kind: QubmangoIndex, spec: {policies: [{alias: my-alias, governancePath: /some/old/path}]}}"
 			workspaceRepo, err := git.PlainOpen(workspacePath)
 			Expect(err).NotTo(HaveOccurred())
 			worktree, err := workspaceRepo.Worktree()

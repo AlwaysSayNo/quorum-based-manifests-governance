@@ -29,14 +29,14 @@ TODO (Done):
 - Remove QubmangoIndex logic from CLI. Declare the governance path manually.
 - GovernanceFolder cannot be changed after creation.
 - Generate concat documents
+- Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts). Solution: use for not Deploy Keys, because easy and enough.
+- Remove index file from kubernetes part
+- Notify governors per slack controller
 
 
 TODO: 
-- Notify governors per slack controller
 - Remove defaults from some fields (argocd problem)
 - Expect governance folder to be empty in the beginning of the governance process
-- Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts)
-- Remove index file from kubernetes part
 - MSR, MCA validating webhooks 
 - Check if change of pgp key works
 - Remove declaration of governance folder. Create it always in the project root.

@@ -261,13 +261,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.QubmangoIndexReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "QubmangoIndex")
-		os.Exit(1)
-	}
 	if err := (&controller.GovernanceQueueReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

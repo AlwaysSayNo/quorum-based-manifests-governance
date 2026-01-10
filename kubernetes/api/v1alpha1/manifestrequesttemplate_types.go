@@ -26,8 +26,6 @@ type MRTActionState string
 const (
 	// MRTActionStateEmpty indicates a free state.
 	MRTActionStateEmpty MRTActionState = ""
-	// MRTActionStateGitGovernanceInitialization indicates the controller is pushing the initial commit.
-	MRTActionStateGitGovernanceInitialization MRTActionState = "MRTActionStateGitGovernanceInitialization"
 	// MRTActionStateSaveArgoCDTargetRevision indicates the controller is saving initial Application targetRevision.
 	MRTActionStateSaveArgoCDTargetRevision MRTActionState = "MRTActionStateSaveArgoCDTargetRevision"
 	// MRTActionStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.

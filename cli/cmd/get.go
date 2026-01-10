@@ -10,7 +10,6 @@ import (
 
 const (
 	DefaultMSROutputMethod          = "pretty"
-	QubmangoIndexFileRepositoryPath = "/.qubmango/index.yaml"
 )
 
 func init() {

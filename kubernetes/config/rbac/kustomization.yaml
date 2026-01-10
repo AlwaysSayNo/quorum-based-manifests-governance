@@ -42,6 +42,3 @@ resources:
 - governancequeue_admin_role.yaml
 - governancequeue_editor_role.yaml
 - governancequeue_viewer_role.yaml
-- qubmangoindex_admin_role.yaml
-- qubmangoindex_editor_role.yaml
-- qubmangoindex_viewer_role.yaml

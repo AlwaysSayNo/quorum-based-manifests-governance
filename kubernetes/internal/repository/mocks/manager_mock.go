@@ -191,22 +191,6 @@ func (mr *MockGitRepositoryMockRecorder) HasRevision(ctx, commit any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasRevision", reflect.TypeOf((*MockGitRepository)(nil).HasRevision), ctx, commit)
 }
 
-// InitializeGovernance mocks base method.
-func (m *MockGitRepository) InitializeGovernance(ctx context.Context, operationalFileLocation, governanceIndexAlias string, mrt *v1alpha1.ManifestRequestTemplate) (string, bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InitializeGovernance", ctx, operationalFileLocation, governanceIndexAlias, mrt)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(bool)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// InitializeGovernance indicates an expected call of InitializeGovernance.
-func (mr *MockGitRepositoryMockRecorder) InitializeGovernance(ctx, operationalFileLocation, governanceIndexAlias, mrt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializeGovernance", reflect.TypeOf((*MockGitRepository)(nil).InitializeGovernance), ctx, operationalFileLocation, governanceIndexAlias, mrt)
-}
-
 // IsNotAfter mocks base method.
 func (m *MockGitRepository) IsNotAfter(ctx context.Context, ancestor, child string) (bool, error) {
 	m.ctrl.T.Helper()
@@ -280,22 +264,6 @@ func (m *MockGitRepository) PushSummaryFile(ctx context.Context, content, fileNa
 func (mr *MockGitRepositoryMockRecorder) PushSummaryFile(ctx, content, fileName, toFolder, version any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PushSummaryFile", reflect.TypeOf((*MockGitRepository)(nil).PushSummaryFile), ctx, content, fileName, toFolder, version)
-}
-
-// RemoveFromIndexFile mocks base method.
-func (m *MockGitRepository) RemoveFromIndexFile(ctx context.Context, operationalFileLocation, governanceIndexAlias string) (string, bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveFromIndexFile", ctx, operationalFileLocation, governanceIndexAlias)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(bool)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// RemoveFromIndexFile indicates an expected call of RemoveFromIndexFile.
-func (mr *MockGitRepositoryMockRecorder) RemoveFromIndexFile(ctx, operationalFileLocation, governanceIndexAlias any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveFromIndexFile", reflect.TypeOf((*MockGitRepository)(nil).RemoveFromIndexFile), ctx, operationalFileLocation, governanceIndexAlias)
 }
 
 // Sync mocks base method.

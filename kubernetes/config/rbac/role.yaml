@@ -30,7 +30,6 @@ rules:
   - manifestchangeapprovals
   - manifestrequesttemplates
   - manifestsigningrequests
-  - qubmangoindices
   verbs:
   - create
   - delete
@@ -47,7 +46,6 @@ rules:
   - manifestchangeapprovals/finalizers
   - manifestrequesttemplates/finalizers
   - manifestsigningrequests/finalizers
-  - qubmangoindices/finalizers
   verbs:
   - update
 - apiGroups:
@@ -58,7 +56,6 @@ rules:
   - manifestchangeapprovals/status
   - manifestrequesttemplates/status
   - manifestsigningrequests/status
-  - qubmangoindices/status
   verbs:
   - get
   - patch

@@ -259,7 +259,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	}
 }
 
-// handleStateDeletion removes entry for current MRT from index file and finalizer from this resource.
+// handleStateDeletion returns ArgoCD Application its original targetRevision and removes finalizer from this resource.
 // State: any → EmptyActionState
 func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 	ctx context.Context,
@@ -267,15 +267,6 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeletion, "Removing MRT from governance and cluster",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			// Clean up the entry in the QubmangoOperationalFile file.
-			r.logger.Info("Removing entry from Git index file", "mrt", mrt.Name, "namespace", mrt.Namespace)
-			governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
-			if _, _, err := r.repository(ctx, mrt).RemoveFromIndexFile(ctx, QubmangoOperationalFile, governanceIndexAlias); err != nil {
-				r.logger.Error(err, "Failed to remove entry from index file")
-				return "", fmt.Errorf("failed to remove entry from index file: %w", err)
-			}
-			r.logger.Info("Entry removed from Git index file successfully")
-
 			// Get the Application
 			app, err := r.getApplication(ctx, mrt)
 			if err != nil {
@@ -318,7 +309,7 @@ func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(
 
 // reconcileCreate handles the logic for a newly created MRT, that has not been initialized.
 // It progresses through these states:
-// 1. StateInitGitGovernanceInitialization: Create entry in Qubmango operational file in Git
+// 1. MRTActionStateSaveArgoCDTargetRevision: Save Application initial targetRevision in MRT Status
 // 2. InitStateCreateDefaultClusterResources: Create default MSR/MCA/GovernanceQueue resources
 // 3. StateInitSetFinalizer: Set finalizer to complete initialization
 func (r *ManifestRequestTemplateReconciler) reconcileCreate(
@@ -334,20 +325,16 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	}
 
 	switch mrt.Status.ActionState {
-	case governancev1alpha1.MRTActionStateEmpty, governancev1alpha1.MRTActionStateGitGovernanceInitialization:
-		// 1. Create an entry in QubmangoOperationalFile and save the commit as LastObservedCommitHash.
-		r.logger.V(2).Info("Proceeding to Git initialization")
-		return r.handleInitStateGitCommit(ctx, mrt)
-	case governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision:
-		// 2. Save initial ArgoCD revision for deletion.
+	case governancev1alpha1.MRTActionStateEmpty,  governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision:
+		// 1. Save initial ArgoCD revision for deletion.
 		r.logger.V(2).Info("Proceeding to save Application initial targetRevision")
 		return r.handleStateSaveArgoCDTargetRevision(ctx, mrt)
 	case governancev1alpha1.MRTActionStateCreateDefaultClusterResources:
-		// 3. Create default MSR, MCA resources in the cluster.
+		// 2. Create default MSR, MCA resources in the cluster.
 		r.logger.V(2).Info("Proceeding to create default cluster resources")
 		return r.handleInitStateCreateClusterResources(ctx, mrt)
 	case governancev1alpha1.MRTActionStateInitSetFinalizer:
-		// 4. Confirm MRT initialization by setting the GovernanceFinalizer.
+		// 3. Confirm MRT initialization by setting the GovernanceFinalizer.
 		r.logger.V(2).Info("Proceeding to set finalizer")
 		return r.handleStateFinalizing(ctx, mrt)
 	default:
@@ -356,48 +343,6 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 		r.logger.Error(err, "Invalid state for initialization")
 		return ctrl.Result{}, err
 	}
-}
-
-// handleInitStateGitCommit creates an entry in the QubmangoOperationalFile and captures the commit hash.
-// State: StateInitGitGovernanceInitialization → MRTActionStateSaveArgoCDTargetRevision
-func (r *ManifestRequestTemplateReconciler) handleInitStateGitCommit(
-	ctx context.Context,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
-) (ctrl.Result, error) {
-	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateGitGovernanceInitialization, "Creating entry in Qubmango operational file in Git",
-		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Initializing governance in Git repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
-
-			// Create an entry in the index file
-			governanceIndexAlias := mrt.Namespace + ":" + mrt.Name
-			commitHash, isNewRecord, err := r.repository(ctx, mrt).InitializeGovernance(ctx, QubmangoOperationalFile, governanceIndexAlias, mrt)
-			if err != nil {
-				r.logger.Error(err, "Failed to initialize governance in repository")
-				return "", fmt.Errorf("initialize governance in repository: %w", err)
-			}
-
-			// If index already exists, get the latest commit hash
-			if !isNewRecord {
-				r.logger.V(2).Info("Index already exists, fetching latest revision")
-				commitHash, err = r.repository(ctx, mrt).GetLatestRevision(ctx)
-				if err != nil {
-					r.logger.Error(err, "Failed to get latest revision when index already exists")
-					return "", fmt.Errorf("take latest commit, when index already exists in repository: %w", err)
-				}
-			}
-
-			// Update MRT with commit hash
-			r.logger.V(2).Info("Saving LastObservedCommitHash", "commitHash", commitHash)
-			mrt.Status.LastObservedCommitHash = commitHash
-			if err := r.Status().Update(ctx, mrt); err != nil {
-				r.logger.Error(err, "Failed to update LastObservedCommitHash")
-				return "", fmt.Errorf("update MRT LastObservedCommitHash: %w", err)
-			}
-
-			r.logger.Info("Git initialization complete", "commitHash", commitHash)
-			return governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision, nil
-		},
-	)
 }
 
 // handleStateSaveArgoCDTargetRevision saves Application initial targetRevision in MRT Status.
