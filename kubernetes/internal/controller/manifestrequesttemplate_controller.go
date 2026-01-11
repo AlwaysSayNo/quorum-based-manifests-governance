@@ -26,6 +26,7 @@ import (
 
 	argocdv1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/go-logr/logr"
+	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -953,7 +954,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// Get changed alias from git repository.
-	changedFiles, _, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
+	changedFiles, contentMap, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
 		return false, fmt.Errorf("get changed files: %w", err)
@@ -969,6 +970,17 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	} else if r.hasNoNewUpdates(msr, changedFiles) {
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("No manifest file changes detected between commits. Skipping MSR creation.")
+		return false, nil
+	}
+
+	// If changedFiles contains updated reconciled MRT, its version must be higher than current
+	versionIsOld, err := r.hasMRTWithOldVersion(mrt, changedFiles, contentMap)
+	if err != nil {
+		r.logger.Error(err, "Failed to compare version of old and new MRT")
+		return false, fmt.Errorf("compare version of old and new MRT: %w", err)
+	} else if versionIsOld {
+		mrt.Status.LastObservedCommitHash = revision
+		r.logger.Info("The changed files contain MRT with a version that is not higher than the current one. Skipping MSR creation.")
 		return false, nil
 	}
 
@@ -1009,6 +1021,39 @@ func (r *ManifestRequestTemplateReconciler) hasNoNewUpdates(
 
 	// No changes noticed - return true.
 	return true
+}
+
+func (r *ManifestRequestTemplateReconciler) hasMRTWithOldVersion(
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	changedFiles []governancev1alpha1.FileChange,
+	contentMap map[string]string,
+) (bool, error) {
+	// Get path of the MRT, if it's current reconciled MRT and updated
+	updatedMRTPath := ""
+	for _, f := range changedFiles {
+		if f.Kind == mrt.Kind && f.Namespace == mrt.Namespace && f.Name == f.Name && f.Status == governancev1alpha1.Updated {
+			updatedMRTPath = f.Path
+		}
+	}
+
+	// No such MRT was found
+	if updatedMRTPath == "" {
+		return false, nil
+	}
+
+	// Get the content for updatedMRT
+	content, contains := contentMap[updatedMRTPath]
+	if !contains {
+		return false, fmt.Errorf("updated MRT exists in changedFiles but is missing in contentMap")
+	}
+
+	// Check updated version is higher, than current
+	var updatedMRT *governancev1alpha1.ManifestRequestTemplate
+	if err := yaml.Unmarshal([]byte(content), &updatedMRT); err != nil {
+		return false, fmt.Errorf("unmarshal updated MRT: %w", err)
+	}
+
+	return updatedMRT.Spec.Version <= mrt.Spec.Version, nil
 }
 
 // handleSubstateFinish completes revision processing and removes the event from the queue.
@@ -1134,8 +1179,6 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 		}
 
 		// Skip files inside of governanceFolder or operational folder
-		// TODO: we suppose, that MRT is created outside of governanceFolder. Otherwise, it will be skipped.
-		// TODO: on creation check, that MSR is not created inside of governanceFolder. Or improve the logic
 		isGovernanceFile := strings.HasPrefix(filePath, governanceFolder+"/")
 
 		if isGovernanceFile {
