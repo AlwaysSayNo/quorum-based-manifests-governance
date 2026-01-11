@@ -85,7 +85,7 @@ func (v *ArgoCDChangeAdmissionValidator) Handle(
 		return *resp
 	}
 
-	// Check if MRT is initialized
+	// Check if MRT is initialized. Allow the initialization revision on MRT initialization to avoid sync failures.
 	revision := GetRevisionFromApplication(application)
 	v.logger.WithValues("mrtName", mrt.Name, "mrtNamespace", mrt.Namespace, "requestedRevision", revision)
 
@@ -350,7 +350,7 @@ func (v *ArgoCDChangeAdmissionValidator) InjectDecoder(
 func parseTrackingID(
 	trackingID string,
 ) (string, string, bool) {
-	// Expected: "<application-name>:<group>/<kind>:<namespace>/<name>"
+	// Expected: "<application-name>:<group>/<kind>:<resource-namespace>/<resource-name>"
 	parts := strings.SplitN(trackingID, ":", 3)
 	if len(parts) < 3 {
 		return "", "", false
