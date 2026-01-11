@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,18 +32,6 @@ const (
 	ArgoCDDefaultNamespace = "argocd"
 	LocationDefaultFolder  = "qubmango"
 )
-
-func (w *ManifestRequestTemplateWebhook) SetupWebhookWithManager(
-	mgr ctrl.Manager,
-) error {
-	w.Client = mgr.GetClient()
-
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&governancev1alpha1.ManifestRequestTemplate{}).
-		WithDefaulter(w).
-		WithValidator(w).
-		Complete()
-}
 
 type ManifestRequestTemplateWebhook struct {
 	Client client.Client
@@ -162,7 +149,7 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD"), newMRT.Spec.ArgoCD, "argoCD is immutable and cannot be changed after creation"))
 	}
 
-	// Validate, that on MRT change, version incremented as well
+	// Validate, that on MRT spec change, version incremented as well
 	if !specEqual && newMRT.Spec.Version <= oldMRT.Spec.Version {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMRT.Spec.Version, "version must be incremented on change"))
 	}
@@ -300,6 +287,7 @@ func SameGitRepository(firstURL, secondURL string) (bool, error) {
 }
 
 // normalizeGitURL converts SSH/HTTPS Git URLs into "host/org/repo" lowercase form.
+//
 //	git@github.com:owner/repo.git -> github.com/owner/repo
 //	https://github.com/owner/repo.git -> github.com/owner/repo
 func normalizeGitURL(raw string) (string, error) {

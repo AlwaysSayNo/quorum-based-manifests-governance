@@ -36,18 +36,19 @@ TODO (Done):
 - Refactor the manifest structure and DTOs.
 - Repo and CLI change the format of governance folder. Now user should enter the governance path and the end path will be: governancePath/.qubmango
 - Enforce in the in-cluster to require higher version on MRT
+- MRT, MSR, MCA validating webhooks block the spec changes, that doesn't increment version 
 
 
 TODO: 
 
 - Expect governance folder to be empty in the beginning of the governance process and if has any entries - fail.
-- MRT, MSR, MCA validating webhooks - block any non-governance application requests and require incremented versions. 
 - Check if change of pgp key works
 - Write qubmango slack descriptions
-- Rewrite RBAC permissions
+- Rewrite RBAC permissions, webhook times
 - Documentation for APIs
 - Remove event send from the webhook
 - Rollbacks should not be allowed
+- MRT, MSR, MCA - block any non-governance application requests. 
 
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?

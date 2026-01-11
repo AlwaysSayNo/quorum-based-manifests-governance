@@ -113,6 +113,12 @@ var _ = BeforeSuite(func() {
 	// err = SetupManifestChangeApprovalWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = SetupManifestSigningRequestWebhookWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = SetupManifestChangeApprovalWebhookWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
 	// +kubebuilder:scaffold:webhook
 
 	go func() {

@@ -38,7 +38,7 @@ webhooks:
       namespace: system
       path: /mca/validate/argocd-requests
   failurePolicy: Fail
-  name: mca-webhook.governance.nazar.grynko.com
+  name: argocd-change-admission-webhook.governance.nazar.grynko.com
   rules:
   - apiGroups:
     - '*'
@@ -52,6 +52,26 @@ webhooks:
     - '*'
   sideEffects: None
   timeoutSeconds: 30
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mca/validate
+  failurePolicy: Fail
+  name: mca-validating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - manifestchangeapprovals
+  sideEffects: None
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -73,3 +93,23 @@ webhooks:
     - manifestrequesttemplates
   sideEffects: None
   timeoutSeconds: 30
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /msr/validate
+  failurePolicy: Fail
+  name: msr-validating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - manifestsigningrequests
+  sideEffects: None

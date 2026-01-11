@@ -30,44 +30,44 @@ import (
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 )
 
-// +kubebuilder:webhook:path=/mca/validate,mutating=false,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=create;update,versions=v1alpha1,name=mca-validating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/msr/validate,mutating=false,failurePolicy=fail,sideEffects=None,groups=governance.nazar.grynko.com,resources=manifestsigningrequests,verbs=create;update,versions=v1alpha1,name=msr-validating-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1
 
-type ManifestChangeApprovalCustomValidator struct {
+type ManifestSigningRequestCustomValidator struct {
 	Client client.Client
 	logger logr.Logger
 }
 
-func (v *ManifestChangeApprovalCustomValidator) ValidateCreate(
+func (v *ManifestSigningRequestCustomValidator) ValidateCreate(
 	ctx context.Context,
 	obj runtime.Object,
 ) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (v *ManifestChangeApprovalCustomValidator) ValidateUpdate(
+func (v *ManifestSigningRequestCustomValidator) ValidateUpdate(
 	ctx context.Context,
 	oldObj, newObj runtime.Object,
 ) (admission.Warnings, error) {
-	newMCA := newObj.(*governancev1alpha1.ManifestChangeApproval)
-	oldMCA := oldObj.(*governancev1alpha1.ManifestChangeApproval)
+	newMSR := newObj.(*governancev1alpha1.ManifestSigningRequest)
+	oldMSR := oldObj.(*governancev1alpha1.ManifestSigningRequest)
 
 	var allErrs field.ErrorList
 
-	specEqual := reflect.DeepEqual(oldMCA.Spec, newMCA.Spec)
+	specEqual := reflect.DeepEqual(oldMSR.Spec, newMSR.Spec)
 
-	// Validate, that on MCA spec change, version incremented as well
-	if !specEqual && newMCA.Spec.Version <= oldMCA.Spec.Version {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMCA.Spec.Version, "version must be incremented on change"))
+	// Validate, that on MSR spec change, version incremented as well
+	if !specEqual && newMSR.Spec.Version <= oldMSR.Spec.Version {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMSR.Spec.Version, "version must be incremented on change"))
 	}
 
 	if len(allErrs) == 0 {
 		return nil, nil
 	}
 
-	return nil, apierrors.NewInvalid(newMCA.GroupVersionKind().GroupKind(), newMCA.Name, allErrs)
+	return nil, apierrors.NewInvalid(newMSR.GroupVersionKind().GroupKind(), newMSR.Name, allErrs)
 }
 
-func (v *ManifestChangeApprovalCustomValidator) ValidateDelete(
+func (v *ManifestSigningRequestCustomValidator) ValidateDelete(
 	ctx context.Context,
 	obj runtime.Object,
 ) (admission.Warnings, error) {

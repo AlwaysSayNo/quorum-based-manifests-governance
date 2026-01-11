@@ -211,25 +211,37 @@ func main() {
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		hookServer := webhook.NewServer(webhook.Options{})
 
-		// 1. Existing Generic Handler (remains the same)
+		// ArgoCD Change Admission Webhook
 		hookServer.Register("/mca/validate/argocd-requests", &admissionwh.Webhook{
-			Handler: webhookv1alpha1.NewManifestChangeApprovalCustomValidator(mgr.GetClient(), admissionwh.NewDecoder(mgr.GetScheme())),
+			Handler: webhookv1alpha1.NewArgoCDChangeAdmissionValidator(mgr.GetClient(), admissionwh.NewDecoder(mgr.GetScheme())),
 		})
 
-		// 2. Register MRT Mutating Webhook
-		// Use WithCustomDefaulter from your screenshot
+		// Register MRT Mutating Webhook
 		hookServer.Register("/mrt/mutate", admissionwh.WithCustomDefaulter(
 			mgr.GetScheme(),
 			&governancev1alpha1.ManifestRequestTemplate{},
 			&webhookv1alpha1.ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
 		))
 
-		// 3. Register MRT Validating Webhook
-		// Use WithCustomValidator from your screenshot
+		// Register MRT Validating Webhook
 		hookServer.Register("/mrt/validate", admissionwh.WithCustomValidator(
 			mgr.GetScheme(),
 			&governancev1alpha1.ManifestRequestTemplate{},
 			&webhookv1alpha1.ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
+		))
+
+		// Register MSR Validating Webhook
+		hookServer.Register("/msr/validate", admissionwh.WithCustomValidator(
+			mgr.GetScheme(),
+			&governancev1alpha1.ManifestSigningRequest{},
+			&webhookv1alpha1.ManifestSigningRequestCustomValidator{Client: mgr.GetClient()},
+		))
+
+		// Register MCA Validating Webhook
+		hookServer.Register("/mca/validate", admissionwh.WithCustomValidator(
+			mgr.GetScheme(),
+			&governancev1alpha1.ManifestChangeApproval{},
+			&webhookv1alpha1.ManifestChangeApprovalCustomValidator{Client: mgr.GetClient()},
 		))
 
 		if err := mgr.Add(hookServer); err != nil {
