@@ -41,15 +41,17 @@ TODO (Done):
 - Remove event send from the webhook
 - No support for different namespaces, than argocd default one. Because trackID doesn't have information about application namespace.
 - Write qubmango slack descriptions: The QuBManGo governance bot. Sends real-time notifications in channels or DMs when new manifest changes require governors signature and when changes are approved.
+- Rewrite RBAC permissions for controllers, webhook times
 
 
 TODO: 
 
 - Expect governance folder to be empty in the beginning of the governance process and if has any entries - fail.
+- Delete MSR, MCA after governance process is stopped.
 - Check if change of pgp key works
-- Rewrite RBAC permissions, webhook times
 - Documentation for APIs
 - MRT, MSR, MCA - block any non-governance application requests. 
+- If secrets names change - we should reestablish repository
 
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
@@ -57,7 +59,5 @@ TODO:
 - Split MRT (maybe MSR, MCA) deletion on sub-steps.
 - Interactive pull intervals
 - Move all Taskfile from inside to outside (or just to the subproject root)
-- What to do with MSR, MCA after MRT deletion and finish of governance process? Should we remove signatures from the repository, leave for now, because it is additional logic, leave and backup?
 - Refactor queue and queue usage (now we expect queue to have only one type of events)
 - Snapshot governor signatures for old MSRs (when new MSR is created, we should snapshot the signatures for the previous MSR)
-- If secrets names change - we should reestablish repository

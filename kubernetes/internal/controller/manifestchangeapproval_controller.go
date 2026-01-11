@@ -74,7 +74,7 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=governance.nazar.grynko.com,resources=manifestchangeapprovals/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list
 
 // Reconcile orchestrates the reconciliation flow for ManifestSigningRequest.
 // It handles three main paths:

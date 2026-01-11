@@ -41,7 +41,7 @@ const (
 	ArgoCDTrackIDAnnotation = "argocd.argoproj.io/tracking-id"
 )
 
-// +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=argocd-change-admission-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1,timeoutSeconds=30
+// +kubebuilder:webhook:path=/mca/validate/argocd-requests,mutating=false,failurePolicy=fail,sideEffects=None,groups=*,resources=*,verbs=create;update;delete,versions=*,name=argocd-change-admission-webhook.governance.nazar.grynko.com,admissionReviewVersions=v1
 
 func NewArgoCDChangeAdmissionValidator(
 	client client.Client,
