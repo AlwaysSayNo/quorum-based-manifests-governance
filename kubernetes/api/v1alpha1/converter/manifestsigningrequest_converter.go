@@ -33,19 +33,12 @@ func K8sSpecToDTO(spec governancev1alpha1.ManifestSigningRequestSpec) dto.Manife
 			Namespace: spec.MRT.Namespace,
 			Version:   spec.MRT.Version,
 		},
-		PublicKey:     spec.PublicKey,
-		GitRepository: K8sGitRepoToDTO(spec.GitRepository),
-		Locations:     K8sLocationsToDTO(spec.Locations),
-		Changes:       K8sChangesToDTO(spec.Changes),
-		Governors:     K8sGovernorsToDTO(spec.Governors),
-		Require:       K8sRuleToDTO(spec.Require),
-	}
-}
-
-// K8sGitRepoToDTO converts k8s GitRepository to DTO
-func K8sGitRepoToDTO(repo governancev1alpha1.GitRepository) dto.GitRepository {
-	return dto.GitRepository{
-		SSHURL: repo.SSHURL,
+		PublicKey:        spec.PublicKey,
+		GitRepositoryURL: spec.GitRepositoryURL,
+		Locations:        K8sLocationsToDTO(spec.Locations),
+		Changes:          K8sChangesToDTO(spec.Changes),
+		Governors:        K8sGovernorsToDTO(spec.Governors),
+		Require:          K8sRuleToDTO(spec.Require),
 	}
 }
 

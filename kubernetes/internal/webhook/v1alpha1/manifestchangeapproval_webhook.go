@@ -277,8 +277,8 @@ func (v *ManifestChangeApprovalCustomValidator) getMRTForApplication(
 
 	for _, mrtItem := range mrtList.Items {
 		// Check if this MRT governs this Application
-		mrtName := mrtItem.Spec.ArgoCDApplication.Name
-		mrtNamespace := mrtItem.Spec.ArgoCDApplication.Namespace
+		mrtName := mrtItem.Spec.ArgoCD.Application.Name
+		mrtNamespace := mrtItem.Spec.ArgoCD.Application.Namespace
 		if mrtName != applicationObj.Name || mrtNamespace != applicationObj.Namespace {
 			continue
 		}

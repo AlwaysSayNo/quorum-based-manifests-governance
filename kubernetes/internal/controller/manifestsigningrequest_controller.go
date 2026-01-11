@@ -711,7 +711,7 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateUpdateM
 			mca.Spec.CommitSHA = msr.Spec.CommitSHA
 			mca.Spec.PreviousCommitSHA = msr.Spec.PreviousCommitSHA
 			mca.Spec.PublicKey = msr.Spec.PublicKey
-			mca.Spec.GitRepository = msr.Spec.GitRepository
+			mca.Spec.GitRepositoryURL = msr.Spec.GitRepositoryURL
 			mca.Spec.Locations = msr.Spec.Locations
 			mca.Spec.Changes = msr.Spec.Changes
 			mca.Spec.Governors = msr.Spec.Governors

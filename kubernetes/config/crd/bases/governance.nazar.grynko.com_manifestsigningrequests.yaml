@@ -66,13 +66,8 @@ spec:
                 type: array
               commitSha:
                 type: string
-              gitRepository:
-                properties:
-                  sshUrl:
-                    type: string
-                required:
-                - sshUrl
-                type: object
+              gitRepositoryUrl:
+                type: string
               governors:
                 description: Required until GovernorsRef is implemented.
                 properties:
@@ -175,9 +170,10 @@ spec:
             required:
             - changes
             - commitSha
-            - gitRepository
+            - gitRepositoryUrl
             - governors
             - locations
+            - mrt
             - previousCommitSha
             - publicKey
             - require

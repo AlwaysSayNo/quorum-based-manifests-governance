@@ -73,7 +73,7 @@ type ManifestChangeApprovalSpec struct {
 	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 
 	// +required
-	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
+	GitRepositoryURL string `json:"gitRepositoryUrl" yaml:"gitRepositoryUrl"`
 
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
@@ -92,7 +92,7 @@ type ManifestChangeApprovalSpec struct {
 	Require ApprovalRule `json:"require" yaml:"require"`
 
 	// Signers contains all governors, who signed ManifestSigningRequest, related to this approval
-	// +optional
+	// +required
 	CollectedSignatures []Signature `json:"collectedSignatures,omitempty" yaml:"collectedSignatures,omitempty"`
 }
 

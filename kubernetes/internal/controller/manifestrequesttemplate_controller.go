@@ -47,8 +47,7 @@ import (
 const (
 	GovernanceFinalizer                 = "governance.nazar.grynko.com/finalizer"
 	QubmangoMRTCreationCommitAnnotation = "governance.nazar.grynko.com/mrt-creation-commit-sha"
-	QubmangoOperationalFolder           = ".qubmango"
-	QubmangoOperationalFile             = QubmangoOperationalFolder + "/index.yaml"
+	QubmangoGovernanceFolder            = ".qubmango"
 	QubmangoGovernanceAlias             = "qubmango"
 	MRTQueuePrefix                      = "queue-"
 	GitPollInterval                     = 5 * time.Minute
@@ -325,7 +324,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	}
 
 	switch mrt.Status.ActionState {
-	case governancev1alpha1.MRTActionStateEmpty,  governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision:
+	case governancev1alpha1.MRTActionStateEmpty, governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision:
 		// 1. Save initial ArgoCD revision for deletion.
 		r.logger.V(2).Info("Proceeding to save Application initial targetRevision")
 		return r.handleStateSaveArgoCDTargetRevision(ctx, mrt)
@@ -529,12 +528,10 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMSR(
 				Namespace: mrtCopy.ObjectMeta.Namespace,
 				Version:   mrtCopy.Spec.Version,
 			},
-			PublicKey: mrt.Spec.PGP.PublicKey,
-			GitRepository: governancev1alpha1.GitRepository{
-				SSHURL: mrt.Spec.GitRepository.SSHURL,
-			},
+			PublicKey:        mrt.Spec.PGP.PublicKey,
+			GitRepositoryURL: mrt.Spec.GitRepository.SSH.URL,
 			Locations: governancev1alpha1.Locations{
-				GovernancePath: mrtCopy.Spec.Locations.GovernancePath,
+				GovernancePath: filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder),
 				SourcePath:     application.Spec.Source.Path,
 			},
 			Changes: fileChanges,
@@ -577,12 +574,10 @@ func (r *ManifestRequestTemplateReconciler) buildInitialMCA(
 				Namespace: msrCopy.ObjectMeta.Namespace,
 				Version:   msrCopy.Spec.Version,
 			},
-			PublicKey: mrtCopy.Spec.PGP.PublicKey,
-			GitRepository: governancev1alpha1.GitRepository{
-				SSHURL: mrtCopy.Spec.GitRepository.SSHURL,
-			},
+			PublicKey:        mrtCopy.Spec.PGP.PublicKey,
+			GitRepositoryURL: mrtCopy.Spec.GitRepository.SSH.URL,
 			Locations: governancev1alpha1.Locations{
-				GovernancePath: mrtCopy.Spec.Locations.GovernancePath,
+				GovernancePath: filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder),
 				SourcePath:     application.Spec.Source.Path,
 			},
 			Changes: fileChanges,
@@ -1051,7 +1046,7 @@ func (r *ManifestRequestTemplateReconciler) checkDependencies(
 ) error {
 	// Check for Application
 	app := &argocdv1alpha1.Application{}
-	err := r.Get(ctx, types.NamespacedName{Name: mrt.Spec.ArgoCDApplication.Name, Namespace: mrt.Spec.ArgoCDApplication.Namespace}, app)
+	err := r.Get(ctx, types.NamespacedName{Name: mrt.Spec.ArgoCD.Application.Name, Namespace: mrt.Spec.ArgoCD.Application.Namespace}, app)
 	if err != nil {
 		r.logger.Error(err, "Failed to find linked Application")
 		return fmt.Errorf("couldn't find linked Application")
@@ -1104,11 +1099,9 @@ func (r *ManifestRequestTemplateReconciler) getMSRWithNewVersion(
 		Version:   mrt.Spec.Version,
 	}
 	updatedMSR.Spec.PublicKey = mrtSpecCpy.PGP.PublicKey
-	updatedMSR.Spec.GitRepository = governancev1alpha1.GitRepository{
-		SSHURL: mrt.Spec.GitRepository.SSHURL,
-	}
+	updatedMSR.Spec.GitRepositoryURL = mrt.Spec.GitRepository.SSH.URL
 	updatedMSR.Spec.Locations = governancev1alpha1.Locations{
-		GovernancePath: mrtSpecCpy.Locations.GovernancePath,
+		GovernancePath: filepath.Join(mrtSpecCpy.GovernanceFolderPath, QubmangoGovernanceFolder),
 		SourcePath:     application.Spec.Source.Path,
 	}
 	updatedMSR.Spec.Changes = changedFiles
@@ -1126,7 +1119,7 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 	var filtered []governancev1alpha1.FileChange
 
 	// normalize paths
-	governanceFolder := filepath.Clean(mrt.Spec.Locations.GovernancePath)
+	governanceFolder := filepath.Clean(filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder))
 
 	for _, file := range files {
 		filePath := filepath.Clean(file.Path)
@@ -1144,9 +1137,8 @@ func (r *ManifestRequestTemplateReconciler) filterNonManifestFiles(
 		// TODO: we suppose, that MRT is created outside of governanceFolder. Otherwise, it will be skipped.
 		// TODO: on creation check, that MSR is not created inside of governanceFolder. Or improve the logic
 		isGovernanceFile := strings.HasPrefix(filePath, governanceFolder+"/")
-		isQubmangoOperationalFile := strings.HasPrefix(filePath, QubmangoOperationalFolder+"/")
 
-		if isGovernanceFile || isQubmangoOperationalFile {
+		if isGovernanceFile {
 			continue
 		}
 
@@ -1225,8 +1217,8 @@ func (r *ManifestRequestTemplateReconciler) releaseLockAbstract(
 func (r *ManifestRequestTemplateReconciler) getApplication(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*argocdv1alpha1.Application, error) {
 	app := &argocdv1alpha1.Application{}
 	appKey := types.NamespacedName{
-		Name:      mrt.Spec.ArgoCDApplication.Name,
-		Namespace: mrt.Spec.ArgoCDApplication.Namespace,
+		Name:      mrt.Spec.ArgoCD.Application.Name,
+		Namespace: mrt.Spec.ArgoCD.Application.Namespace,
 	}
 
 	if err := r.Get(ctx, appKey, app); err != nil {

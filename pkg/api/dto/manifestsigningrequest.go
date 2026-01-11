@@ -4,10 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type GitRepository struct {
-	SSHURL string `json:"sshUrl,omitempty" yaml:"sshUrl,omitempty"`
-}
-
 type Locations struct {
 	GovernancePath string `json:"governancePath" yaml:"governancePath"`
 	SourcePath     string `json:"sourcePath" yaml:"sourcePath"`
@@ -56,7 +52,7 @@ type ManifestSigningRequestSpec struct {
 	PreviousCommitSHA string               `json:"previousCommitSha" yaml:"previousCommitSha"`
 	MRT               VersionedManifestRef `json:"mrt" yaml:"mrt"`
 	PublicKey         string               `json:"publicKey" yaml:"publicKey"`
-	GitRepository     GitRepository        `json:"gitRepository" yaml:"gitRepository"`
+	GitRepositoryURL  string               `json:"gitRepositoryUrl" yaml:"gitRepositoryUrl"`
 	Locations         Locations            `json:"locations" yaml:"locations"`
 	Changes           []FileChange         `json:"changes" yaml:"changes"`
 	Governors         GovernorList         `json:"governors" yaml:"governors"`

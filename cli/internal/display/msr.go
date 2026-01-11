@@ -255,7 +255,7 @@ func printMSRInformation(
 	msrTable.Header("Version", "Repository", "MRT", "Status", "CommitSHA")
 	msrTable.Append([]string{
 		strconv.Itoa(msr.Spec.Version),
-		msr.Spec.GitRepository.SSHURL,
+		msr.Spec.GitRepositoryURL,
 		msr.Spec.MRT.Namespace + ":" + msr.Spec.MRT.Name,
 		string(status),
 		msr.Spec.CommitSHA,

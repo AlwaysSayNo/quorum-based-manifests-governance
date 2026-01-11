@@ -32,14 +32,22 @@ TODO (Done):
 - Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts). Solution: use for not Deploy Keys, because easy and enough.
 - Remove index file from kubernetes part
 - Notify governors per slack controller
+- Remove defaults from some fields. No defaults are allowed, due to argocd sync difference.
+- Refactor the manifest structure and DTOs.
+- Repo and CLI change the format of governance folder. Now user should enter the governance path and the end path will be: governancePath/.qubmango
 
 
 TODO: 
-- Remove defaults from some fields (argocd problem)
-- Expect governance folder to be empty in the beginning of the governance process
+
+- Enforce in CLI and in the in-cluster to require from the user higher version
+- Expect governance folder to be empty in the beginning of the governance process and if has any entries - fail.
 - MSR, MCA validating webhooks 
 - Check if change of pgp key works
-- Remove declaration of governance folder. Create it always in the project root.
+- Write qubmango slack descriptions
+- Rewrite RBAC permissions
+- Remove event send from the webhook
+- Documentation for APIs
+
 
 - Is it secure to save passphrases on the local computer? Maybe use env variables?
 - Review all controller transactional methods. Fix / Improve them, if needed

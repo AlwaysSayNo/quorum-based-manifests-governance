@@ -116,7 +116,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 						Namespace: governanceNamespace.Name,
 					},
 				},
-				ArgoCDApplication: governancev1alpha1.ArgoCDApplication{
+				ArgoCD: governancev1alpha1.ArgoCD{
 					Name:      AppName,
 					Namespace: argoCDNamespace.Name,
 				},

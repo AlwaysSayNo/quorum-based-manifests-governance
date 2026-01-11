@@ -92,7 +92,7 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	repoURL := mrt.Spec.GitRepository.SSHURL
+	repoURL := mrt.Spec.GitRepository.SSH.URL
 	if repoURL == "" {
 		return nil, fmt.Errorf("repository URL is not defined in MRT spec")
 	}
@@ -178,19 +178,20 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 }
 
 func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*ssh.PublicKeys, error) {
-	if mrt.Spec.SSH == nil {
+	if mrt.Spec.GitRepository.SSH.SecretsRef == nil {
 		return nil, fmt.Errorf("ssh information is nil")
 	}
 
+	secretRef := mrt.Spec.GitRepository.SSH.SecretsRef
 	gitSecret := &corev1.Secret{}
-	err := m.client.Get(ctx, types.NamespacedName{Name: mrt.Spec.SSH.SecretsRef.Name, Namespace: mrt.Spec.SSH.SecretsRef.Namespace}, gitSecret)
+	err := m.client.Get(ctx, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace}, gitSecret)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", mrt.Spec.SSH.SecretsRef.Name, err)
+		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", secretRef.Name, err)
 	}
 
 	privateKeyBytes, ok := gitSecret.Data["ssh-privatekey"]
 	if !ok {
-		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", mrt.Spec.SSH.SecretsRef.Name)
+		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", secretRef.Name)
 	}
 
 	passphraseBytes, ok := gitSecret.Data["passphrase"]

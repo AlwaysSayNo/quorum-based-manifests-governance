@@ -51,9 +51,16 @@ const (
 	MRTNewRevisionStateAbort          MRTNewRevisionState = "MRTNewRevisionStateAbort"
 )
 
+type GitSSH struct {
+	// +required
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+	// +required
+	SecretsRef *ManifestRef `json:"secretsRef,omitempty" yaml:"secretsRef,omitempty"`
+}
+
 type GitRepository struct {
 	// +required
-	SSHURL string `json:"sshUrl,omitempty" yaml:"sshUrl,omitempty"`
+	SSH GitSSH `json:"ssh" yaml:"ssh"`
 }
 
 type ManifestRef struct {
@@ -70,40 +77,8 @@ type ManifestRefOptional struct {
 	Namespace string `json:"namespace" yaml:"namespace"`
 }
 
-type ArgoCDApplication struct {
-	// Name of the ArgoCD Application.
-	// It should contain information about the git repository, branch and path where manifests are stored.
-	// +kubebuilder:validation:MinLength=1
-	// +required
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-
-	// Namespace where the ArgoCD Application is located.
-	// Default is "argocd".
-	// +kubebuilder:validation:MinLength=0
-	// +optional
-	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-}
-
-type MRTLocations struct {
-	// GovernancePath where MSR, MCA and Signatures will be stored.
-	// Default: root of the repo.
-	// +kubebuilder:validation:MinLength=1
-	// +optional
-	GovernancePath string `json:"governancePath,omitempty" yaml:"governancePath,omitempty"`
-}
-
-type MCA struct {
-	// Name of the MCA resource.
-	// Default is "mca".
-	// +kubebuilder:validation:MinLength=1
-	// +optional
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-
-	// Namespace where the MCA resource will be created.
-	// Default is the same namespace as the MRT.
-	// +kubebuilder:validation:MinLength=0
-	// +optional
-	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+type ArgoCD struct {
+	Application ManifestRef `json:"application" yaml:"application"`
 }
 
 type SlackSecret struct {
@@ -199,11 +174,6 @@ type PGPPrivateKeySecret struct {
 	SecretsRef ManifestRef `json:"secretsRef,omitempty" yaml:"secretsRef,omitempty"`
 }
 
-type SSHPrivateKeySecret struct {
-	// +required
-	SecretsRef ManifestRef `json:"secretsRef,omitempty" yaml:"secretsRef,omitempty"`
-}
-
 // ManifestRequestTemplateSpec defines the desired state of ManifestRequestTemplate
 type ManifestRequestTemplateSpec struct {
 
@@ -219,29 +189,23 @@ type ManifestRequestTemplateSpec struct {
 	// +required
 	PGP *PGPPrivateKeySecret `json:"pgp" yaml:"pgp"`
 
-	// TODO: move to the repository
-	// +required
-	SSH *SSHPrivateKeySecret `json:"ssh" yaml:"ssh"`
-
 	// +optional
 	Notifications *NotificationConfig `json:"notifications,omitempty" yaml:"notifications,omitempty"`
 
-	// ArgoCDApplicationName is the name of the ArgoCD Application.
-	// It should contain information about the git repository, branch and path where manifests are stored.
+	// ArgoCD contains information about the git repository, branch and path where manifests are stored.
 	// +required
-	ArgoCDApplication ArgoCDApplication `json:"argoCDApplication,omitempty" yaml:"argoCDApplication,omitempty"`
-
-	// Locations contains information about where to store MSR, MCA and signatures.
-	// +optional
-	Locations MRTLocations `json:"locations,omitempty" yaml:"locations,omitempty"`
+	ArgoCD ArgoCD `json:"argoCD,omitempty" yaml:"argoCD,omitempty"`
 
 	// MSR contains information about MSR metadata.
-	// +optional
-	MSR ManifestRefOptional `json:"msr,omitempty" yaml:"msr,omitempty"`
+	// +required
+	MSR ManifestRef `json:"msr,omitempty" yaml:"msr,omitempty"`
 
 	// MCA contains information about MCA metadata.
+	// +required
+	MCA ManifestRef `json:"mca,omitempty" yaml:"mca,omitempty"`
+
 	// +optional
-	MCA ManifestRefOptional `json:"mca,omitempty" yaml:"mca,omitempty"`
+	GovernanceFolderPath string `json:"governanceFolderPath" yaml:"governanceFolderPath"`
 
 	// Required until GovernorsRef is implemented.
 	// +required

@@ -149,7 +149,7 @@ func printMCAInformation(
 	mcaTable.Header("Version", "Repository", "MRT", "CommitSHA")
 	mcaTable.Append([]string{
 		strconv.Itoa(mca.Spec.Version),
-		mca.Spec.GitRepository.SSHURL,
+		mca.Spec.GitRepositoryURL,
 		mca.Spec.MRT.Namespace + ":" + mca.Spec.MRT.Name,
 		mca.Spec.CommitSHA,
 	})

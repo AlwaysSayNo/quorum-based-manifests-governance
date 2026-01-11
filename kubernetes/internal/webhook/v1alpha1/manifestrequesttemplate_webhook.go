@@ -3,6 +3,9 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"reflect"
+	"strings"
 
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -59,37 +62,6 @@ func (w *ManifestRequestTemplateWebhook) Default(
 	mrtlog.WithValues("mrtName", mrt.Name, "mrtNamespace", mrt.Namespace)
 	mrtlog.Info("defaulting MRT")
 
-	// Set default fields on MRT namespace (if empty set 'default')
-	if mrt.Namespace == "" {
-		mrt.Namespace = "default"
-	}
-
-	// Set default MSR values
-	if mrt.Spec.MSR.Name == "" {
-		mrt.Spec.MSR.Name = MSRDefaultName
-	}
-	if mrt.Spec.MSR.Namespace == "" {
-		mrt.Spec.MSR.Namespace = mrt.Namespace
-	}
-
-	// Set default MCA values
-	if mrt.Spec.MCA.Name == "" {
-		mrt.Spec.MCA.Name = MCADefaultName
-	}
-	if mrt.Spec.MCA.Namespace == "" {
-		mrt.Spec.MCA.Namespace = mrt.Namespace
-	}
-
-	// Set default Application namespace value
-	if mrt.Spec.ArgoCDApplication.Namespace == "" {
-		mrt.Spec.MCA.Namespace = ArgoCDDefaultNamespace
-	}
-
-	// Set default Location values
-	if mrt.Spec.Locations.GovernancePath == "" {
-		mrt.Spec.Locations.GovernancePath = LocationDefaultFolder
-	}
-
 	// Set creation commit SHA for new MRT
 	if !controllerutil.ContainsFinalizer(mrt, governancecontroller.GovernanceFinalizer) {
 		if err := w.setCreationCommitAnnotationOnMRT(ctx, mrt); err != nil {
@@ -104,8 +76,8 @@ func (w *ManifestRequestTemplateWebhook) setCreationCommitAnnotationOnMRT(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) error {
-	appName := mrt.Spec.ArgoCDApplication.Name
-	appNamespace := mrt.Spec.ArgoCDApplication.Namespace
+	appName := mrt.Spec.ArgoCD.Application.Name
+	appNamespace := mrt.Spec.ArgoCD.Application.Namespace
 	appKey := types.NamespacedName{Name: appName, Namespace: appNamespace}
 
 	application := &argoappv1.Application{}
@@ -134,8 +106,8 @@ func (w *ManifestRequestTemplateWebhook) ValidateCreate(
 	var allErrs field.ErrorList
 
 	// Validate, that argocd Application has the default namespace ('argocd')
-	if mrt.Spec.ArgoCDApplication.Namespace != "argocd" {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCDApplication").Child("namespace"), mrt.Spec.ArgoCDApplication.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
+	if mrt.Spec.ArgoCD.Application.Namespace != "argocd" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCDApplication").Child("namespace"), mrt.Spec.ArgoCD.Application.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
 	}
 
 	// Check nested approval rules
@@ -143,6 +115,24 @@ func (w *ManifestRequestTemplateWebhook) ValidateCreate(
 		allErrs = append(allErrs, errorField)
 	}
 
+	// Check MRT and Application have the same repo URLs
+	appName := mrt.Spec.ArgoCD.Application.Name
+	appNamespace := mrt.Spec.ArgoCD.Application.Namespace
+	appKey := types.NamespacedName{Name: appName, Namespace: appNamespace}
+	application := &argoappv1.Application{}
+	if err := w.Client.Get(ctx, appKey, application); err != nil {
+		return nil, fmt.Errorf("get Application %s:%s for MRT %s:%s: %w", appNamespace, appName, mrt.Namespace, mrt.Name, err)
+	}
+
+	same, err := SameGitRepository(mrt.Spec.GitRepository.SSH.URL, application.Spec.Source.RepoURL)
+	if err != nil {
+		return nil, fmt.Errorf("compare Application and MRT git repository URLs: %w", err)
+	}
+	if !same {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh").Child("url"), mrt.Spec.GitRepository.SSH.URL, "SSH repository URL must have the same host, organization and name as Application RepoURL"))
+	}
+
+	// Has any error
 	if len(allErrs) == 0 {
 		return nil, nil
 	}
@@ -160,11 +150,26 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 	mrtlog.Info("validating MRT update", "name", newMRT.Name, "namespace", newMRT.Namespace)
 	var allErrs field.ErrorList
 
-	// TODO: make reconciler to check existence of resources on actions
+	specEqual := reflect.DeepEqual(oldMRT.Spec, newMRT.Spec)
 
-	// Validate, that argocd Application has the default namespace ('argocd')
-	if newMRT.Spec.ArgoCDApplication.Namespace != "argocd" {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCDApplication").Child("namespace"), newMRT.Spec.ArgoCDApplication.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
+	// Validate, that gitRepository.ssh.url is immutable
+	if oldMRT.Spec.GitRepository.SSH.URL != newMRT.Spec.GitRepository.SSH.URL {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh").Child("url"), newMRT.Spec.GitRepository.SSH.URL, "url is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that gitRepository.argoCD is immutable
+	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD"), newMRT.Spec.ArgoCD, "argoCD is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that on MRT change, version incremented as well
+	if !specEqual && newMRT.Spec.Version <= oldMRT.Spec.Version {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMRT.Spec.Version, "version must be incremented on change"))
+	}
+
+	// Validate, that argoCD.application.namespace == 'argocd'
+	if newMRT.Spec.ArgoCD.Application.Namespace != "argocd" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD").Child("application").Child("namespace"), newMRT.Spec.ArgoCD.Application.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
 	}
 
 	// Validate, that on update MSR, MCA values cannot be changed
@@ -174,15 +179,8 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
 	}
-	if oldMRT.Spec.Locations.GovernancePath != newMRT.Spec.Locations.GovernancePath {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("locations").Child("governanceFolder"), "governanceFolder is immutable and cannot be changed after creation"))
-	}
-	if oldMRT.Spec.ArgoCDApplication != newMRT.Spec.ArgoCDApplication {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("argoCDApplication"), "argoCDApplication is immutable and cannot be changed after creation"))
-	}
 
 	// Check nested approval rules
-
 	if isValid, errorField := w.isApprovalRuleValid(newMRT.Spec.Require, w.getMembersMap(newMRT), field.NewPath("spec").Child("require")); !isValid {
 		allErrs = append(allErrs, errorField)
 	}
@@ -285,4 +283,56 @@ func (w *ManifestRequestTemplateWebhook) approvalRuleValidCheckNode(
 	}
 
 	return true, nil
+}
+
+// SameGitRepository returns true if two URLs point to the same host/org/repo.
+// It ignores protocol (ssh/https) and minor format differences like ".git" suffix.
+func SameGitRepository(firstURL, secondURL string) (bool, error) {
+	n1, err := normalizeGitURL(firstURL)
+	if err != nil {
+		return false, fmt.Errorf("normalize first URL: %w", err)
+	}
+	n2, err := normalizeGitURL(secondURL)
+	if err != nil {
+		return false, fmt.Errorf("normalize second URL: %w", err)
+	}
+	return n1 == n2, nil
+}
+
+// normalizeGitURL converts SSH/HTTPS Git URLs into "host/org/repo" lowercase form.
+//	git@github.com:owner/repo.git -> github.com/owner/repo
+//	https://github.com/owner/repo.git -> github.com/owner/repo
+func normalizeGitURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+
+	if strings.HasPrefix(raw, "git@") {
+		// SSH: git@host:org/repo.git
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid SSH URL: %s", raw)
+		}
+		host := strings.TrimPrefix(parts[0], "git@")
+		path := strings.TrimSuffix(parts[1], ".git")
+		return strings.ToLower(fmt.Sprintf("%s/%s", host, path)), nil
+	}
+
+	if strings.HasPrefix(raw, "ssh://") {
+		// SSH: ssh://[user@]host/org/repo.git
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", err
+		}
+		path := strings.TrimPrefix(u.Path, "/")
+		path = strings.TrimSuffix(path, ".git")
+		return strings.ToLower(fmt.Sprintf("%s/%s", u.Host, path)), nil
+	}
+
+	// HTTPS or other URL-parsable format
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimPrefix(u.Path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	return strings.ToLower(fmt.Sprintf("%s/%s", u.Host, path)), nil
 }

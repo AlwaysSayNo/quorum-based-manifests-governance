@@ -803,8 +803,8 @@ func (r *ManifestChangeApprovalReconciler) getApplicationForMCA(
 	}
 
 	appKey := types.NamespacedName{
-		Name:      mrt.Spec.ArgoCDApplication.Name,
-		Namespace: mrt.Spec.ArgoCDApplication.Namespace,
+		Name:      mrt.Spec.ArgoCD.Application.Name,
+		Namespace: mrt.Spec.ArgoCD.Application.Namespace,
 	}
 
 	app := &argocdv1alpha1.Application{}

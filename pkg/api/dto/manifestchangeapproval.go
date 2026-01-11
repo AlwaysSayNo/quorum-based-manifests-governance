@@ -15,7 +15,7 @@ type ManifestChangeApprovalSpec struct {
 	MRT                 VersionedManifestRef `json:"mrt" yaml:"mrt"`
 	MSR                 VersionedManifestRef `json:"msr" yaml:"msr"`
 	PublicKey           string               `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
-	GitRepository       GitRepository        `json:"gitRepository" yaml:"gitRepository"`
+	GitRepositoryURL    string               `json:"gitRepositoryUrl" yaml:"gitRepositoryUrl"`
 	Locations           Locations            `json:"locations" yaml:"locations"`
 	Changes             []FileChange         `json:"changes" yaml:"changes"`
 	Governors           GovernorList         `json:"governors" yaml:"governors"`

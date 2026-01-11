@@ -59,9 +59,9 @@ func (s *slackNotifier) NotifyGovernorsMSR(
 	headerSection := slack.NewSectionBlock(headerText, nil, nil)
 
 	// Body
-	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false)
+	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCD.Application.Name), false, false)
 	bodySection1 := slack.NewSectionBlock(bodyText1, nil, nil)
-	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false)
+	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSH.URL), false, false)
 	bodySection2 := slack.NewSectionBlock(bodyText2, nil, nil)
 	bodyText3 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(msr.Spec.CommitSHA)), false, false)
 	bodySection3 := slack.NewSectionBlock(bodyText3, nil, nil)
@@ -126,9 +126,9 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 	headerSection := slack.NewSectionBlock(headerText, nil, nil)
 
 	// Body
-	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCDApplication.Name), false, false)
+	bodyText1 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Application:* %s", mrt.Spec.ArgoCD.Application.Name), false, false)
 	bodySection1 := slack.NewSectionBlock(bodyText1, nil, nil)
-	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSHURL), false, false)
+	bodyText2 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Git URL:* %s", mrt.Spec.GitRepository.SSH.URL), false, false)
 	bodySection2 := slack.NewSectionBlock(bodyText2, nil, nil)
 	bodyText3 := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Commit:* `%s`", shortCommitSHA(mca.Spec.CommitSHA)), false, false)
 	bodySection3 := slack.NewSectionBlock(bodyText3, nil, nil)

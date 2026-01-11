@@ -33,7 +33,11 @@ spec:
   version: 1
   
   gitRepository:
-    sshUrl: #{REPO_URL}#
+    ssh:
+      url: #{REPO_URL}#
+    secretsRef:
+      name: ssh-secret-my
+      namespace: test-ns
 
   pgp:
     publicKey: |
@@ -60,23 +64,18 @@ spec:
       name: pgp-secret-my
       namespace: test-ns
 
-  ssh:
-    secretsRef:
-      name: ssh-secret-my
-      namespace: test-ns
-  
   notifications:
     slack:
       secretsRef:
         name: slack-secret-my
         namespace: test-ns
 
-  argoCDApplication:
-    name: application-my
-    namespace: argocd
+  argoCD
+    application:
+      name: application-my
+      namespace: argocd
 
-  locations:
-    governancePath: manifest-signing-requests
+  governanceFolderPath: manifest-signing-requests
 
   msr:
     name: msr-my
@@ -88,8 +87,6 @@ spec:
 
   governors:
     notificationChannels:
-      - slack:
-          channelID: C87654321AS
       - slack:
           channelID: U0A7X5NDR28
     members:

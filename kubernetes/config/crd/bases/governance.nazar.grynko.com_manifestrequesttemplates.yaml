@@ -40,33 +40,48 @@ spec:
           spec:
             description: spec defines the desired state of ManifestRequestTemplate
             properties:
-              argoCDApplication:
-                description: |-
-                  ArgoCDApplicationName is the name of the ArgoCD Application.
-                  It should contain information about the git repository, branch and path where manifests are stored.
+              argoCD:
+                description: ArgoCD contains information about the git repository,
+                  branch and path where manifests are stored.
                 properties:
-                  name:
-                    description: |-
-                      Name of the ArgoCD Application.
-                      It should contain information about the git repository, branch and path where manifests are stored.
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace where the ArgoCD Application is located.
-                      Default is "argocd".
-                    minLength: 0
-                    type: string
+                  application:
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
                 required:
-                - name
+                - application
                 type: object
               gitRepository:
                 properties:
-                  sshUrl:
-                    type: string
+                  ssh:
+                    properties:
+                      secretsRef:
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      url:
+                        type: string
+                    required:
+                    - secretsRef
+                    - url
+                    type: object
                 required:
-                - sshUrl
+                - ssh
                 type: object
+              governanceFolderPath:
+                type: string
               governors:
                 description: Required until GovernorsRef is implemented.
                 properties:
@@ -106,17 +121,6 @@ spec:
                 required:
                 - members
                 type: object
-              locations:
-                description: Locations contains information about where to store MSR,
-                  MCA and signatures.
-                properties:
-                  governancePath:
-                    description: |-
-                      GovernancePath where MSR, MCA and Signatures will be stored.
-                      Default: root of the repo.
-                    minLength: 1
-                    type: string
-                type: object
               mca:
                 description: MCA contains information about MCA metadata.
                 properties:
@@ -124,6 +128,9 @@ spec:
                     type: string
                   namespace:
                     type: string
+                required:
+                - name
+                - namespace
                 type: object
               msr:
                 description: MSR contains information about MSR metadata.
@@ -132,6 +139,9 @@ spec:
                     type: string
                   namespace:
                     type: string
+                required:
+                - name
+                - namespace
                 type: object
               notifications:
                 description: NotificationConfig holds the configuration for different
@@ -200,21 +210,6 @@ spec:
                     minLength: 1
                     type: string
                 type: object
-              ssh:
-                properties:
-                  secretsRef:
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                required:
-                - secretsRef
-                type: object
               version:
                 description: |-
                   Version is the current version of the ManifestRequestTemplate.
@@ -222,12 +217,13 @@ spec:
                 minimum: 1
                 type: integer
             required:
-            - argoCDApplication
+            - argoCD
             - gitRepository
             - governors
+            - mca
+            - msr
             - pgp
             - require
-            - ssh
             - version
             type: object
           status:

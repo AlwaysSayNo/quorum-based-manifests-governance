@@ -94,7 +94,6 @@ type VersionedManifestRef struct {
 	Name string `json:"name" yaml:"name"`
 	// +required
 	Namespace string `json:"namespace" yaml:"namespace"`
-
 	// +required
 	Version int `json:"version" yaml:"version"`
 }
@@ -159,7 +158,7 @@ type ManifestSigningRequestSpec struct {
 	// +required
 	PreviousCommitSHA string `json:"previousCommitSha" yaml:"previousCommitSha"`
 
-	// +optional
+	// +required
 	MRT VersionedManifestRef `json:"mrt" yaml:"mrt"`
 
 	// publicKey is used to sign MCA.
@@ -168,7 +167,7 @@ type ManifestSigningRequestSpec struct {
 	PublicKey string `json:"publicKey,omitempty" yaml:"publicKey,omitempty"`
 
 	// +required
-	GitRepository GitRepository `json:"gitRepository" yaml:"gitRepository"`
+	GitRepositoryURL string `json:"gitRepositoryUrl" yaml:"gitRepositoryUrl"`
 
 	// Location contains information about where to store MSR, MCA and signatures.
 	// +required
