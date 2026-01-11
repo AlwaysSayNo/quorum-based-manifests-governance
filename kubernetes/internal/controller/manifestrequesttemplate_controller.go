@@ -853,11 +853,13 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 	mcaRevisionIdx := slices.IndexFunc(mca.Status.ApprovalHistory, func(rec governancev1alpha1.ManifestChangeApprovalHistoryRecord) bool {
 		return rec.CommitSHA == revision
 	})
-	if mcaRevisionIdx != -1 && mcaRevisionIdx == len(mca.Status.ApprovalHistory)-1 { // Revision is last approved MCA.
+	if mcaRevisionIdx != -1 && mcaRevisionIdx == len(mca.Status.ApprovalHistory)-1 {
+		// Revision is last approved MCA.
 		r.logger.Info("Revision corresponds to the latest MCA. Do nothing", "revision", revision)
 		return true, "Revision corresponds to the latest MCA", nil
-	} else if mcaRevisionIdx != -1 { // Revision comes for some non-latest MCA.
-		r.logger.Info("Revision corresponds to a non latest MCA from History. Might be rollback. No support yet. Do nothing", "revision", revision) // TODO: rollback case
+	} else if mcaRevisionIdx != -1 {
+		// Revision comes for some non-latest MCA. Rollback case - deny.
+		r.logger.Info("Revision corresponds to a non latest MCA from History. Might be rollback. No support yet. Do nothing", "revision", revision)
 		return true, "Revision corresponds to a non latest MCA from History. Might be rollback. No support yet", nil
 	}
 

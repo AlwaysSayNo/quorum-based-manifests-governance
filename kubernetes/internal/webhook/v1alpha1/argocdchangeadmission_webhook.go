@@ -316,7 +316,6 @@ func (v *ArgoCDChangeAdmissionValidator) getMCAForMRT(
 func GetRevisionFromApplication(
 	applicationObj *argoappv1.Application,
 ) string {
-	// TODO: extra checks when do rollback or sync to previous revision
 	revision := ""
 	if applicationObj.Status.OperationState != nil && applicationObj.Status.OperationState.Operation.Sync != nil {
 		// revision is stored in SyncResult (for ongoing or finished syncs)

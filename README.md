@@ -37,6 +37,7 @@ TODO (Done):
 - Repo and CLI change the format of governance folder. Now user should enter the governance path and the end path will be: governancePath/.qubmango
 - Enforce in the in-cluster to require higher version on MRT
 - MRT, MSR, MCA validating webhooks block the spec changes, that doesn't increment version 
+- Rollbacks are not be allowed. ArgoCD is allowed to sync on MRT initialization and for latest approved commit. Usually, it shouldn't do rollbacks, since it gets targetRevision after new MCA creation.
 
 
 TODO: 
@@ -47,7 +48,6 @@ TODO:
 - Rewrite RBAC permissions, webhook times
 - Documentation for APIs
 - Remove event send from the webhook
-- Rollbacks should not be allowed
 - MRT, MSR, MCA - block any non-governance application requests. 
 
 
@@ -58,7 +58,6 @@ TODO:
 - Move all Taskfile from inside to outside (or just to the subproject root)
 - What to do with MSR, MCA after MRT deletion and finish of governance process? Should we remove signatures from the repository, leave for now, because it is additional logic, leave and backup?
 - Make support of any argocd namespace (what was the error?)
-- What should we do with rollback to previously approved changes (MCA v_k -> MCA v_k-1)?
 - Refactor queue and queue usage (now we expect queue to have only one type of events)
 - Snapshot governor signatures for old MSRs (when new MSR is created, we should snapshot the signatures for the previous MSR)
 - If secrets names change - we should reestablish repository
