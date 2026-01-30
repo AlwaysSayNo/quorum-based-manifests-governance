@@ -2,7 +2,7 @@ apiVersion: governance.nazar.grynko.com/v1alpha1
 kind: ManifestSigningRequest
 metadata:
   labels:
-    app.kubernetes.io/name: controller
+    app.kubernetes.io/name: qubmango-controller
     app.kubernetes.io/managed-by: kustomize
   name: manifestsigningrequest-sample
 spec:

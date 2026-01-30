@@ -61,7 +61,7 @@ tasks:
       - kubectl describe validatingwebhookconfiguration local-controller-validating-webhook-configuration
 
   dev:run-proxy-ngrok:
-    desc: "Run ngrok to expose local controller webhook server"
+    desc: "Run ngrok to expose local qubmango-controller webhook server"
     cmds:
       - ngrok http https://localhost:9443
 
