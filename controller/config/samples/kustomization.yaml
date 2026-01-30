@@ -1,6 +1,0 @@
-## Append samples of your project ##
-resources:
-- governance_v1alpha1_manifestrequesttemplate.yaml
-- governance_v1alpha1_manifestchangeapproval.yaml
-- governance_v1alpha1_manifestsigningrequest.yaml
-# +kubebuilder:scaffold:manifestskustomizesamples

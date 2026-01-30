@@ -1,0 +1,48 @@
+version: "3"
+
+tasks:
+  dev:dev:generate-kubeconfig:
+    desc: "Generates a kubeconfig for the operator's ServiceAccount for local development"
+    vars:
+      KUBECONFIG_PATH: '{{.KUBECONFIG_PATH | default "./kubernetes/config/local/kubeconfig.local"}}'
+      SA_NAME: "local-controller-manager"
+      NAMESPACE: "controller-system"
+      SECRET_NAME: "{{.SA_NAME}}-token"
+    cmds:
+      - echo "Generating kubeconfig for ServiceAccount {{.SA_NAME}} into {{.KUBECONFIG_PATH}}..."
+      - |
+        sh -c '
+          CURRENT_CONTEXT=$(kubectl config current-context) && \
+          CLUSTER_NAME=$(kubectl config view -o jsonpath="{.contexts[?(@.name==\"${CURRENT_CONTEXT}\")].context.cluster}") && \
+          SERVER_URL=$(kubectl config view -o jsonpath="{.clusters[?(@.name==\"${CLUSTER_NAME}\")].cluster.server}") && \
+          CLUSTER_CA_DATA=$(kubectl config view --raw -o jsonpath="{.clusters[?(@.name==\"${CLUSTER_NAME}\")].cluster.certificate-authority-data}") && \
+          TOKEN=$(kubectl get secret {{.SECRET_NAME}} -n {{.NAMESPACE}} -o jsonpath="{.data.token}" | base64 --decode) && \
+          cat <<EOF > {{.KUBECONFIG_PATH}}
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - name: ${CLUSTER_NAME}
+            cluster:
+              server: ${SERVER_URL}
+              certificate-authority-data: ${CLUSTER_CA_DATA}
+          contexts:
+          - name: sa-context
+            context:
+              cluster: ${CLUSTER_NAME}
+              user: {{.SA_NAME}}
+          current-context: sa-context
+          users:
+          - name: {{.SA_NAME}}
+            user:
+              token: ${TOKEN}
+        '
+      - echo "Kubeconfig generated at {{.KUBECONFIG_PATH}}"
+
+includes:
+  gke:
+    taskfile: ./kubernetes/Taskfile-gke.yml
+    dir: ./kubernetes/
+  
+  dev:
+    taskfile: ./kubernetes/.development/Taskfile-dev.yml
+    dir: ./kubernetes/.development

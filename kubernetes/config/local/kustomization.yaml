@@ -1,0 +1,16 @@
+namePrefix: local-
+
+resources:
+- ../default
+
+# Local development specific
+patches:
+  # Remove the cert-manager annotations
+  - path: webhook_patch.yaml
+  # Adjust matchConditions for ValidationController
+  - path: match_conditions_patch.yaml
+    target:
+      kind: ValidatingWebhookConfiguration
+      group: admissionregistration.k8s.io
+      version: v1
+      name: validating-webhook-configuration

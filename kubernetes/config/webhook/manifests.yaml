@@ -1,0 +1,112 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mrt/mutate
+  failurePolicy: Fail
+  name: mrt-mutating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    resources:
+    - manifestrequesttemplates
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mca/validate/argocd-requests
+  failurePolicy: Fail
+  name: argocd-change-admission-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - '*'
+    apiVersions:
+    - '*'
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - '*'
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mca/validate
+  failurePolicy: Fail
+  name: mca-validating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - manifestchangeapprovals
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mrt/validate
+  failurePolicy: Fail
+  name: mrt-validating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - manifestrequesttemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /msr/validate
+  failurePolicy: Fail
+  name: msr-validating-webhook.governance.nazar.grynko.com
+  rules:
+  - apiGroups:
+    - governance.nazar.grynko.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - manifestsigningrequests
+  sideEffects: None

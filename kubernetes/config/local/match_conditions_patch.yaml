@@ -1,0 +1,16 @@
+- op: replace
+  path: /webhooks/0/matchConditions
+  value:
+  - name: "ignore-subresources"
+    expression: "(!has(request.subResource) || request.subResource == '')"
+  - name: "require-argocd-annotation"
+    expression: "has(object.metadata) && has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"
+  - name: "allow-local-governance-requests"
+    expression: "!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username != 'system:serviceaccount:controller-system:local-controller-controller-manager')"
+    # config/local/kustomization.yaml
+    #   namePrefix: local-
+    # config/manager/manager.yaml
+    #   serviceAccountName: controller-manager
+    #   namespace: system
+    ## ServiceAccount = namePrefix + serviceAccountName = local-controller-manager
+    ## final-service-account = system:serviceaccount:<namespace>:<namePrefix><serviceAccountName> = system:serviceaccount:system:local-controller-manager

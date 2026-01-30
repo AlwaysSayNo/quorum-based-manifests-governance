@@ -1,7 +1,0 @@
-- op: add
-  path: /webhooks/0/matchConditions
-  value:
-  - name: "ignore-subresources"
-    expression: "(!has(request.subResource) || request.subResource == '')"
-  - name: "require-argocd-annotation"
-    expression: "has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"

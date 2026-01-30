@@ -1,0 +1,9 @@
+apiVersion: governance.nazar.grynko.com/v1alpha1
+kind: GovernanceQueue
+metadata:
+  labels:
+    app.kubernetes.io/name: kubernetes
+    app.kubernetes.io/managed-by: kustomize
+  name: governancequeue-sample
+spec:
+  # TODO(user): Add fields here

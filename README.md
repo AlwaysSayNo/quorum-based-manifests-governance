@@ -1,1 +1,63 @@
 # quorum-based-manifests-governance
+
+TODO (Done):
+- Transactions in controller methods
+- Remove index from file on MRT deletion
+- Point ArgoCD to a specific commit after MCA is created (Used targetRevision)
+- ArgoCD Application should have `ignoreDifferences` for `targetRevision` field. We wont implement any automation so far
+- Maybe attach all events to queue and make queue owner of events
+- Add MSR name to the index file as well.
+- Rewrite the require rules. So only the leaf node can have `Signer`
+- Add sourcePath to the MSR from Application manifest (in Spec) in order to fetch governed files
+- Add handling of SSH / PGP passphrases input
+- Add some alias for monorepo in index file. Don't require, if there is only one entry in the index file. (It will require the mrt alias, if there is more than 1 project in the index file)
+- Reset Application after MRT deletion back to the desired targetRevision
+- Make Qubmango to be default signer of version 0
+- Fix infinite sync loop (maybe the reason, is that we block sync and allow only the next commit. it partially synced and stopped)
+- Remove Status from MSR, because it's not needed. Only latest MSR matters. Or even better move it to Status (CLI)
+- Release all locks, in case of failures.
+- Implement governors notification, on MCA completeness
+- Update MCA documentation (create, reconcile)
+- Add proactive in MRT
+- Prevent ArgoCD from syncing targetRevision from repository (added `syncOptions: RespectIgnoreDifferences=true`)
+- MRT / MSR should point to the exact git of the request, not the next one 
+- Implement history overview commands
+- How can we trust the key from MSR and MRT as a CLI user? -- We add this key to config in CLI manually
+- Use flags for repository editing
+- Manual vs automatic governancePath CLI declaration
+- Totally removed LastObservedCommitHash
+- Remove QubmangoIndex logic from CLI. Declare the governance path manually.
+- GovernanceFolder cannot be changed after creation.
+- Generate concat documents
+- Move controller from deployment key to Git applications. Otherwise requires the machine to trust the github host (have known_hosts in their ~/.ssh/known_hosts). Solution: use for not Deploy Keys, because easy and enough.
+- Remove index file from kubernetes part
+- Notify governors per slack controller
+- Remove defaults from some fields. No defaults are allowed, due to argocd sync difference.
+- Refactor the manifest structure and DTOs.
+- Repo and CLI change the format of governance folder. Now user should enter the governance path and the end path will be: governancePath/.qubmango
+- Enforce in the in-cluster to require higher version on MRT
+- MRT, MSR, MCA validating webhooks block the spec changes, that doesn't increment version 
+- Rollbacks are not be allowed. ArgoCD is allowed to sync on MRT initialization and for latest approved commit. Usually, it shouldn't do rollbacks, since it gets targetRevision after new MCA creation.
+- Remove event send from the webhook
+- No support for different namespaces, than argocd default one. Because trackID doesn't have information about application namespace.
+- Write qubmango slack descriptions: The QuBManGo governance bot. Sends real-time notifications in channels or DMs when new manifest changes require governors signature and when changes are approved.
+- Rewrite RBAC permissions for controllers, webhook times
+
+
+TODO: 
+
+- Expect governance folder to be empty in the beginning of the governance process and if has any entries - fail.
+- Delete MSR, MCA after governance process is stopped.
+- Check if change of pgp key works
+- Documentation for APIs
+- MRT, MSR, MCA - block any non-governance application requests. 
+- If secrets names change - we should reestablish repository
+
+
+- Is it secure to save passphrases on the local computer? Maybe use env variables?
+- Review all controller transactional methods. Fix / Improve them, if needed
+- Split MRT (maybe MSR, MCA) deletion on sub-steps.
+- Interactive pull intervals
+- Move all Taskfile from inside to outside (or just to the subproject root)
+- Refactor queue and queue usage (now we expect queue to have only one type of events)
+- Snapshot governor signatures for old MSRs (when new MSR is created, we should snapshot the signatures for the previous MSR)
