@@ -73,7 +73,7 @@ func (s *slackNotifier) NotifyGovernorsMSR(
 	contextSection := slack.NewContextBlock("", contextText)
 
 	attachment := slack.Attachment{
-		Color: "#ffffff",
+		Color: "#e5e100",
 		Blocks: slack.Blocks{BlockSet: []slack.Block{
 			// Header
 			headerSection,

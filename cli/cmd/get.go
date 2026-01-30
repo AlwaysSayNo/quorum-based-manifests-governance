@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DefaultMSROutputMethod          = "pretty"
+	DefaultMSROutputMethod = "pretty"
 )
 
 func init() {
@@ -33,7 +33,7 @@ func init() {
 				return fmt.Errorf("get MSR information from repository: %w", err)
 			}
 			msr := msrInfo.Obj
-			
+
 			// Get current repo config info
 			repoInfo, err := getCurrentRepo()
 			if err != nil {

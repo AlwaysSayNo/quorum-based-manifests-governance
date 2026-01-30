@@ -6,7 +6,10 @@ metadata:
     # Setting the annotation to null removes it
     cert-manager.io/inject-ca-from: null
 webhooks:
-- name: mca-webhook.governance.nazar.grynko.com
+- name: argocd-change-admission-webhook.governance.nazar.grynko.com
+  admissionReviewVersions:
+  - v1
+  sideEffects: None
   clientConfig:
     # remove service (to use url instead for forwarding traffic to local instance) 
     service: null
@@ -14,7 +17,32 @@ webhooks:
     url: https://inappreciatively-adopted-saige.ngrok-free.dev/mca/validate/argocd-requests
     # disable caBundle to skip proxy verification
     caBundle: ""
+- name: mca-validating-webhook.governance.nazar.grynko.com
+  admissionReviewVersions:
+  - v1
+  sideEffects: None
+  clientConfig:
+    # remove service (to use url instead for forwarding traffic to local instance) 
+    service: null
+    # specify proxy url
+    url: https://inappreciatively-adopted-saige.ngrok-free.dev/mca/validate
+    # disable caBundle to skip proxy verification
+    caBundle: ""
+- name: msr-validating-webhook.governance.nazar.grynko.com
+  admissionReviewVersions:
+  - v1
+  sideEffects: None
+  clientConfig:
+    # remove service (to use url instead for forwarding traffic to local instance) 
+    service: null
+    # specify proxy url
+    url: https://inappreciatively-adopted-saige.ngrok-free.dev/msr/validate
+    # disable caBundle to skip proxy verification
+    caBundle: ""
 - name: mrt-validating-webhook.governance.nazar.grynko.com
+  admissionReviewVersions:
+  - v1
+  sideEffects: None
   clientConfig:
     # remove service (to use url instead for forwarding traffic to local instance) 
     service: null
@@ -32,6 +60,9 @@ metadata:
     cert-manager.io/inject-ca-from: null
 webhooks:
 - name: mrt-mutating-webhook.governance.nazar.grynko.com
+  admissionReviewVersions:
+  - v1
+  sideEffects: None
   clientConfig:
     # remove service (to use url instead for forwarding traffic to local instance) 
     service: null

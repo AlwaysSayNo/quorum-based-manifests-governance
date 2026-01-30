@@ -11,6 +11,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - argoproj.io
   resources:
@@ -20,6 +21,7 @@ rules:
   - list
   - patch
   - update
+  - watch
 - apiGroups:
   - governance.nazar.grynko.com
   resources:

@@ -35,9 +35,9 @@ spec:
   gitRepository:
     ssh:
       url: #{REPO_URL}#
-    secretsRef:
-      name: ssh-secret-my
-      namespace: test-ns
+      secretsRef:
+        name: ssh-secret-my
+        namespace: test-ns
 
   pgp:
     publicKey: |
@@ -70,7 +70,7 @@ spec:
         name: slack-secret-my
         namespace: test-ns
 
-  argoCD
+  argoCD:
     application:
       name: application-my
       namespace: argocd

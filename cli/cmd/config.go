@@ -28,9 +28,9 @@ func init() {
 	}
 
 	addRepoCmd := &cobra.Command{
-		Use:   "add-repo <alias> <url> <ssh-key-path> <pgp-key-path> <governance-key-path> <msr-name> <mca-name>",
+		Use:   "add-repo <alias> <url> <ssh-key-path> <pgp-key-path> <governance-key-path> <governance-folder-path> <msr-name> <mca-name>",
 		Short: "Add a new repository configuration",
-		Args:  cobra.ExactArgs(7),
+		Args:  cobra.ExactArgs(8),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			goverKey, err := readFile(args[4])
 			if err != nil {
@@ -38,13 +38,14 @@ func init() {
 			}
 
 			repository := config.GitRepository{
-				Alias:               args[0],
-				URL:                 args[1],
-				SSHKeyPath:          args[2],
-				PGPKeyPath:          args[3],
-				GovernancePublicKey: goverKey,
-				MSRName:             args[5],
-				MCAName:             args[6],
+				Alias:                args[0],
+				URL:                  args[1],
+				SSHKeyPath:           args[2],
+				PGPKeyPath:           args[3],
+				GovernancePublicKey:  goverKey,
+				GovernanceFolderPath: args[5],
+				MSRName:              args[6],
+				MCAName:              args[7],
 			}
 
 			// Load config, add the new repo, and save the config file.

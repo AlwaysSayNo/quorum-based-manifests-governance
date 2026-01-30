@@ -132,7 +132,7 @@ func getRepositoryProviderWithInput(
 
 	pgpPass := ""
 	if requestPGP {
-		// pgpPass = "ownerpassphrase"
+		pgpPass, err = getPGPPassphrase(w)
 		if err != nil {
 			return nil, fmt.Errorf("get PGP passphrase: %w", err)
 		}
