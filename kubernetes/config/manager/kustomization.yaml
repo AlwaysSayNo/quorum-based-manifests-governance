@@ -1,2 +1,10 @@
 resources:
 - manager.yaml
+
+# Patch Deployment and create default name:tag (replaced on new image creation)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+- name: qubmango-controller
+  newName: ghcr.io/alwayssayno/qubmango-controller
+  newTag: v0.1.0

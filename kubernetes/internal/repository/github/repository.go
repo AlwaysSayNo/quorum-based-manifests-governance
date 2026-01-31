@@ -516,7 +516,7 @@ func (p *gitProvider) createFileGovernorSignatureAndAttach(
 ) error {
 	// Create signatures folder.
 	repoSignaturesFolderPath := filepath.Join(inRepoFolderPath, fmt.Sprintf("v_%d", version), "signatures")
-	os.MkdirAll(filepath.Join(p.localPath, repoSignaturesFolderPath), 0644)
+	os.MkdirAll(filepath.Join(p.localPath, repoSignaturesFolderPath), 0755)
 
 	// Convert publicKey into a hash.
 	pubKeyHash, err := p.convertPublicKeyToHash(pgpEntity)
@@ -746,7 +746,7 @@ func (p *gitProvider) createYAMLFileWithSignatureAndAttach(
 ) error {
 	// Create folder for new file and signature
 	repoRequestFolderPath := filepath.Join(governanceFolder, fmt.Sprintf("v_%d", version))
-	if err := os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0644); err != nil {
+	if err := os.MkdirAll(filepath.Join(p.localPath, repoRequestFolderPath), 0755); err != nil {
 		return fmt.Errorf("create governance folder: %w", err)
 	}
 

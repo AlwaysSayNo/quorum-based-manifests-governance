@@ -16,6 +16,7 @@ namePrefix: qubmango-controller-
 
 resources:
 - ../crd
+- ../common
 - ../rbac
 - ../manager
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
@@ -35,6 +36,18 @@ resources:
 
 # Uncomment the patches line if you enable Metrics
 patches:
+
+  # Create and mount volume for controller usage
+- path: controller_volume_patch.yaml
+  target:
+    kind: Deployment
+    name: controller-manager
+
+  # Create and mount volume with ssh known hosts
+- path: controller_ssh_known_hosts_patch.yaml
+  target:
+    kind: Deployment
+    name: controller-manager
 
 - path: match_conditions_patch.yaml
   target:

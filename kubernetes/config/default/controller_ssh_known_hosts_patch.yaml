@@ -1,0 +1,18 @@
+# Create an emptyDir
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: ssh-known-hosts-volume
+    configMap:
+          # Name matches the name from the configMapGenerator
+          name: governance-operator-known-hosts
+          defaultMode: 0644
+
+# Mount an a writable volume at /tmp/qubmango
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    name: ssh-known-hosts-volume
+    mountPath: /etc/ssh/ssh_known_hosts
+    subPath: known_hosts # key of the configMap (file name)
+    readOnly: true

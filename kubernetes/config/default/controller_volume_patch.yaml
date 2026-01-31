@@ -1,0 +1,13 @@
+# Create an emptyDir
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: tmp-qubmango
+    emptyDir: {}
+# Mount an a writable volume at /tmp/qubmango
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    name: tmp-qubmango
+    mountPath: /tmp/qubmango
+    readOnly: false

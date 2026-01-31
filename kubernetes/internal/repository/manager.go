@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,6 +69,8 @@ type Manager struct {
 	client client.Client
 	// Base directory to store local clones
 	basePath string
+	// Holds location of known_hosts
+	knownHostsPath string
 	// List of all available providers factories
 	providers []GitRepositoryFactory
 	// Cache of initialized providersToMRT, keyed by repo URL
@@ -74,10 +78,15 @@ type Manager struct {
 	mu             sync.Mutex
 }
 
-func NewManager(client client.Client, basePath string) *Manager {
+func NewManager(
+	client client.Client,
+	basePath string,
+	knownHostsPath string,
+) *Manager {
 	return &Manager{
 		client:         client,
 		basePath:       basePath,
+		knownHostsPath: knownHostsPath,
 		providers:      []GitRepositoryFactory{},
 		providersToMRT: make(map[string]GitRepository),
 	}
@@ -201,11 +210,25 @@ func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 		passphraseBytes = []byte("")
 	}
 
-	// Decrypt the private key.
+	// Check the existence of the knownHostsPath
+	if _, err := os.Stat(m.knownHostsPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("known_hosts file does not exist at the expected path: %s. Check the deployment's volume mounts", m.knownHostsPath)
+	}
+
+	// Create callback for hostPaths
+	hostKeyCallback, err := knownhosts.New(m.knownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create known_hosts callback from path '%s': %w", m.knownHostsPath, err)
+	}
+
+	// Create the public keys object
 	publicKeys, err := ssh.NewPublicKeys("git", privateKeyBytes, string(passphraseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create public keys from secret: %w", err)
 	}
+
+	// Attach callback
+	publicKeys.HostKeyCallback = hostKeyCallback
 
 	return publicKeys, nil
 }

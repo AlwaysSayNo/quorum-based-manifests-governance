@@ -72,6 +72,7 @@ func main() {
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
 	var repositoriesBasePath string
+	var knownHostsPath string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -92,6 +93,7 @@ func main() {
 
 	// Custom flags
 	flag.StringVar(&repositoriesBasePath, "repositories-base-path", "/tmp/qubmango/git/repos", "The base folder where all repositories are copied to.")
+	flag.StringVar(&knownHostsPath, "known-hosts-path", "/etc/ssh/ssh_known_hosts", "The base folder where all known_hosts are declared.")
 
 	opts := zap.Options{
 		Development: true,
@@ -194,7 +196,7 @@ func main() {
 
 	githubFactory := githubprovider.GitProviderFactory{}
 
-	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath)
+	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath, knownHostsPath)
 	repoManager.Register(&githubFactory)
 
 	if err := (&controller.ManifestRequestTemplateReconciler{
