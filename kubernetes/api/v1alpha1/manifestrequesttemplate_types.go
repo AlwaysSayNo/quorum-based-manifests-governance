@@ -28,6 +28,8 @@ const (
 	MRTActionStateEmpty MRTActionState = ""
 	// MRTActionStateSaveArgoCDTargetRevision indicates the controller is saving initial Application targetRevision.
 	MRTActionStateSaveArgoCDTargetRevision MRTActionState = "MRTActionStateSaveArgoCDTargetRevision"
+	// MRTActionStateCheckGovernancePathEmpty indicates the controller is verifying the governance path is empty.
+	MRTActionStateCheckGovernancePathEmpty MRTActionState = "MRTActionStateCheckGovernancePathEmpty"
 	// MRTActionStateCreateDefaultClusterResources indicates the controller is creating the MSR/MCA.
 	MRTActionStateCreateDefaultClusterResources MRTActionState = "MRTActionStateCreateDefaultClusterResources"
 	// MRTActionStateInitSetFinalizer indicates the controller is adding the finalizer.

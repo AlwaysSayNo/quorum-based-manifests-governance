@@ -310,8 +310,9 @@ func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(
 // reconcileCreate handles the logic for a newly created MRT, that has not been initialized.
 // It progresses through these states:
 // 1. MRTActionStateSaveArgoCDTargetRevision: Save Application initial targetRevision in MRT Status
-// 2. InitStateCreateDefaultClusterResources: Create default MSR/MCA/GovernanceQueue resources
-// 3. StateInitSetFinalizer: Set finalizer to complete initialization
+// 2. MRTActionStateCheckGovernancePathEmpty: Verify governance path in repository is empty
+// 3. MRTActionStateCreateDefaultClusterResources: Create default MSR/MCA/GovernanceQueue resources
+// 4. MRTActionStateInitSetFinalizer: Set finalizer to complete initialization
 func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -329,12 +330,16 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 		// 1. Save initial ArgoCD revision for deletion.
 		r.logger.V(2).Info("Proceeding to save Application initial targetRevision")
 		return r.handleStateSaveArgoCDTargetRevision(ctx, mrt)
+	case governancev1alpha1.MRTActionStateCheckGovernancePathEmpty:
+		// 2. Check that governance path is empty in repository.
+		r.logger.V(2).Info("Proceeding to check governance path is empty")
+		return r.handleStateCheckGovernancePathEmpty(ctx, mrt)
 	case governancev1alpha1.MRTActionStateCreateDefaultClusterResources:
-		// 2. Create default MSR, MCA resources in the cluster.
+		// 3. Create default MSR, MCA resources in the cluster.
 		r.logger.V(2).Info("Proceeding to create default cluster resources")
 		return r.handleInitStateCreateClusterResources(ctx, mrt)
 	case governancev1alpha1.MRTActionStateInitSetFinalizer:
-		// 3. Confirm MRT initialization by setting the GovernanceFinalizer.
+		// 4. Confirm MRT initialization by setting the GovernanceFinalizer.
 		r.logger.V(2).Info("Proceeding to set finalizer")
 		return r.handleStateFinalizing(ctx, mrt)
 	default:
@@ -346,7 +351,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 }
 
 // handleStateSaveArgoCDTargetRevision saves Application initial targetRevision in MRT Status.
-// State: MRTActionStateSaveArgoCDTargetRevision → MRTActionStateCreateDefaultClusterResources
+// State: MRTActionStateSaveArgoCDTargetRevision → MRTActionStateCheckGovernancePathEmpty
 func (r *ManifestRequestTemplateReconciler) handleStateSaveArgoCDTargetRevision(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -365,6 +370,48 @@ func (r *ManifestRequestTemplateReconciler) handleStateSaveArgoCDTargetRevision(
 			}
 
 			r.logger.Info("Application initial targetRevision saved successfully")
+			return governancev1alpha1.MRTActionStateCheckGovernancePathEmpty, nil
+		},
+	)
+}
+
+// handleStateCheckGovernancePathEmpty verifies that the governance path in the repository is empty.
+// This ensures no manifests have been pre-populated before MRT initialization.
+// State: MRTActionStateCheckGovernancePathEmpty → MRTActionStateCreateDefaultClusterResources
+func (r *ManifestRequestTemplateReconciler) handleStateCheckGovernancePathEmpty(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateCheckGovernancePathEmpty, "Checking governance path is empty",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
+			r.logger.Info("Checking governance path is empty", "mrt", mrt.Name, "namespace", mrt.Namespace)
+
+			// Get the latest revision from the repository
+			repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
+			if err != nil {
+				return "", fmt.Errorf("get repository provider: %w", err)
+			}
+
+			latestRevision, err := repository.GetLatestRevision(ctx)
+			if err != nil {
+				return "", fmt.Errorf("get latest revision from repository: %w", err)
+			}
+
+			// Get all files at the latest revision using the governance path
+			governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
+			changedFiles, _, err := repository.GetChangedFiles(ctx, "", latestRevision, governancePath)
+			if err != nil {
+				return "", fmt.Errorf("get files from governance path: %w", err)
+			}
+
+			// Check if any files exist in the governance path
+			if len(changedFiles) > 0 {
+				err := fmt.Errorf("governance path is not empty, found %d files at path %s", len(changedFiles), governancePath)
+				r.logger.Error(err, "Governance path must be empty before initialization", "mrt", mrt.Name, "namespace", mrt.Namespace)
+				return "", err
+			}
+
+			r.logger.Info("Governance path is empty, proceeding with resource creation")
 			return governancev1alpha1.MRTActionStateCreateDefaultClusterResources, nil
 		},
 	)
