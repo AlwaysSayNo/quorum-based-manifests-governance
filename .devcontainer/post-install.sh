@@ -52,6 +52,10 @@ curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
   && apt update \
   && apt install ngrok
 
+# install minikube
+curl -LO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
+install minikube-linux-amd64 /usr/local/bin/minikube && rm minikube-linux-amd64
+
 # verify installations
 python3 --version
 gcloud --version

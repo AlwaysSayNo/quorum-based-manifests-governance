@@ -19,15 +19,15 @@ require (
 )
 
 require (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.0.0
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.0.0-00010101000000-000000000000
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.1.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.1.0
 	github.com/slack-go/slack v0.16.0
 )
 
-replace (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
-)
+// replace (
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
+// )
 
 require (
 	cel.dev/expr v0.24.0 // indirect

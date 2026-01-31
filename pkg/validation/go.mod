@@ -8,9 +8,9 @@ require (
 	github.com/xlab/treeprint v1.2.0
 )
 
-require github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.0.0
+require github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.1.0
 
-replace github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../../pkg/api
+// replace github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../../pkg/api
 
 require (
 	github.com/cloudflare/circl v1.6.0 // indirect
