@@ -240,6 +240,9 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 }
 
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
+// It progresses through these states:
+// 1. MRTActionStateDeleteRestoreArgoCD: Restore Application initial targetRevision
+// 2. MRTActionStateDeleteRemoveFinalizer: Remove finalizer to complete deletion
 func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -253,19 +256,28 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	r.logger.Info("Processing MRT deletion", "actionState", mrt.Status.ActionState)
 
 	switch mrt.Status.ActionState {
+	case governancev1alpha1.MRTActionStateEmpty, governancev1alpha1.MRTActionStateDeleteRestoreArgoCD:
+		// 1. Restore Application to its initial targetRevision.
+		r.logger.V(2).Info("Proceeding to restore ArgoCD Application")
+		return r.handleStateDeleteRestoreArgoCD(ctx, mrt)
+	case governancev1alpha1.MRTActionStateDeleteRemoveFinalizer:
+		// 2. Remove the finalizer to complete deletion.
+		r.logger.V(2).Info("Proceeding to remove finalizer")
+		return r.handleStateDeleteRemoveFinalizer(ctx, mrt)
 	default:
-		// Any state means we start the deletion process
-		return r.handleStateDeletion(ctx, mrt)
+		// Any other state, start deletion from the beginning by resetting to DeleteRestoreArgoCD
+		r.logger.V(2).Info("Unknown deletion state, starting deletion process", "currentState", mrt.Status.ActionState)
+		return r.handleStateDeleteRestoreArgoCD(ctx, mrt)
 	}
 }
 
-// handleStateDeletion returns ArgoCD Application its original targetRevision and removes finalizer from this resource.
-// State: any → EmptyActionState
-func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
+// handleStateDeleteRestoreArgoCD restores the ArgoCD Application to its initial targetRevision.
+// State: MRTActionStateDeleteRestoreArgoCD → MRTActionStateDeleteRemoveFinalizer
+func (r *ManifestRequestTemplateReconciler) handleStateDeleteRestoreArgoCD(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeletion, "Removing MRT from governance and cluster",
+	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRestoreArgoCD, "Restoring ArgoCD Application to initial targetRevision",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
 			// Get the Application
 			app, err := r.getApplication(ctx, mrt)
@@ -273,8 +285,8 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 				return "", fmt.Errorf("fetch Application for MRT: %w", err)
 			}
 
-			// Patch the Application with MCA CommitSHA
-			r.logger.Info("Restoring initial ArgoCD Application targetRevision", "app", app.Name, "currRevision", mrt.Status.ApplicationInitTargetRevision, "initialRevision", app.Spec.Source.TargetRevision)
+			// Patch the Application with initial targetRevision
+			r.logger.Info("Restoring initial ArgoCD Application targetRevision", "app", app.Name, "currentRevision", app.Spec.Source.TargetRevision, "initialRevision", mrt.Status.ApplicationInitTargetRevision)
 
 			patch := client.MergeFrom(app.DeepCopy())
 			app.Spec.Source.TargetRevision = mrt.Status.ApplicationInitTargetRevision
@@ -285,9 +297,21 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeletion(
 			}
 
 			r.logger.Info("ArgoCD Application targetRevision restored successfully")
+			return governancev1alpha1.MRTActionStateDeleteRemoveFinalizer, nil
+		},
+	)
+}
 
+// handleStateDeleteRemoveFinalizer removes the finalizer from MRT to complete deletion.
+// State: MRTActionStateDeleteRemoveFinalizer → MRTActionStateEmpty
+func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveFinalizer(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRemoveFinalizer, "Removing GovernanceFinalizer from MRT",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
 			// Remove the finalizer from MRT.
-			r.logger.Info("Removing GovernanceFinalizer from MRT")
+			r.logger.Info("Removing GovernanceFinalizer to complete deletion")
 			controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
 			if err := r.Update(ctx, mrt); err != nil {
 				r.logger.Error(err, "Failed to remove finalizer")
