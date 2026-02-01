@@ -242,7 +242,8 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
 // It progresses through these states:
 // 1. MRTActionStateDeleteRestoreArgoCD: Restore Application initial targetRevision
-// 2. MRTActionStateDeleteRemoveFinalizer: Remove finalizer to complete deletion
+// 2. MRTActionStateDeleteRemoveGovernanceFolder: Remove governance folder from repository
+// 3. MRTActionStateDeleteRemoveFinalizer: Remove finalizer to complete deletion
 func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -260,8 +261,12 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 		// 1. Restore Application to its initial targetRevision.
 		r.logger.V(2).Info("Proceeding to restore ArgoCD Application")
 		return r.handleStateDeleteRestoreArgoCD(ctx, mrt)
+	case governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder:
+		// 2. Remove governance folder from repository.
+		r.logger.V(2).Info("Proceeding to remove governance folder from repository")
+		return r.handleStateDeleteRemoveGovernanceFolder(ctx, mrt)
 	case governancev1alpha1.MRTActionStateDeleteRemoveFinalizer:
-		// 2. Remove the finalizer to complete deletion.
+		// 3. Remove the finalizer to complete deletion.
 		r.logger.V(2).Info("Proceeding to remove finalizer")
 		return r.handleStateDeleteRemoveFinalizer(ctx, mrt)
 	default:
@@ -272,7 +277,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 }
 
 // handleStateDeleteRestoreArgoCD restores the ArgoCD Application to its initial targetRevision.
-// State: MRTActionStateDeleteRestoreArgoCD → MRTActionStateDeleteRemoveFinalizer
+// State: MRTActionStateDeleteRestoreArgoCD → MRTActionStateDeleteRemoveGovernanceFolder
 func (r *ManifestRequestTemplateReconciler) handleStateDeleteRestoreArgoCD(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -297,9 +302,59 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRestoreArgoCD(
 			}
 
 			r.logger.Info("ArgoCD Application targetRevision restored successfully")
+			return governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder, nil
+		},
+	)
+}
+
+// handleStateDeleteRemoveGovernanceFolder removes the governance folder from the repository.
+// State: MRTActionStateDeleteRemoveGovernanceFolder → MRTActionStateDeleteRemoveFinalizer
+func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveGovernanceFolder(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (ctrl.Result, error) {
+	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder, "Removing governance folder from repository",
+		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
+			r.logger.Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
+
+			// Get repository provider
+			repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
+			if err != nil {
+				return "", fmt.Errorf("get repository provider: %w", err)
+			}
+
+			// Construct the governance folder path to delete
+			governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
+
+			r.logger.Info("Deleting governance folder from repository", "path", governancePath, "mrt", mrt.Name)
+
+			// Delete the governance folder and push the deletion to the remote repository
+			if err := r.deleteGovernanceFolderFromRepository(ctx, repository, governancePath); err != nil {
+				r.logger.Error(err, "Failed to delete governance folder from repository", "path", governancePath)
+				return "", fmt.Errorf("delete governance folder from repository: %w", err)
+			}
+
+			r.logger.Info("Governance folder deleted successfully from repository")
 			return governancev1alpha1.MRTActionStateDeleteRemoveFinalizer, nil
 		},
 	)
+}
+
+// deleteGovernanceFolderFromRepository deletes the governance folder from the local git repository and pushes to remote
+func (r *ManifestRequestTemplateReconciler) deleteGovernanceFolderFromRepository(
+	ctx context.Context,
+	repository repomanager.GitRepository,
+	folderPath string,
+) error {
+	r.logger.V(2).Info("Deleting governance folder from repository", "folderPath", folderPath)
+
+	err := repository.DeleteFolder(ctx, folderPath)
+	if err != nil {
+		return fmt.Errorf("failed to delete governance folder from repository: %w", err)
+	}
+
+	r.logger.V(2).Info("Successfully deleted governance folder from repository", "folderPath", folderPath)
+	return nil
 }
 
 // handleStateDeleteRemoveFinalizer removes the finalizer from MRT to complete deletion.

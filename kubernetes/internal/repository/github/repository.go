@@ -877,3 +877,45 @@ func createDetachedSignature(
 
 	return sigBuf.Bytes(), nil
 }
+
+func (p *gitProvider) DeleteFolder(ctx context.Context, folderPath string) (error) {
+	worktree, rollback, pgpEntity, err := p.syncAndLock(ctx)
+	if err != nil {
+		return fmt.Errorf("sync and lock: %w", err)
+	}
+	defer p.mu.Unlock()
+
+	// Build path to the folder
+	localFolderPath := filepath.Join(p.localPath, folderPath)
+
+	// Check if it exists
+	if _, err := os.Stat(localFolderPath); err != nil && errors.Is(err, os.ErrNotExist) {
+		// Nothing to delete
+		return nil
+	}
+
+	// Remove the folder from the local worktree
+	if err := os.RemoveAll(localFolderPath); err != nil {
+		rollback()
+		return fmt.Errorf("failed to remove folder from local path: %w", err)
+	}
+
+	// Stage the deletion
+	if err := worktree.RemoveGlob(folderPath + "/**"); err != nil {
+		// If RemoveGlob doesn't work, try removing the folder itself
+		if _, err := worktree.Remove(folderPath); err != nil {
+			rollback()
+			return fmt.Errorf("failed to stage folder deletion in git: %w", err)
+		}
+	}
+
+	// Create signed commit and push it to the remote repo
+	commitMsg := fmt.Sprintf("Delete governance folder: %s", folderPath)
+	_, err = p.commitAndPush(ctx, worktree, commitMsg, pgpEntity)
+	if err != nil {
+		rollback()
+		return fmt.Errorf("commit and push: %w", err)
+	}
+
+	return nil
+}

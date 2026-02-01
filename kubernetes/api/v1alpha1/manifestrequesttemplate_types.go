@@ -36,8 +36,9 @@ const (
 	MRTActionStateInitSetFinalizer MRTActionState = "MRTActionStateInitSetFinalizer"
 
 	// Deletion states
-	MRTActionStateDeleteRestoreArgoCD MRTActionState = "MRTActionStateDeleteRestoreArgoCD"
-	MRTActionStateDeleteRemoveFinalizer MRTActionState = "MRTActionStateDeleteRemoveFinalizer"
+	MRTActionStateDeleteRestoreArgoCD          MRTActionState = "MRTActionStateDeleteRestoreArgoCD"
+	MRTActionStateDeleteRemoveGovernanceFolder MRTActionState = "MRTActionStateDeleteRemoveGovernanceFolder"
+	MRTActionStateDeleteRemoveFinalizer        MRTActionState = "MRTActionStateDeleteRemoveFinalizer"
 
 	// Normal operation states
 	MRTActionStateCheckingDependencies MRTActionState = "MRTActionStateCheckingDependencies"
