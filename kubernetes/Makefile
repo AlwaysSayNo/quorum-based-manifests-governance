@@ -113,22 +113,27 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: local-token-secret ## Apply local token secret, used for local service-account
+local-token-secret:
+	# Create SA (without it secret is immediately deleted)
+	kubectl create serviceaccount local-qubmango-controller-controller-manager -n controller-system || true
+	# Create secret
+	kubectl apply -f /workspaces/quorum-based-manifests-governance/kubernetes/config/local/dev-token-secret.yaml || true
+
 .PHONY: run
-run: manifests generate fmt vet webhook-certs ## Run a controller from your host.
+run: manifests generate fmt webhook-certs local-token-secret # Run a controller from local host. Should be vet before webhook-certs 
 	# Generate the special kubeconfig
-	task dev:dev:generate-kubeconfig -- KUBECONFIG_PATH=./config/local/kubeconfig.local
-	# Run Go process with the KUBECONFIG env var set.
-	KUBECONFIG=./config/local/kubeconfig.local
-	go run ./cmd/main.go
+	KUBECONFIG_PATH=/workspaces/quorum-based-manifests-governance/kubernetes/kubeconfig.local \
+	task dev:dev:generate-kubeconfig
+	# Run Go process
+	# Points the known-hosts to the default local folder, instead of default container folder
+	go run ./cmd/main.go -known-hosts-path /root/.ssh/known_hosts
 
 # This target will be called by 'run' to ensure certs are ready for local execution.
 .PHONY: webhook-certs
 webhook-certs:
-	# Put local certs in place for the webhook server to use when running locally.
-	mkdir -p /tmp/k8s-webhook-server/serving-certs
-	cp ./config/local/certs/mca-webhook.pem /tmp/k8s-webhook-server/serving-certs/tls.crt
-	cp ./config/local/certs/mca-webhook-key.pem /tmp/k8s-webhook-server/serving-certs/tls.key
-	echo "Local webhook certificates are in place."
+	chmod +x hack/gen-local-certs.sh
+	./hack/gen-local-certs.sh
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -197,6 +202,19 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 .PHONY: undeploy-local
 undeploy-local: manifests kustomize
 	$(KUSTOMIZE) build config/local | kubectl delete -f -
+
+.PHONY: minikube-init
+minikube-init: ## Initialize Minikube for local development
+	bash .development/minikube-init.sh
+
+.PHONY: minikube-build-and-push
+minikube-build-and-push: manifests generate fmt vet ## Build and push docker image to Minikube
+	eval $$(minikube docker-env) && $(CONTAINER_TOOL) build -t qubmango-controller:latest .
+
+.PHONY: minikube-quick-restart
+minikube-quick-restart: manifests generate fmt vet ## Build image and restart deployment in Minikube
+	eval $$(minikube docker-env) && $(CONTAINER_TOOL) build -t qubmango-controller:latest .
+	kubectl rollout restart deployment/local-qubmango-controller-controller-manager -n controller-system
 
 
 ##@ Dependencies
