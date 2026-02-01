@@ -5,34 +5,10 @@ resources:
 
 # Local development specific
 patches:
-  # Add host.minikube.internal to certificate for local development using JSONPatch
-  - target:
-      kind: Certificate
-      group: cert-manager.io
-      version: v1
-      name: qubmango-controller-serving-cert
-      namespace: controller-system
-    patch: |-
-      - op: add
-        path: /spec/dnsNames/-
-        value: host.minikube.internal
-      - op: add
-        path: /spec/dnsNames/-
-        value: localhost
-  # Use Minikube webhook patch (with host.minikube.internal URLs)
+  # Update webhooks for minikube
   - path: webhook_patch_minikube.yaml
-    target:
-      kind: ValidatingWebhookConfiguration
-      group: admissionregistration.k8s.io
-      version: v1
-      name: validating-webhook-configuration
-  - path: webhook_patch_minikube_mutating.yaml
-    target:
-      kind: MutatingWebhookConfiguration
-      group: admissionregistration.k8s.io
-      version: v1
-      name: mutating-webhook-configuration
-  # Adjust matchConditions for ValidationController
+  
+  # Add match config for admission webhook
   - path: match_conditions_patch.yaml
     target:
       kind: ValidatingWebhookConfiguration
