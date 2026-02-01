@@ -407,7 +407,6 @@ func (p *gitProvider) patchToFileChangeList(
 
 		if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
 			// Could be a non-k8s file, or malformed. Log and skip for now.
-			p.logger.Error(err, fmt.Sprintf("could not unmarshal k8s metadata from %s, skipping: %v\n", path, err))
 			continue
 		}
 
@@ -878,7 +877,7 @@ func createDetachedSignature(
 	return sigBuf.Bytes(), nil
 }
 
-func (p *gitProvider) DeleteFolder(ctx context.Context, folderPath string) (error) {
+func (p *gitProvider) DeleteFolder(ctx context.Context, folderPath string) error {
 	worktree, rollback, pgpEntity, err := p.syncAndLock(ctx)
 	if err != nil {
 		return fmt.Errorf("sync and lock: %w", err)

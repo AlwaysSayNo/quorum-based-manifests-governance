@@ -1,0 +1,41 @@
+version: "3"
+
+env:
+  REPO_URL: https://github.com/AlwaysSayNo/quorum-based-manifests-governance-test.git
+  SSH_REPO_URL: git@github.com:AlwaysSayNo/quorum-based-manifests-governance-test.git
+  REPO_NAME: quorum-based-manifests-governance-test
+  REPOS_FOLDER_PATH: repos
+
+tasks:
+  # ==================== MINIKUBE SPECIFIC TASKS ====================
+
+  minikube:start:
+    desc: "Start Minikube cluster with appropriate resources"
+    cmds:
+      - |
+        if ! minikube status &>/dev/null; then
+          echo "Starting Minikube..."
+          minikube start --force
+        else
+          echo "Minikube is already running"
+        fi
+
+  minikube:docker-env:
+    desc: "Configure shell to use Minikube's Docker daemon"
+    cmds:
+      - eval $(minikube docker-env)
+
+  minikube:stop:
+    desc: "Stop Minikube cluster"
+    cmds:
+      - minikube stop
+
+  minikube:delete:
+    desc: "Delete Minikube cluster"
+    cmds:
+      - minikube delete
+
+  minikube:dashboard:
+    desc: "Open Minikube dashboard"
+    cmds:
+      - minikube dashboard

@@ -97,6 +97,20 @@ func (m *MockGitRepository) EXPECT() *MockGitRepositoryMockRecorder {
 	return m.recorder
 }
 
+// DeleteFolder mocks base method.
+func (m *MockGitRepository) DeleteFolder(ctx context.Context, folderPath string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteFolder", ctx, folderPath)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteFolder indicates an expected call of DeleteFolder.
+func (mr *MockGitRepositoryMockRecorder) DeleteFolder(ctx, folderPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFolder", reflect.TypeOf((*MockGitRepository)(nil).DeleteFolder), ctx, folderPath)
+}
+
 // FetchMSRByVersion mocks base method.
 func (m *MockGitRepository) FetchMSRByVersion(ctx context.Context, msr *v1alpha1.ManifestSigningRequest) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error) {
 	m.ctrl.T.Helper()

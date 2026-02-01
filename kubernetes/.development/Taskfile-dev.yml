@@ -7,31 +7,87 @@ env:
   REPOS_FOLDER_PATH: repos
 
 tasks:
+  # ==================== INITIALIZATION TASKS ====================
+
+  init:all-minikube:
+    desc: "Complete cluster setup for local development"
+    deps:
+      - minikube:start
+    cmds:
+      - task init:01-init-repo
+      - task init:02-create-cert-manager
+      - task init:03-create-argo
+      - task init:04-deploy-app
+      - task init:05-clone-repo
+      - task init:06-setup-ssh
+      - task init:07-setup-pgp
+      - task init:08-setup-slack
+      - task init:09-create-namespaces
+      # "Next steps:
+      # "1. cd kubernetes
+      # "2. make build-installer
+      # "3. make deploy-local
+      # "4. make run
 
   init:01-init-repo:
     cmds:
       - bash init/git-test-setup.sh ${REPO_URL} ${REPO_NAME}
     desc: "Initialize the test Git repository with necessary manifests"
-  
-  init:02-create-argo:
-    desc: "Install ArgoCD to cluster and the test application into the GKE cluster"
+
+  init:02-create-cert-manager:
+    desc: "Install cert-manager to cluster"
+    cmds:
+      - kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+
+  init:03-create-argo:
+    desc: "Install ArgoCD to cluster"
     cmds:
       - kubectl create namespace argocd || true
       - kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-      - kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
+      - echo "Waiting for ArgoCD to be ready"
+      - kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s || true
+      - echo "ArgoCD installation complete"
       - kubectl get pods -n argocd
-  
-  init:03-deploy-app:
+
+  init:04-deploy-app:
     cmds:
       - kubectl create namespace test-app || true
       - kubectl apply -f ./${REPOS_FOLDER_PATH}/${REPO_NAME}/app-manifests/app.yaml
-    desc: "Deploy the test application to the GKE cluster"
+    desc: "Deploy the test application to cluster"
 
-  init:04-clone-repo:
+  init:05-clone-repo:
     cmds:
       - git clone ${REPO_URL} ./${REPOS_FOLDER_PATH}
     desc: "Clones the shared test repository to your local machine"
+
+  init:06-setup-ssh:
+    desc: "Set up SSH secrets for controller"
+    cmds:
+      - kubectl create namespace test-ns || true
+      - chmod +x apply-dummy-ssh.sh
+      - ./apply-dummy-ssh.sh
+
+  init:07-setup-pgp:
+    desc: "Set up PGP secrets for controller"
+    cmds:
+      - kubectl create namespace test-ns || true
+      - chmod +x apply-dummy-pgp.sh
+      - ./apply-dummy-pgp.sh
+
+  init:08-setup-slack:
+    desc: "Set up Slack secrets for controller"
+    cmds:
+      - kubectl create namespace test-ns || true
+      - chmod +x apply-dummy-slack.sh
+      - ./apply-dummy-slack.sh
   
+  init:09-create-namespaces:
+    desc: "Create qubmango namespace"
+    cmds:
+      - kubectl create namespace controller-system || true
+
+  # ==================== DEVELOPMENT TASKS ====================
+
   # Trigger ArgoCD sync button
   dev:commit-dummy-change:
     desc: "Simulates a developer pushing a change to the shared GitHub repo"
@@ -46,7 +102,7 @@ tasks:
   dev:commit-all:
     desc: "Commit all changes in the local repo and push to GitHub"
     cmds:
-      - | 
+      - |
         (
         cd ./{{.REPOS_FOLDER_PATH}}/{{.REPO_NAME}} &&
         git pull origin main &&
@@ -54,16 +110,13 @@ tasks:
         git commit -m "Dev commit all changes" &&
         git push origin main
         )
-  
+
   dev:describe-webhook:
     desc: "Describe the governance webhook in the cluster"
-    cmds: 
+    cmds:
       - kubectl describe validatingwebhookconfiguration local-controller-validating-webhook-configuration
 
-  dev:run-proxy-ngrok:
-    desc: "Run ngrok to expose local qubmango-controller webhook server"
-    cmds:
-      - ngrok http https://localhost:9443
+  # ==================== ARGOCD TASKS ====================
 
   dev:argocd-forward-ports:
     desc: "Forward ArgoCD server ports to localhost"
@@ -74,3 +127,30 @@ tasks:
     desc: "Get the ArgoCD initial admin password"
     cmds:
       - kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d | xargs echo
+
+  # ==================== WEBHOOK TASKS (MINIKUBE) ====================
+
+  dev:webhook-logs:
+    desc: "Stream webhook logs from the controller"
+    cmds:
+      - kubectl logs -f deployment/local-qubmango-controller-controller-manager -n controller-system -c manager
+
+  dev:controller-logs:
+    desc: "Stream all controller logs"
+    cmds:
+      - kubectl logs -f deployment/local-qubmango-controller-controller-manager -n controller-system
+
+  # ==================== CLEANUP TASKS ====================
+
+  cleanup:all:
+    desc: "Clean up all test deployments and namespaces"
+    cmds:
+      - kubectl delete namespace argocd || true
+      - kubectl delete namespace test-app || true
+      - kubectl delete namespace controller-system || true
+      - echo "Cleanup complete"
+
+  cleanup:controller:
+    desc: "Clean up only the controller deployment"
+    cmds:
+      - kubectl delete deployment -n controller-system local-qubmango-controller-controller-manager || true

@@ -6,7 +6,7 @@
   - name: "require-argocd-annotation"
     expression: "has(object.metadata) && has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"
   - name: "allow-local-governance-requests"
-    expression: "!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username != 'system:serviceaccount:controller-system:local-controller-controller-manager')"
+    expression: "!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username != 'system:serviceaccount:controller-system:local-qubmango-controller-controller-manager')"
     # config/local/kustomization.yaml
     #   namePrefix: local-
     # config/manager/manager.yaml

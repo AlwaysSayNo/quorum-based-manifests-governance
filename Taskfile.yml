@@ -5,7 +5,7 @@ tasks:
     desc: "Generates a kubeconfig for the operator's ServiceAccount for local development"
     vars:
       KUBECONFIG_PATH: '{{.KUBECONFIG_PATH | default "./kubernetes/config/local/kubeconfig.local"}}'
-      SA_NAME: "local-controller-manager"
+      SA_NAME: "local-qubmango-controller-manager"
       NAMESPACE: "controller-system"
       SECRET_NAME: "{{.SA_NAME}}-token"
     cmds:
@@ -39,10 +39,10 @@ tasks:
       - echo "Kubeconfig generated at {{.KUBECONFIG_PATH}}"
 
 includes:
-  gke:
-    taskfile: ./kubernetes/Taskfile-gke.yml
-    dir: ./kubernetes/
-  
   dev:
     taskfile: ./kubernetes/.development/Taskfile-dev.yml
+    dir: ./kubernetes/.development
+
+  minikube:
+    taskfile: ./kubernetes/.development/Taskfile-minikube.yml
     dir: ./kubernetes/.development

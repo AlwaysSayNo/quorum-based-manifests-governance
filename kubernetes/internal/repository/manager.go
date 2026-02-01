@@ -59,7 +59,7 @@ type GitRepository interface {
 	PushSummaryFile(ctx context.Context, content, fileName, toFolder string, version int) (string, error)
 
 	// DeleteFolder deletes a folder from the repository and pushes to remote.
-	DeleteFolder(ctx context.Context, folderPath string) (error)
+	DeleteFolder(ctx context.Context, folderPath string) error
 }
 
 type PgpSecrets struct {
