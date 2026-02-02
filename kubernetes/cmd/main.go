@@ -196,7 +196,7 @@ func main() {
 	}
 
 	// Create Git manager and register the providers
-	githubFactory := githubprovider.GitProviderFactory{}
+	githubFactory := githubprovider.GitHubProviderFactory{}
 
 	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath, knownHostsPath)
 	repoManager.Register(&githubFactory)

@@ -69,7 +69,7 @@ l4lAZk8RG+szStDZs8V3zAx3YUZD0Vn/zbReI=
 
 var (
 	repoProvider        repomanager.GitRepository
-	repoProviderFactory githubprovider.GitProviderFactory
+	repoProviderFactory githubprovider.GitHubProviderFactory
 )
 
 func main() {
