@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"reflect"
 	"strings"
 
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
@@ -137,35 +136,11 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 	mrtlog.Info("validating MRT update", "name", newMRT.Name, "namespace", newMRT.Namespace)
 	var allErrs field.ErrorList
 
-	specEqual := reflect.DeepEqual(oldMRT.Spec, newMRT.Spec)
+	// Check version is updated
+	governancecontroller.ValidateVersionUpdated(oldMRT, newMRT, allErrs)
 
-	// Validate, that gitRepository.ssh.url is immutable
-	if oldMRT.Spec.GitRepository.SSH.URL != newMRT.Spec.GitRepository.SSH.URL {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh").Child("url"), newMRT.Spec.GitRepository.SSH.URL, "url is immutable and cannot be changed after creation"))
-	}
-
-	// Validate, that gitRepository.argoCD is immutable
-	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD"), newMRT.Spec.ArgoCD, "argoCD is immutable and cannot be changed after creation"))
-	}
-
-	// Validate, that on MRT spec change, version incremented as well
-	if !specEqual && newMRT.Spec.Version <= oldMRT.Spec.Version {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMRT.Spec.Version, "version must be incremented on change"))
-	}
-
-	// Validate, that argoCD.application.namespace == 'argocd'
-	if newMRT.Spec.ArgoCD.Application.Namespace != "argocd" {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD").Child("application").Child("namespace"), newMRT.Spec.ArgoCD.Application.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
-	}
-
-	// Validate, that on update MSR, MCA values cannot be changed
-	if oldMRT.Spec.MSR != newMRT.Spec.MSR {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("msr"), "MSR reference is immutable and cannot be changed after creation"))
-	}
-	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
-	}
+	// Check immutable fields
+	governancecontroller.ValidateImmutableFields(oldMRT, newMRT, allErrs)
 
 	// Check nested approval rules
 	if isValid, errorField := w.isApprovalRuleValid(newMRT.Spec.Require, w.getMembersMap(newMRT), field.NewPath("spec").Child("require")); !isValid {

@@ -51,6 +51,14 @@ func (s *slackNotifier) NotifyGovernorsMSR(
 		return fmt.Errorf("get slack token: %w", err)
 	}
 
+	// Get slack channels only
+	slackChannels := s.getSlackChannels(mrt.Spec.Governors.NotificationChannels)
+
+	if len(slackChannels) == 0 {
+		s.logger.V(3).Info("Slack channel configuration is missing for error notification")
+		return nil
+	}
+
 	// Create the message
 	api := slack.New(token)
 
@@ -88,7 +96,7 @@ func (s *slackNotifier) NotifyGovernorsMSR(
 	}
 
 	// Send the message to all channels.
-	s.sendAttachment(ctx, api, mrt, attachment)
+	s.sendAttachment(ctx, api, slackChannels, attachment)
 
 	return nil
 }
@@ -116,6 +124,14 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 	token, err := s.getToken(ctx, mrt)
 	if err != nil {
 		return fmt.Errorf("get slack token: %w", err)
+	}
+
+	// Get slack channels only
+	slackChannels := s.getSlackChannels(mrt.Spec.Governors.NotificationChannels)
+
+	if len(slackChannels) == 0 {
+		s.logger.V(3).Info("Slack channel configuration is missing for error notification")
+		return nil
 	}
 
 	// Create the message
@@ -160,7 +176,52 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 	}
 
 	// Send the message to all channels.
-	s.sendAttachment(ctx, api, mrt, attachment)
+	s.sendAttachment(ctx, api, slackChannels, attachment)
+
+	return nil
+}
+
+func (s *slackNotifier) NotifyError(
+	ctx context.Context,
+	channels []governancev1alpha1.NotificationChannel,
+	message string,
+) error {
+	s.logger = log.FromContext(ctx)
+
+	// Get slack channels only
+	slackChannels := s.getSlackChannels(channels)
+
+	if len(slackChannels) == 0 {
+		s.logger.V(3).Info("Slack channel configuration is missing for error notification")
+		return nil
+	}
+
+	// Create the message
+	api := slack.New("")
+
+	// Header
+	headerText := slack.NewTextBlockObject("mrkdwn", ":warning: Error Processing Manifest Request", false, false)
+	headerSection := slack.NewSectionBlock(headerText, nil, nil)
+
+	// Body
+	bodyText := slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Details:* %s", message), false, false)
+	bodySection := slack.NewSectionBlock(bodyText, nil, nil)
+
+	// Footer
+	contextText := slack.NewTextBlockObject("mrkdwn", "Please review the error and take appropriate action.", false, false)
+	contextSection := slack.NewContextBlock("", contextText)
+
+	attachment := slack.Attachment{
+		Color: "#FF0000",
+		Blocks: slack.Blocks{BlockSet: []slack.Block{
+			headerSection,
+			bodySection,
+			contextSection,
+		}},
+	}
+
+	// Send the message to all channels.
+	s.sendAttachment(ctx, api, slackChannels, attachment)
 
 	return nil
 }
@@ -168,20 +229,22 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 func (s *slackNotifier) sendAttachment(
 	ctx context.Context,
 	api *slack.Client,
-	mrt *governancev1alpha1.ManifestRequestTemplate,
+	slackChannels []*governancev1alpha1.SlackChannel,
 	attachment slack.Attachment,
 ) {
-	for _, channel := range mrt.Spec.Governors.NotificationChannels {
-		if channel.Slack != nil && channel.Slack.ChannelID != "" {
-			channelID := channel.Slack.ChannelID
+	for _, channel := range slackChannels {
+		if channel.ChannelID != "" {
+			continue
+		}
 
-			// Post the message with the attachment.
-			_, _, err := api.PostMessageContext(ctx, channelID, slack.MsgOptionAttachments(attachment))
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Failed to send Slack notification for MCA", "channelID", channelID)
-			} else {
-				log.FromContext(ctx).Info("Successfully sent Slack notification for MCA", "channelID", channelID)
-			}
+		channelID := channel.ChannelID
+
+		// Post the message with the attachment.
+		_, _, err := api.PostMessageContext(ctx, channelID, slack.MsgOptionAttachments(attachment))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Failed to send Slack notification for MCA", "channelID", channelID)
+		} else {
+			log.FromContext(ctx).Info("Successfully sent Slack notification for MCA", "channelID", channelID)
 		}
 	}
 
@@ -209,6 +272,22 @@ func (s *slackNotifier) getToken(
 	}
 
 	return token, nil
+}
+
+func (s *slackNotifier) getSlackChannels(
+	channels []governancev1alpha1.NotificationChannel,
+) []*governancev1alpha1.SlackChannel {
+	var res []*governancev1alpha1.SlackChannel
+
+	for _, channel := range channels {
+		if channel.Slack != nil && channel.Slack.ChannelID != "" {
+			continue
+		}
+
+		res = append(res, channel.Slack)
+	}
+
+	return res
 }
 
 func shortCommitSHA(

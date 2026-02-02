@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -28,10 +29,12 @@ import (
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
@@ -70,6 +74,7 @@ type ManifestRequestTemplateReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	RepoManager RepositoryManager
+	Notifier    notifier.Notifier
 	logger      logr.Logger
 }
 
@@ -1102,13 +1107,28 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// If changedFiles contains updated reconciled MRT, its version must be higher than current
-	versionIsOld, err := r.hasMRTWithOldVersion(mrt, changedFiles, contentMap)
+	versionIsOld, message, err := r.hasMRTWithOldVersion(mrt, changedFiles, contentMap)
 	if err != nil {
 		r.logger.Error(err, "Failed to compare version of old and new MRT")
 		return false, fmt.Errorf("compare version of old and new MRT: %w", err)
 	} else if versionIsOld {
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("The changed files contain MRT with a version that is not higher than the current one. Skipping MSR creation.")
+		// Notify governors about the error
+		_ = r.Notifier.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
+		return false, nil
+	}
+
+	// If changedFiles contains updated reconciled MRT, immutable fields must not be changed
+	immutableFieldsChanged, message, err := r.immutableFieldsAreNotChanged(mrt, changedFiles, contentMap)
+	if err != nil {
+		r.logger.Error(err, "Failed to compare immutable fields of old and new MRT")
+		return false, fmt.Errorf("compare immutable fields of old and new MRT: %w", err)
+	} else if immutableFieldsChanged {
+		mrt.Status.LastObservedCommitHash = revision
+		r.logger.Info("The changed files contain MRT with changed immutable fields. Skipping MSR creation.")
+		// Notify governors about the error
+		_ = r.Notifier.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
 		return false, nil
 	}
 
@@ -1155,7 +1175,97 @@ func (r *ManifestRequestTemplateReconciler) hasMRTWithOldVersion(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 	changedFiles []governancev1alpha1.FileChange,
 	contentMap map[string]string,
-) (bool, error) {
+) (bool, string, error) {
+	updatedMRT, err := r.getMRTFromChangedFiles(mrt, changedFiles, contentMap)
+	if err != nil {
+		return false, "", fmt.Errorf("get updated MRT from changedFiles: %w", err)
+	} else if updatedMRT == nil {
+		return false, "", nil
+	}
+
+	var allErrs field.ErrorList
+	allErrs = ValidateVersionUpdated(mrt, updatedMRT, allErrs)
+
+	if len(allErrs) != 0 {
+		return false, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
+	}
+
+	return true, "", nil
+}
+
+func (r *ManifestRequestTemplateReconciler) immutableFieldsAreNotChanged(
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	changedFiles []governancev1alpha1.FileChange,
+	contentMap map[string]string,
+) (bool, string, error) {
+	updatedMRT, err := r.getMRTFromChangedFiles(mrt, changedFiles, contentMap)
+	if err != nil {
+		return false, "", fmt.Errorf("get updated MRT from changedFiles: %w", err)
+	} else if updatedMRT == nil {
+		return false, "", nil
+	}
+
+	var allErrs field.ErrorList
+	allErrs = ValidateImmutableFields(mrt, updatedMRT, allErrs)
+
+	if len(allErrs) != 0 {
+		return false, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
+	}
+
+	return true, "", nil
+}
+
+func ValidateVersionUpdated(
+	oldMRT *governancev1alpha1.ManifestRequestTemplate,
+	newMRT *governancev1alpha1.ManifestRequestTemplate,
+	allErrs field.ErrorList,
+) field.ErrorList {
+	specEqual := reflect.DeepEqual(oldMRT.Spec, newMRT.Spec)
+
+	// Validate, that on MRT spec change, version incremented as well
+	if !specEqual && newMRT.Spec.Version <= oldMRT.Spec.Version {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMRT.Spec.Version, "version must be incremented on change"))
+	}
+
+	return allErrs
+}
+
+func ValidateImmutableFields(
+	oldMRT *governancev1alpha1.ManifestRequestTemplate,
+	newMRT *governancev1alpha1.ManifestRequestTemplate,
+	allErrs field.ErrorList,
+) field.ErrorList {
+	// Validate, that gitRepository.ssh.url is immutable
+	if oldMRT.Spec.GitRepository.SSH.URL != newMRT.Spec.GitRepository.SSH.URL {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh").Child("url"), newMRT.Spec.GitRepository.SSH.URL, "url is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that gitRepository.argoCD is immutable
+	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD"), newMRT.Spec.ArgoCD, "argoCD is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that argoCD.application.namespace == 'argocd'
+	if newMRT.Spec.ArgoCD.Application.Namespace != "argocd" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD").Child("application").Child("namespace"), newMRT.Spec.ArgoCD.Application.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
+	}
+
+	// Validate, that on update MSR, MCA values cannot be changed
+	if oldMRT.Spec.MSR != newMRT.Spec.MSR {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("msr"), "MSR reference is immutable and cannot be changed after creation"))
+	}
+	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
+	}
+
+	return allErrs
+}
+
+func (r *ManifestRequestTemplateReconciler) getMRTFromChangedFiles(
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+	changedFiles []governancev1alpha1.FileChange,
+	contentMap map[string]string,
+) (*governancev1alpha1.ManifestRequestTemplate, error) {
 	// Get path of the MRT, if it's current reconciled MRT and updated
 	updatedMRTPath := ""
 	for _, f := range changedFiles {
@@ -1166,22 +1276,22 @@ func (r *ManifestRequestTemplateReconciler) hasMRTWithOldVersion(
 
 	// No such MRT was found
 	if updatedMRTPath == "" {
-		return false, nil
+		return nil, nil
 	}
 
 	// Get the content for updatedMRT
 	content, contains := contentMap[updatedMRTPath]
 	if !contains {
-		return false, fmt.Errorf("updated MRT exists in changedFiles but is missing in contentMap")
+		return nil, fmt.Errorf("updated MRT exists in changedFiles but is missing in contentMap")
 	}
 
 	// Check updated version is higher, than current
 	var updatedMRT *governancev1alpha1.ManifestRequestTemplate
 	if err := yaml.Unmarshal([]byte(content), &updatedMRT); err != nil {
-		return false, fmt.Errorf("unmarshal updated MRT: %w", err)
+		return nil, fmt.Errorf("unmarshal updated MRT: %w", err)
 	}
 
-	return updatedMRT.Spec.Version <= mrt.Spec.Version, nil
+	return updatedMRT, nil
 }
 
 // handleSubstateFinish completes revision processing and removes the event from the queue.

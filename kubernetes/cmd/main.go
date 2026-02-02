@@ -203,6 +203,7 @@ func main() {
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
 		RepoManager: repoManager,
+		Notifier:    slacknotifier.NewNotifier(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)
@@ -250,9 +251,6 @@ func main() {
 			setupLog.Error(err, "unable to add webhook server to manager")
 			os.Exit(1)
 		}
-
-		// TODO: Block any requests, coming for MSR, except governance application
-		// TODO: Block any requests, coming for MCA, except governance application
 	}
 
 	if err := (&controller.ManifestSigningRequestReconciler{
