@@ -91,7 +91,7 @@ var _ = Describe("gitProvider Sync Method", func() {
 	var (
 		remotePath    string
 		workspacePath string
-		provider      *gitProvider
+		provider      *gitHubProvider
 		localPath     string
 		ctx           context.Context
 	)
@@ -102,7 +102,7 @@ var _ = Describe("gitProvider Sync Method", func() {
 		localPath = GinkgoT().TempDir()
 		ctx = log.IntoContext(context.Background(), GinkgoLogr)
 
-		provider = &gitProvider{
+		provider = &gitHubProvider{
 			remoteURL: remotePath,
 			localPath: localPath,
 			logger:    GinkgoLogr,
@@ -168,7 +168,7 @@ var _ = Describe("gitProvider Sync Method", func() {
 
 		It("should fail if the remote URL is invalid", func() {
 			// SETUP
-			badProvider := &gitProvider{
+			badProvider := &gitHubProvider{
 				remoteURL: "/no/such/repo.git",
 				localPath: localPath,
 				logger:    GinkgoLogr,
@@ -188,7 +188,7 @@ var _ = Describe("gitProvider GetLatestRevision Method", func() {
 	var (
 		remotePath    string
 		workspacePath string
-		provider      *gitProvider
+		provider      *gitHubProvider
 		localPath     string
 		ctx           context.Context
 	)
@@ -199,7 +199,7 @@ var _ = Describe("gitProvider GetLatestRevision Method", func() {
 		localPath = GinkgoT().TempDir()
 		ctx = log.IntoContext(context.Background(), GinkgoLogr)
 
-		provider = &gitProvider{
+		provider = &gitHubProvider{
 			remoteURL: remotePath,
 			localPath: localPath,
 			logger:    GinkgoLogr,
@@ -228,7 +228,7 @@ var _ = Describe("gitProvider GetLatestRevision Method", func() {
 	Context("when the initial Sync fails", func() {
 		It("should return an error", func() {
 			// SETUP
-			badProvider := &gitProvider{
+			badProvider := &gitHubProvider{
 				remoteURL: "/invalid/path/to/remote.git",
 				localPath: localPath,
 				logger:    GinkgoLogr,
@@ -250,7 +250,7 @@ var _ = Describe("gitProvider HasRevision Method", func() {
 	var (
 		remotePath    string
 		workspacePath string
-		provider      *gitProvider
+		provider      *gitHubProvider
 		localPath     string
 		ctx           context.Context
 		initialCommit plumbing.Hash
@@ -262,7 +262,7 @@ var _ = Describe("gitProvider HasRevision Method", func() {
 		localPath = GinkgoT().TempDir()
 		ctx = log.IntoContext(context.Background(), GinkgoLogr)
 
-		provider = &gitProvider{
+		provider = &gitHubProvider{
 			remoteURL: remotePath,
 			localPath: localPath,
 			logger:    GinkgoLogr,
@@ -370,7 +370,7 @@ var _ = Describe("gitProvider GetChangedFiles Method", func() {
 	var (
 		remotePath    string
 		workspacePath string
-		provider      *gitProvider
+		provider      *gitHubProvider
 		localPath     string
 		ctx           context.Context
 	)
@@ -381,7 +381,7 @@ var _ = Describe("gitProvider GetChangedFiles Method", func() {
 		localPath = GinkgoT().TempDir()
 		ctx = log.IntoContext(context.Background(), GinkgoLogr)
 
-		provider = &gitProvider{
+		provider = &gitHubProvider{
 			remoteURL: remotePath,
 			localPath: localPath,
 			logger:    GinkgoLogr,
@@ -645,7 +645,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 	var (
 		remotePath    string
 		workspacePath string
-		provider      *gitProvider
+		provider      *gitHubProvider
 		localPath     string
 		ctx           context.Context
 		dummyMSR      *manager.ManifestSigningRequestManifestObject
@@ -657,7 +657,7 @@ var _ = Describe("gitProvider PushMSR Method", func() {
 		localPath = GinkgoT().TempDir()
 		ctx = log.IntoContext(context.Background(), GinkgoLogr)
 
-		provider = &gitProvider{
+		provider = &gitHubProvider{
 			remoteURL: remotePath,
 			localPath: localPath,
 			logger:    GinkgoLogr,

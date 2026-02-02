@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	DefaultReposPath      = "/tmp/qubmango/git/repos"
+	DefaultReposPath = "/tmp/qubmango/git/repos"
 )
 
 type MCAInfo struct {

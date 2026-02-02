@@ -99,7 +99,7 @@ func fetchLatestMSR(
 
 func repositoryManager() *manager.Manager {
 	m := manager.NewManager()
-	m.Register(&github.GitProviderFactory{})
+	m.Register(&github.GitHubProviderFactory{})
 
 	return m
 }

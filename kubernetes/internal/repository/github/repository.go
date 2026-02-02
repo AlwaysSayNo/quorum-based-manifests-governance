@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 )
 
 type GitHubProviderFactory struct {
