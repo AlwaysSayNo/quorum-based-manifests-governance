@@ -56,10 +56,10 @@ type MCAReconcileStateHandler func(ctx context.Context, msr *governancev1alpha1.
 // ManifestChangeApprovalReconciler reconciles a ManifestChangeApproval object
 type ManifestChangeApprovalReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	RepoManager RepositoryManager
-	Notifier    notifier.Notifier
-	logger      logr.Logger
+	Scheme          *runtime.Scheme
+	RepoManager     RepositoryManager
+	NotifierManager *notifier.Manager
+	logger          logr.Logger
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -494,7 +494,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileStateNotifyGovernors(
 	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateEmpty,
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
 			r.logger.Info("Sending notifications to governors", "version", mca.Spec.Version, "requireSignatures", mca.Spec.Require)
-			if err := r.Notifier.NotifyGovernorsMCA(ctx, mca); err != nil {
+			if err := r.NotifierManager.NotifyGovernorsMCA(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to send notifications to governors", "version", mca.Spec.Version)
 				return "", fmt.Errorf("send notification to governors: %w", err)
 			}

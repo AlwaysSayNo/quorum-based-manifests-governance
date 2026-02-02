@@ -41,6 +41,7 @@ import (
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/controller"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	slacknotifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier/slack"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
 	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/github"
@@ -194,16 +195,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create Git manager and register the providers
 	githubFactory := githubprovider.GitProviderFactory{}
 
 	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath, knownHostsPath)
 	repoManager.Register(&githubFactory)
 
+	// Create Notifier manager and register the notifiers
+	notifierManager := notifier.NewManager(mgr.GetClient())
+	notifierManager.Register(&slacknotifier.GitNotifierFactory{})
+
 	if err := (&controller.ManifestRequestTemplateReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		RepoManager: repoManager,
-		Notifier:    slacknotifier.NewNotifier(mgr.GetClient()),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		RepoManager:     repoManager,
+		NotifierManager: notifierManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestRequestTemplate")
 		os.Exit(1)
@@ -254,20 +260,20 @@ func main() {
 	}
 
 	if err := (&controller.ManifestSigningRequestReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		RepoManager: repoManager,
-		Notifier:    slacknotifier.NewNotifier(mgr.GetClient()),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		RepoManager:     repoManager,
+		NotifierManager: notifierManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestSigningRequest")
 		os.Exit(1)
 	}
 
 	if err := (&controller.ManifestChangeApprovalReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		RepoManager: repoManager,
-		Notifier:    slacknotifier.NewNotifier(mgr.GetClient()),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		RepoManager:     repoManager,
+		NotifierManager: notifierManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManifestChangeApproval")
 		os.Exit(1)

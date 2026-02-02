@@ -72,10 +72,10 @@ type MRTRevisionStateHandler func(ctx context.Context, mrt *governancev1alpha1.M
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	RepoManager RepositoryManager
-	Notifier    notifier.Notifier
-	logger      logr.Logger
+	Scheme          *runtime.Scheme
+	RepoManager     RepositoryManager
+	NotifierManager *notifier.Manager
+	logger          logr.Logger
 }
 
 func Pointer[T any](d T) *T {
@@ -1115,7 +1115,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("The changed files contain MRT with a version that is not higher than the current one. Skipping MSR creation.")
 		// Notify governors about the error
-		_ = r.Notifier.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
+		_ = r.NotifierManager.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
 		return false, nil
 	}
 
@@ -1128,7 +1128,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("The changed files contain MRT with changed immutable fields. Skipping MSR creation.")
 		// Notify governors about the error
-		_ = r.Notifier.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
+		_ = r.NotifierManager.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
 		return false, nil
 	}
 

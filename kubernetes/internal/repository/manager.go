@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,6 +92,7 @@ type Manager struct {
 	// secretRefreshTTL is the time-to-live for cached secrets in seconds
 	secretRefreshTTL int64
 	mu               sync.Mutex
+	logger           logr.Logger
 }
 
 func NewManager(
@@ -107,6 +109,7 @@ func NewManager(
 		mrtReferences:     make(map[string]*governancev1alpha1.ManifestRequestTemplate),
 		lastSecretRefresh: make(map[string]int64),
 		secretRefreshTTL:  600, // 10 minutes default
+		logger:            log.FromContext(context.Background()).WithName("git-manager"),
 	}
 }
 
@@ -329,7 +332,7 @@ func (m *Manager) refreshSecretsIfExpired(
 	// Check, if never refreshed or TTL expired
 	if !exists || (currentTime-lastRefresh) > m.secretRefreshTTL {
 		if err := m.refreshProviderSecrets(ctx, repoURL); err != nil {
-			log.FromContext(ctx).Error(err, "Refresh provider secrets")
+			m.logger.Error(err, "Failed to refresh provider secrets")
 			return
 		}
 		m.lastSecretRefresh[repoURL] = currentTime

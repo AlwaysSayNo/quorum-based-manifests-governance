@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
+	notifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 )
 
 type slackNotifier struct {
@@ -24,6 +25,28 @@ func NewNotifier(k8sClient client.Client) *slackNotifier {
 	return &slackNotifier{
 		client: k8sClient,
 	}
+}
+
+// GitNotifierFactory is a factory for creating slack notifiers.
+type GitNotifierFactory struct{}
+
+// New creates a new slack notifier instance.
+func (f *GitNotifierFactory) New(
+	k8sClient client.Client,
+) notifier.Notifier {
+	return NewNotifier(k8sClient)
+}
+
+func (f *slackNotifier) SupportsChannel(
+	channels []governancev1alpha1.NotificationChannel,
+) bool {
+	for _, channel := range channels {
+		if channel.Slack != nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *slackNotifier) NotifyGovernorsMSR(
