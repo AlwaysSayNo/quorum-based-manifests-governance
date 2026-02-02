@@ -8,16 +8,20 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type GitRepositoryFactory interface {
@@ -68,6 +72,8 @@ type PgpSecrets struct {
 }
 
 // Manager handles the lifecycle of different repository provider instances.
+// It acts as a proxy to the underlying providers by caching secrets with TTL
+// and refreshing them periodically to handle secret rotation.
 type Manager struct {
 	client client.Client
 	// Base directory to store local clones
@@ -78,7 +84,13 @@ type Manager struct {
 	providers []GitRepositoryFactory
 	// Cache of initialized providersToMRT, keyed by repo URL
 	providersToMRT map[string]GitRepository
-	mu             sync.Mutex
+	// Cache of MRT references for each provider, keyed by repo URL
+	mrtReferences map[string]*governancev1alpha1.ManifestRequestTemplate
+	// lastSecretRefresh tracks when secrets were last refreshed per repo URL
+	lastSecretRefresh map[string]int64
+	// secretRefreshTTL is the time-to-live for cached secrets in seconds
+	secretRefreshTTL int64
+	mu               sync.Mutex
 }
 
 func NewManager(
@@ -87,20 +99,28 @@ func NewManager(
 	knownHostsPath string,
 ) *Manager {
 	return &Manager{
-		client:         client,
-		basePath:       basePath,
-		knownHostsPath: knownHostsPath,
-		providers:      []GitRepositoryFactory{},
-		providersToMRT: make(map[string]GitRepository),
+		client:            client,
+		basePath:          basePath,
+		knownHostsPath:    knownHostsPath,
+		providers:         []GitRepositoryFactory{},
+		providersToMRT:    make(map[string]GitRepository),
+		mrtReferences:     make(map[string]*governancev1alpha1.ManifestRequestTemplate),
+		lastSecretRefresh: make(map[string]int64),
+		secretRefreshTTL:  600, // 10 minutes default
 	}
 }
 
-func (m *Manager) Register(factory GitRepositoryFactory) error {
+func (m *Manager) Register(
+	factory GitRepositoryFactory,
+) error {
 	m.providers = append(m.providers, factory)
 	return nil
 }
 
-func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (GitRepository, error) {
+func (m *Manager) GetProviderForMRT(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (GitRepository, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -114,6 +134,8 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 
 	// Check if we already have a provider for this URL in our cache
 	if provider, ok := m.providersToMRT[repoURL]; ok {
+		// Refresh secrets if TTL expired
+		m.refreshSecretsIfExpired(ctx, repoURL)
 		return provider, nil
 	}
 
@@ -136,12 +158,16 @@ func (m *Manager) GetProviderForMRT(ctx context.Context, mrt *governancev1alpha1
 		return nil, err
 	}
 
-	// Cache the new provider
+	// Cache the new provider and MRT reference
 	m.providersToMRT[repoURL] = provider
+	m.mrtReferences[repoURL] = mrt
+	m.lastSecretRefresh[repoURL] = m.getCurrentTimestamp()
 	return provider, nil
 }
 
-func (m *Manager) providerExists(repoURL string) bool {
+func (m *Manager) providerExists(
+	repoURL string,
+) bool {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})
@@ -149,7 +175,12 @@ func (m *Manager) providerExists(repoURL string) bool {
 	return idx != -1
 }
 
-func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, auth transport.AuthMethod, pgpSecrets PgpSecrets) (GitRepository, error) {
+func (m *Manager) findProvider(
+	ctx context.Context,
+	repoURL, localPath string,
+	auth transport.AuthMethod,
+	pgpSecrets PgpSecrets,
+) (GitRepository, error) {
 	idx := slices.IndexFunc(m.providers, func(provider GitRepositoryFactory) bool {
 		return provider.IdentifyProvider(repoURL)
 	})
@@ -160,7 +191,10 @@ func (m *Manager) findProvider(ctx context.Context, repoURL, localPath string, a
 	return m.providers[idx].New(ctx, repoURL, localPath, auth, pgpSecrets)
 }
 
-func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (PgpSecrets, error) {
+func (m *Manager) syncPGPSecrets(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (PgpSecrets, error) {
 	if mrt.Spec.PGP == nil {
 		return PgpSecrets{}, fmt.Errorf("pgp information is nil")
 	}
@@ -189,7 +223,10 @@ func (m *Manager) syncPGPSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	}, nil
 }
 
-func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (*ssh.PublicKeys, error) {
+func (m *Manager) syncSSHSecrets(
+	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
+) (*ssh.PublicKeys, error) {
 	if mrt.Spec.GitRepository.SSH.SecretsRef == nil {
 		return nil, fmt.Errorf("ssh information is nil")
 	}
@@ -234,4 +271,80 @@ func (m *Manager) syncSSHSecrets(ctx context.Context, mrt *governancev1alpha1.Ma
 	publicKeys.HostKeyCallback = hostKeyCallback
 
 	return publicKeys, nil
+}
+
+// refreshProviderSecrets refreshes the SSH and PGP secrets for a provider by fetching them from Kubernetes.
+// This ensures that rotated secrets are always used for git operations.
+func (m *Manager) refreshProviderSecrets(
+	ctx context.Context,
+	repoURL string,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	mrt, ok := m.mrtReferences[repoURL]
+	if !ok {
+		return fmt.Errorf("MRT reference not found for repository URL: %s", repoURL)
+	}
+
+	provider, ok := m.providersToMRT[repoURL]
+	if !ok {
+		return fmt.Errorf("provider not found for repository URL: %s", repoURL)
+	}
+
+	// Fetch fresh secrets
+	sshSecrets, err := m.syncSSHSecrets(ctx, mrt)
+	if err != nil {
+		return fmt.Errorf("failed to refresh SSH secrets: %w", err)
+	}
+
+	pgpSecrets, err := m.syncPGPSecrets(ctx, mrt)
+	if err != nil {
+		return fmt.Errorf("failed to refresh PGP secrets: %w", err)
+	}
+
+	// Update provider with fresh credentials
+	type providerWithSecrets interface {
+		UpdateSecrets(auth transport.AuthMethod, pgpSecrets PgpSecrets) error
+	}
+
+	if updatable, ok := provider.(providerWithSecrets); ok {
+		if err := updatable.UpdateSecrets(sshSecrets, pgpSecrets); err != nil {
+			return fmt.Errorf("failed to update provider secrets: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// refreshSecretsIfExpired checks if secrets for a provider have expired based on TTL.
+// Errors are logged but don't block.
+func (m *Manager) refreshSecretsIfExpired(
+	ctx context.Context,
+	repoURL string,
+) {
+	lastRefresh, exists := m.lastSecretRefresh[repoURL]
+	currentTime := m.getCurrentTimestamp()
+
+	// Check, if never refreshed or TTL expired
+	if !exists || (currentTime-lastRefresh) > m.secretRefreshTTL {
+		if err := m.refreshProviderSecrets(ctx, repoURL); err != nil {
+			log.FromContext(ctx).Error(err, "Refresh provider secrets")
+			return
+		}
+		m.lastSecretRefresh[repoURL] = currentTime
+	}
+}
+
+func (m *Manager) getCurrentTimestamp() int64 {
+	return time.Now().Unix()
+}
+
+// SetSecretRefreshTTL allows configuring the TTL for secret caching.
+func (m *Manager) SetSecretRefreshTTL(
+	ttlSeconds int64,
+) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.secretRefreshTTL = ttlSeconds
 }

@@ -55,7 +55,7 @@ const (
 	QubmangoGovernanceFolder            = ".qubmango"
 	QubmangoGovernanceAlias             = "qubmango"
 	MRTQueuePrefix                      = "queue-"
-	GitPollInterval                     = 5 * time.Minute
+	GitPollInterval                     = 1 * time.Minute
 )
 
 type RepositoryManager interface {
@@ -1235,9 +1235,26 @@ func ValidateImmutableFields(
 	newMRT *governancev1alpha1.ManifestRequestTemplate,
 	allErrs field.ErrorList,
 ) field.ErrorList {
-	// Validate, that gitRepository.ssh.url is immutable
-	if oldMRT.Spec.GitRepository.SSH.URL != newMRT.Spec.GitRepository.SSH.URL {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh").Child("url"), newMRT.Spec.GitRepository.SSH.URL, "url is immutable and cannot be changed after creation"))
+	// Validate, that gitRepository.ssh (secret and url) is immutable
+	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh"), newMRT.Spec.GitRepository.SSH, "ssh is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that pgp is immutable
+	if !reflect.DeepEqual(oldMRT.Spec.PGP, newMRT.Spec.PGP) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("pgp"), newMRT.Spec.PGP, "pgp is immutable and cannot be changed after creation"))
+	}
+
+	// Validate, that notification channels are immutable
+	oldNotifications := oldMRT.Spec.Notifications
+	newNotifications := newMRT.Spec.Notifications
+
+	if oldNotifications != nil && newNotifications != nil {
+		// Check slack
+		if oldNotifications.Slack != nil && newNotifications.Slack != nil &&
+			!reflect.DeepEqual(oldNotifications.Slack, newNotifications.Slack) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("notifications").Child("slack"), newMRT.Spec.Notifications.Slack, "slack is immutable and cannot be changed after creation. It can be only removed"))
+		}
 	}
 
 	// Validate, that gitRepository.argoCD is immutable

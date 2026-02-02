@@ -91,6 +91,20 @@ type gitProvider struct {
 	pgpSecrets repository.PgpSecrets
 }
 
+// UpdateSecrets updates the provider's SSH authentication and PGP secrets.
+func (p *gitProvider) UpdateSecrets(
+	auth transport.AuthMethod,
+	pgpSecrets repository.PgpSecrets,
+) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.auth = auth
+	p.pgpSecrets = pgpSecrets
+
+	return nil
+}
+
 // Sync ensures the local repository is cloned and up-to-date.
 func (p *gitProvider) Sync(
 	ctx context.Context,
