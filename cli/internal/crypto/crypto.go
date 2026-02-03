@@ -14,6 +14,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	cryptossh "golang.org/x/crypto/ssh"
 )
 
 type Secrets struct {
@@ -57,6 +58,37 @@ func SyncSSHSecrets(
 		return nil, fmt.Errorf("ssh information is nil")
 	}
 
+	if encrypted, _ := IsSSHKeyEncrypted(secrets.PrivateKey); encrypted && secrets.Passphrase == "" {
+		return nil, fmt.Errorf("SSH private key is encrypted, but no passphrase was provided")
+	}
+
+	// Decrypt private key
+	return DecryptSSHKey(secrets)
+}
+
+func IsSSHKeyEncrypted(privateKeyStr string) (bool, error) {
+	privateKeyBytes := []byte(privateKeyStr)
+
+	_, err := cryptossh.ParsePrivateKey(privateKeyBytes)
+
+	// The key is valid and not encrypted.
+	if err == nil {
+		return false, nil
+	}
+
+	// The key is encrypted if PassphraseMissingError.
+	var passphraseMissingErr *cryptossh.PassphraseMissingError
+	if errors.As(err, &passphraseMissingErr) {
+		return true, nil
+	}
+
+	//The key is invalid.
+	return false, err
+}
+
+func DecryptSSHKey(
+	secrets *Secrets,
+) (*ssh.PublicKeys, error) {
 	privateKeyBytes := []byte(secrets.PrivateKey)
 
 	// Decrypt the private key
@@ -124,29 +156,58 @@ func GetPGPEntity(
 	entity := entityList[0]
 
 	// If a passphrase is required but not provided, fail.
-	if secrets.Passphrase == "" {
+	if IsPGPKeyEncrypted(entity) && secrets.Passphrase == "" {
 		return nil, fmt.Errorf("PGP private key is encrypted, but no passphrase was provided")
 	}
 
-	passphrase := []byte(secrets.Passphrase)
+	// Decrypt private key
+	if err := DecryptPGPKey(entity, secrets.Passphrase); err != nil {
+		return nil, fmt.Errorf("decrypt PGP private key: %w", err)
+	}
+
+	return entity, nil
+}
+
+func IsPGPKeyEncrypted(
+	entity *openpgp.Entity,
+) bool {
+	// Check if private key or any subkey is encrypted
+	needsPass := (entity.PrivateKey != nil && entity.PrivateKey.Encrypted)
+	if !needsPass {
+		for _, sk := range entity.Subkeys {
+			if sk.PrivateKey != nil && sk.PrivateKey.Encrypted {
+				needsPass = true
+				break
+			}
+		}
+	}
+
+	return needsPass
+}
+
+func DecryptPGPKey(
+	entity *openpgp.Entity,
+	passphraseStr string,
+) error {
+	passphrase := []byte(passphraseStr)
 
 	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
 		// Attempt to decrypt the private key.
 		err := entity.PrivateKey.Decrypt(passphrase)
 		if err != nil || entity.PrivateKey.Encrypted {
-			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
+			return fmt.Errorf("failed to decrypt PGP private key: %w", err)
 		}
 	}
 
 	for i := range entity.Subkeys {
 		if entity.Subkeys[i].PrivateKey != nil && entity.Subkeys[i].PrivateKey.Encrypted {
 			if err := entity.Subkeys[i].PrivateKey.Decrypt(passphrase); err != nil {
-				return nil, fmt.Errorf("failed to decrypt subkey: %w", err)
+				return fmt.Errorf("failed to decrypt subkey: %w", err)
 			}
 		}
 	}
 
-	return entity, nil
+	return nil
 }
 
 func CreateDetachedSignature(

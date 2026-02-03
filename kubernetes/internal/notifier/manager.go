@@ -45,7 +45,7 @@ func (m *Manager) Register(
 	// Create notifier instance
 	notifier := factory.New(m.client)
 	m.notifiers = append(m.notifiers, notifier)
-	
+
 	return nil
 }
 
