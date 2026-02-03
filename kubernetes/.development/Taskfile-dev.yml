@@ -43,7 +43,7 @@ tasks:
     desc: "Install ArgoCD to cluster"
     cmds:
       - kubectl create namespace argocd || true
-      - kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      - kubectl create -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
       - echo "Waiting for ArgoCD to be ready"
       - kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s || true
       - echo "ArgoCD installation complete"

@@ -193,7 +193,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 # The local deploy command uses local overlay
 .PHONY: deploy-local 
 deploy-local: manifests kustomize
-	$(KUSTOMIZE) build config/local | kubectl apply -f -
+	$(KUSTOMIZE) build config/local | kubectl apply --server-side --force-conflicts -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
