@@ -775,7 +775,7 @@ func (p *BaseGitProvider) createFileAndAddToWorktree(
 	filePath := filepath.Join(p.localPath, repoFolderPath, fileName)
 	repoPath := filepath.Join(repoFolderPath, fileName)
 
-	err := os.WriteFile(filePath, file, 0644)
+	err := os.WriteFile(filePath, file, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to write %s file: %w", fileName, err)
 	}

@@ -56,6 +56,9 @@ curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
 curl -LO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
 install minikube-linux-amd64 /usr/local/bin/minikube && rm minikube-linux-amd64
 
+# install yq
+go install github.com/mikefarah/yq/v4@latest
+
 # verify installations
 python3 --version
 gcloud --version
@@ -69,3 +72,5 @@ task --version
 mockgen --version
 argocd version --client
 ngrok version
+minikube version
+yq --version

@@ -26,7 +26,7 @@ func (f *GitHubProviderFactory) New(
 		remoteURL,
 		localPath,
 		auth,
-		log.FromContext(ctx),
+		log.FromContext(ctx).WithName("github-repository"),
 		pgpSecrets,
 	)
 

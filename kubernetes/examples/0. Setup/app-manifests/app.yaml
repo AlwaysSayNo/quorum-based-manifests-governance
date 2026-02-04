@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: application-my
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # The URL of the public GitHub repository
+    repoURL: HTTP_REPO_URL_PLACEHOLDER
+    # The branch ArgoCD should track
+    targetRevision: HEAD
+    # The path within the repository, ArgoCD should monitor
+    path: SOURCE_FOLDER_PATH_PLACEHOLDER
+    # # Optional: If application would have spec.source.path empty,
+    # # we would need to exclude Qubmango's operational folder from syncing.
+    # # For this example, the monitored folder is "app-manifests", and Qubmango's folder is ".qubmango",
+    # # so we don't need to exclude anything.
+    # directory:
+    #   exclude: QUBMANGO_FOLDER_PATH_PLACEHOLDER
+  destination:
+    # The Kubernetes cluster URL
+    server: https://kubernetes.default.svc
+    # The namespace within the cluster where the application will be deployed
+    namespace: test-app
+  # Sync policy configuration
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Don't override manual changes made to certain fields
+      - RespectIgnoreDifferences=true
+  # Fields to ignore during synchronization. Qubmango will update the targetRevision field,
+  # so we need to ignore it to prevent ArgoCD from constantly trying to revert the change.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      name: application-my # Matches its own name
+      namespace: argocd # Matches its own namespace
+      jsonPointers:
+        - /spec/source/targetRevision

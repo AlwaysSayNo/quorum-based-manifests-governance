@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/config"
+	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/crypto"
 	manager "github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/cli/internal/repository/github"
 )
@@ -120,21 +121,39 @@ func getRepositoryProviderWithInput(
 	requestSSH, requestPGP bool,
 	w io.Writer,
 ) (manager.GitRepositoryProvider, error) {
-	sshPass := ""
-	var err error
+	// Get the repo info to check key paths
+	repositoryInfo, err := getCurrentRepo()
+	if err != nil {
+		return nil, fmt.Errorf("get current repo: %w", err)
+	}
 
-	if requestSSH {
-		sshPass, err = getSSHPassphrase(w)
+	sshPass := ""
+	// Check if SSH key needs passphrase, only prompt if it does
+	if requestSSH && repositoryInfo.SSHKeyPath != "" {
+		needsPass, err := crypto.CheckSSHKeyNeedsPassphrase(repositoryInfo.SSHKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("get SSH passphrase: %w", err)
+			return nil, fmt.Errorf("check SSH key: %w", err)
+		}
+		if needsPass {
+			sshPass, err = getSSHPassphrase(w)
+			if err != nil {
+				return nil, fmt.Errorf("get SSH passphrase: %w", err)
+			}
 		}
 	}
 
 	pgpPass := ""
-	if requestPGP {
-		pgpPass, err = getPGPPassphrase(w)
+	// Check if PGP key needs passphrase, only prompt if it does
+	if requestPGP && repositoryInfo.PGPKeyPath != "" {
+		needsPass, err := crypto.CheckPGPKeyNeedsPassphrase(repositoryInfo.PGPKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("get PGP passphrase: %w", err)
+			return nil, fmt.Errorf("check PGP key: %w", err)
+		}
+		if needsPass {
+			pgpPass, err = getPGPPassphrase(w)
+			if err != nil {
+				return nil, fmt.Errorf("get PGP passphrase: %w", err)
+			}
 		}
 	}
 

@@ -1,0 +1,83 @@
+apiVersion: governance.nazar.grynko.com/v1alpha1
+kind: ManifestRequestTemplate
+
+metadata:
+  name: mrt-my
+  namespace: test-ns
+
+spec:
+  version: 1
+  
+  gitRepository:
+    ssh:
+      url: SSH_REPO_URL_PLACEHOLDER
+      # Matches the ssh secret name and namespace
+      secretsRef:
+        name: ssh-secret-my
+        namespace: test-ns
+
+  pgp:
+    publicKey: |
+      QUBMANGO_OPERATOR_PGP_PUBLIC_KEY_PLACEHOLDER
+    # Matches the operator pgp secret name and namespace
+    secretsRef:
+      name: pgp-secret-my
+      namespace: test-ns
+
+  notifications:
+    slack:
+      # Matches the Slack secret name and namespace
+      secretsRef:
+        name: slack-secret-my
+        namespace: test-ns
+
+  argoCD:
+    # Matches the ArgoCD Application name and namespace
+    application:
+      name: application-my
+      namespace: argocd
+
+  # The folder within the repository where Qubmango will store its operational files.
+  # In this folder Qubmango will create a subfolder ".qubmango" to store its files (e.g., MSR, MCA, signatures, etc.).
+  # For this example, we use repository root folder
+  # (e.g. if governanceFolderPath: `gov`, the end operational folder would be `gov/.qubmango`).
+  governanceFolderPath: ""
+
+  # The names and namespaces of the Manifest Signing Request, created by Qubmango controller
+  msr:
+    name: msr-my
+    namespace: test-ns
+  
+  # The names and namespaces of the Manifest Change Approval, created by Qubmango controller
+  mca:
+    name: mca-my
+    namespace: test-ns
+
+  governors:
+    notificationChannels:
+      # The Slack channel ID where notifications will be sent
+      - slack:
+          channelID: SLACK_CHANNEL_ID_PLACEHOLDER
+    # The PGP public keys of the quorum members
+    members:
+      - alias: owner 
+        publicKey: |
+          OWNER_PGP_PUBLIC_KEY_PLACEHOLDER
+      - alias: voter1
+        publicKey: |
+          VOTER1_PGP_PUBLIC_KEY_PLACEHOLDER
+      - alias: voter2
+        publicKey: |
+          VOTER2_PGP_PUBLIC_KEY_PLACEHOLDER
+
+  # The governance policy for approving manifest changes.
+  # In this example, the owner must always approve, and at least one voter must approve.
+  governancePolicy:
+  require:
+    all: true
+    require:
+      - signer: owner
+      - atLeast: 1
+        require:
+          - signer: voter1
+          - signer: voter2

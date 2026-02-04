@@ -1,0 +1,175 @@
+version: "3"
+
+env:
+  HTTP_REPO_URL: "https://github.com/AlwaysSayNo/quorum-based-manifests-governance-test.git" #
+  SSH_REPO_URL: "git@github.com:AlwaysSayNo/quorum-based-manifests-governance-test.git" #
+  REPO_NAME: "quorum-based-manifests-governance-test" #
+  SOURCE_FOLDER_PATH: "app-manifests"
+  QUBMANGO_FOLDER_PATH: ".qubmango"
+  SLACK_CHANNEL_ID: "C0A1F5AD32D" #
+
+tasks:
+
+  1-minikube:1-start:
+    desc: "Start Minikube cluster"
+    cmds:
+      - minikube start --driver=docker --memory=8192 --cpus=4 # Adjust resources as needed
+      - minikube status
+
+  1-minikube:2-docker-env:
+    desc: "Configure shell to use Minikube's Docker daemon"
+    cmds:
+      - eval $(minikube docker-env)
+
+  1-minikube:3-namespaces:
+    desc: "Create necessary namespaces in Minikube cluster"
+    cmds:
+      - kubectl create namespace argocd || true # ArgoCD namespace
+      - kubectl create namespace cert-manager || true # cert-manager namespace
+      - kubectl create namespace test-app || true # Test application namespace
+      - kubectl create namespace controller-system || true # qubmango controller namespace
+  
+  2-cert-manager:1-install:
+    desc: "Install cert-manager to Minikube cluster"
+    cmds:
+      - kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+      - kubectl wait --for=condition=established --all -n cert-manager --timeout=300s || true
+
+  2-cert-manager:2-verify:
+    desc: "Verify cert-manager installation"
+    cmds:
+      - kubectl get pods -n cert-manager
+
+  3-argo-cd:1-install:
+    desc: "Install ArgoCD to Minikube cluster"
+    cmds:
+      - kubectl create -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      - kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s || true
+
+  3-argo-cd:2-verify:
+    desc: "Verify ArgoCD installation"
+    cmds:
+      - kubectl get pods -n argocd
+  
+  4-setup-manifests:1-slack:
+    desc: "Setup Slack secret template, by injecting the Slack token from file into the template"
+    cmds:
+      - |
+        # Read the Slack token from a file (assumed to be at ./secrets/slack-token.txt)
+        kubectl create secret generic slack-secret-my \
+          --namespace test-ns \
+          --type Opaque \
+          --from-file=token=./secrets/slack-token.txt \
+          --dry-run=client -o yaml > ./secrets/template/slack-secret.yaml
+
+  4-setup-manifests:2-pgp:
+    desc: "Generate PGP secret manifest using kubectl"
+    cmds:
+      - |
+        # Read the PGP private key from a file (assumed to be at ./secrets/pgp-private-key.asc)
+        kubectl create secret generic pgp-secret-my \
+          --namespace test-ns \
+          --type Opaque \
+          --from-file=privateKey=./secrets/pgp-private-key.asc \
+          --from-literal=passphrase=pgp-passphrase \
+          --dry-run=client -o yaml > ./secrets/template/pgp-secret.yaml
+
+  4-setup-manifests:3-ssh:
+    desc: "Setup SSH secret template, by injecting the SSH private key from file into the template"
+    cmds:
+      - |
+        # Read the SSH private key from a file (assumed to be at ./secrets/ssh-private-key.asc)
+        kubectl create secret generic ssh-secret-my \
+          --namespace test-ns \
+          --type Opaque \
+          --from-file=ssh-privateKey=./secrets/ssh-private-key \
+          --from-literal=passphrase=ssh-passphrase \
+          --dry-run=client -o yaml > ./secrets/template/ssh-secret.yaml
+
+  4-setup-manifests:4-application:
+    desc: "Setup ArgoCD Application"
+    cmds:
+      - |
+        # Patch the application manifest with the correct HTTP repo URL
+        sed -i "s|HTTP_REPO_URL_PLACEHOLDER|${HTTP_REPO_URL}|g" app-manifests/app.yaml
+      - |
+        # Patch the application manifest with the correct manifests source folder path
+        sed -i "s|SOURCE_FOLDER_PATH_PLACEHOLDER|${SOURCE_FOLDER_PATH}|g" app-manifests/app.yaml
+      - |
+        # Patch the application manifest with the correct qubmango operational folder path
+        sed -i "s|QUBMANGO_FOLDER_PATH_PLACEHOLDER|${QUBMANGO_FOLDER_PATH}|g" app-manifests/app.yaml
+
+  4-setup-manifests:5-mrt:
+    desc: "Setup Manifest Request Template"
+    cmds:
+      - |
+        # Patch the mrt manifest with the correct SSH repo URL
+        sed -i "s|SSH_REPO_URL_PLACEHOLDER|${SSH_REPO_URL}|g" app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct Slack notification channel ID
+        sed -i "s|SLACK_CHANNEL_ID_PLACEHOLDER|${SLACK_CHANNEL_ID}|g" app-manifests/mrt.yaml
+
+        # Read the PGP public key from a file (assumed to be at ./secrets/pgp-public-key.asc)
+        yq -i '.spec.pgp.publicKey = load_str("./secrets/pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct owner public pgp key
+        yq -i '.spec.governors.members[0].publicKey = load_str("./secrets/owner-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter1 public pgp key
+        yq -i '.spec.governors.members[1].publicKey = load_str("./secrets/voter1-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter2 public pgp key
+        yq -i '.spec.governors.members[2].publicKey = load_str("./secrets/voter2-pgp-public-key.asc")' app-manifests/mrt.yaml
+    
+  4-setup-manifests:6-namespace:
+    desc: "Create test-ns namespace"
+    cmds:
+      - |
+        kubectl create namespace test-ns \
+        --dry-run=client -o yaml > ./app-manifests/namespace.yaml
+    
+  4-setup-manifests:7-configmap:
+    desc: "Create a configmap with a version field"
+    cmds:
+      - |
+        kubectl create configmap config-my \
+        --namespace=test-ns \
+        --from-literal=version=v0.1.0 \
+        --dry-run=client -o yaml > ./app-manifests/configmap.yaml
+    
+  4-setup-manifests:8-deployment:
+    desc: "Create a deployment that uses the configmap version as an env variable"
+    cmds:
+      - |
+        # Create deployment 
+        kubectl create deployment nginx-deploy \
+          --image=nginx \
+          --namespace=test-ns \
+          --replicas=2 \
+          --dry-run=client -o yaml | \
+        kubectl set env \
+          -f - \
+          --local \
+          -o yaml \
+          VERSION=configmap/config-my:version \
+          > ./app-manifests/nginx-deploy.yaml
+
+  5-secrets-apply:1-slack:
+    desc: "Create Slack secret in Minikube cluster"
+    cmds:
+      - kubectl apply -f secrets/template/slack-secret.yaml
+
+  5-secrets-apply:2-create-pgp:
+    desc: "Create PGP secret in Minikube cluster"
+    cmds:
+      - kubectl apply -f secrets/template/pgp-secret.yaml
+
+  5-secrets-apply:3-create-ssh:
+    desc: "Create SSH secret in Minikube cluster"
+    cmds:
+      - kubectl apply -f secrets/template/ssh-secret.yaml
+
+  6-app-manifests-apply:1-application:
+    desc: "Create ArgoCD Application in Minikube cluster"
+    cmds:
+      - kubectl apply -f app-manifests/app.yaml

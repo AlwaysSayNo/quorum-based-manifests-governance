@@ -121,6 +121,39 @@ func readPrivateKeyFile(
 	return privateKey, nil
 }
 
+func CheckSSHKeyNeedsPassphrase(path string) (bool, error) {
+	privateKey, err := readPrivateKeyFile(path)
+	if err != nil {
+		return false, err
+	}
+
+	encrypted, err := IsSSHKeyEncrypted(privateKey)
+	if err != nil {
+		return false, err
+	}
+
+	return encrypted, nil
+}
+
+func CheckPGPKeyNeedsPassphrase(path string) (bool, error) {
+	privateKey, err := readPrivateKeyFile(path)
+	if err != nil {
+		return false, err
+	}
+
+	entityList, err := openpgp.ReadArmoredKeyRing(strings.NewReader(privateKey))
+	if err != nil {
+		return false, err
+	}
+
+	if len(entityList) == 0 {
+		return false, fmt.Errorf("no PGP entity found in key file")
+	}
+
+	entity := entityList[0]
+	return IsPGPKeyEncrypted(entity), nil
+}
+
 func readFile(
 	path string,
 ) ([]byte, error) {
