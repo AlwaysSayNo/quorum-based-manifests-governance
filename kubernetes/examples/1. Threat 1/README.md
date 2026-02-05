@@ -10,7 +10,8 @@ A malicious actor (Owner) manually modifies the `nginx-deployment.yaml` changing
 
 ### Prerequisites
 
-Ensure you have completed the steps in the [0. Setup README](../0.%20Setup/README.md). Also, copy the `Taskfile.yaml` specific to this threat scenario into the root of the test git repository.
+1. Complete the steps in the [0. Setup README](../0.%20Setup/README.md).
+2. Copy this scenario's `Taskfile.yaml` into the root of your test git repository (the repository **ArgoCD** and **Qubmango** are watching).
 
 ## Execution
 
