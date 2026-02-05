@@ -86,7 +86,6 @@ func init() {
 	}
 
 	signMsrCmd.Flags().StringVarP(&repoAlias, "repo", "r", "", "Alias of the repository to use (instead of the value from config file)")
-	signMsrCmd.Flags().StringVarP(&mrtAlias, "mrt", "", "", "Alias of the ManifestRequestTemplate resource (required, if index file contains more than 1 entry. Format: <namespace:name>, e.g. `--mrt mrt-ns:mrt-name`)")
 
 	signCmd.AddCommand(signMsrCmd)
 	rootCmd.AddCommand(signCmd)

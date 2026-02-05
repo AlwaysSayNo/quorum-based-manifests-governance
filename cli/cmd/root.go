@@ -18,7 +18,6 @@ import (
 
 var (
 	repoAlias     string
-	mrtAlias      string
 	sshPassphrase string
 	pgpPassphrase string
 	cliConfig     config.Config
