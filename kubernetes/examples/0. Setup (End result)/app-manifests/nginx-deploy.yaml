@@ -20,7 +20,7 @@ spec:
       - env:
         - name: VERSION
           value: configmap/config-my:version
-        image: nginx
+        image: nginx:1.14.2
         name: nginx
         resources: {}
 status: {}
