@@ -55,6 +55,15 @@ const (
 	MRTNewRevisionStateAbort          MRTNewRevisionState = "MRTNewRevisionStateAbort"
 )
 
+type MRTDeletionState string
+
+const (
+	MRTDeletionStateEmpty                  MRTDeletionState = ""
+	MRTDeletionStateRestoreArgoCD          MRTDeletionState = "RestoreArgoCD"
+	MRTDeletionStateRemoveGovernanceFolder MRTDeletionState = "RemoveGovernanceFolder"
+	MRTDeletionStateRemoveFinalizer        MRTDeletionState = "RemoveFinalizer"
+)
+
 type GitSSH struct {
 	// +required
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
@@ -238,6 +247,10 @@ type ManifestRequestTemplateStatus struct {
 	// RevisionProcessingState tracks the progress of the revision processing.
 	// +optional
 	RevisionProcessingState MRTNewRevisionState `json:"revisionProcessingStep,omitempty" yaml:"revisionProcessingStep,omitempty"`
+
+	// DeletionProcessingState tracks the progress of the deletion process.
+	// +optional
+	DeletionProcessingState MRTDeletionState `json:"deletionProcessingState,omitempty" yaml:"deletionProcessingState,omitempty"`
 
 	ApplicationInitTargetRevision string `json:"applicationInitTargetRevision,omitempty" yaml:"applicationInitTargetRevision,omitempty"`
 

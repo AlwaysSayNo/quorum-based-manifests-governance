@@ -69,6 +69,10 @@ type MRTStateHandler func(ctx context.Context, mrt *governancev1alpha1.ManifestR
 // and returns the next revision processing state
 type MRTRevisionStateHandler func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.MRTNewRevisionState, error)
 
+// MRTDeletionStateHandler defines a function that performs work within a deletion processing state
+// and returns the next deletion processing state
+type MRTDeletionStateHandler func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTDeletionState, error)
+
 // ManifestRequestTemplateReconciler reconciles a ManifestRequestTemplate object
 type ManifestRequestTemplateReconciler struct {
 	client.Client
@@ -245,10 +249,10 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 }
 
 // reconcileDelete handles the cleanup logic when an MRT is being deleted.
-// It progresses through these states:
-// 1. MRTActionStateDeleteRestoreArgoCD: Restore Application initial targetRevision
-// 2. MRTActionStateDeleteRemoveGovernanceFolder: Remove governance folder from repository
-// 3. MRTActionStateDeleteRemoveFinalizer: Remove finalizer to complete deletion
+// It uses a sub-state machine (DeletionProcessingState) to track progress through these deletion steps:
+// 1. Restore Application initial targetRevision
+// 2. Remove governance folder from repository
+// 3. Remove finalizer to complete deletion
 func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
@@ -259,90 +263,69 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 		return ctrl.Result{}, nil
 	}
 
-	r.logger.Info("Processing MRT deletion", "actionState", mrt.Status.ActionState)
-
-	switch mrt.Status.ActionState {
-	case governancev1alpha1.MRTActionStateEmpty, governancev1alpha1.MRTActionStateDeleteRestoreArgoCD:
-		// 1. Restore Application to its initial targetRevision.
-		r.logger.V(2).Info("Proceeding to restore ArgoCD Application")
-		return r.handleStateDeleteRestoreArgoCD(ctx, mrt)
-	case governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder:
-		// 2. Remove governance folder from repository.
-		r.logger.V(2).Info("Proceeding to remove governance folder from repository")
-		return r.handleStateDeleteRemoveGovernanceFolder(ctx, mrt)
-	case governancev1alpha1.MRTActionStateDeleteRemoveFinalizer:
-		// 3. Remove the finalizer to complete deletion.
-		r.logger.V(2).Info("Proceeding to remove finalizer")
-		return r.handleStateDeleteRemoveFinalizer(ctx, mrt)
-	default:
-		// Any other state, start deletion from the beginning by resetting to DeleteRestoreArgoCD
-		r.logger.V(2).Info("Unknown deletion state, starting deletion process", "currentState", mrt.Status.ActionState)
-		return r.handleStateDeleteRestoreArgoCD(ctx, mrt)
+	if _, err := r.handleStateDeleteRestoreArgoCD(ctx, mrt); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to restore ArgoCD Application during deletion: %w", err)
 	}
+
+	if _, err := r.handleStateDeleteRemoveGovernanceFolder(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to remove governance folder during deletion")
+	}
+
+	return r.handleStateDeleteRemoveFinalizer(ctx, mrt)
 }
 
 // handleStateDeleteRestoreArgoCD restores the ArgoCD Application to its initial targetRevision.
-// State: MRTActionStateDeleteRestoreArgoCD → MRTActionStateDeleteRemoveGovernanceFolder
 func (r *ManifestRequestTemplateReconciler) handleStateDeleteRestoreArgoCD(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRestoreArgoCD, "Restoring ArgoCD Application to initial targetRevision",
-		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			// Get the Application
-			app, err := r.getApplication(ctx, mrt)
-			if err != nil {
-				return "", fmt.Errorf("fetch Application for MRT: %w", err)
-			}
+	// Get the Application
+	app, err := r.getApplication(ctx, mrt)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("fetch Application for MRT: %w", err)
+	}
 
-			// Patch the Application with initial targetRevision
-			r.logger.Info("Restoring initial ArgoCD Application targetRevision", "app", app.Name, "currentRevision", app.Spec.Source.TargetRevision, "initialRevision", mrt.Status.ApplicationInitTargetRevision)
+	// Patch the Application with initial targetRevision
+	r.logger.Info("Restoring initial ArgoCD Application targetRevision", "app", app.Name, "currentRevision", app.Spec.Source.TargetRevision, "initialRevision", mrt.Status.ApplicationInitTargetRevision)
 
-			patch := client.MergeFrom(app.DeepCopy())
-			app.Spec.Source.TargetRevision = mrt.Status.ApplicationInitTargetRevision
+	patch := client.MergeFrom(app.DeepCopy())
+	app.Spec.Source.TargetRevision = mrt.Status.ApplicationInitTargetRevision
 
-			if err := r.Patch(ctx, app, patch); err != nil {
-				r.logger.Error(err, "Failed to patch ArgoCD Application")
-				return "", fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
-			}
+	if err := r.Patch(ctx, app, patch); err != nil {
+		r.logger.Error(err, "Failed to patch ArgoCD Application")
+		return ctrl.Result{}, fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
+	}
 
-			r.logger.Info("ArgoCD Application targetRevision restored successfully")
-			return governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder, nil
-		},
-	)
+	r.logger.Info("ArgoCD Application targetRevision restored successfully")
+	return ctrl.Result{}, nil
 }
 
 // handleStateDeleteRemoveGovernanceFolder removes the governance folder from the repository.
-// State: MRTActionStateDeleteRemoveGovernanceFolder → MRTActionStateDeleteRemoveFinalizer
 func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveGovernanceFolder(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRemoveGovernanceFolder, "Removing governance folder from repository",
-		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
+	r.logger.Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
-			// Get repository provider
-			repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
-			if err != nil {
-				return "", fmt.Errorf("get repository provider: %w", err)
-			}
+	// Get repository provider
+	repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("get repository provider: %w", err)
+	}
 
-			// Construct the governance folder path to delete
-			governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
+	// Construct the governance folder path to delete
+	governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
 
-			r.logger.Info("Deleting governance folder from repository", "path", governancePath, "mrt", mrt.Name)
+	r.logger.Info("Deleting governance folder from repository", "path", governancePath, "mrt", mrt.Name)
 
-			// Delete the governance folder and push the deletion to the remote repository
-			if err := r.deleteGovernanceFolderFromRepository(ctx, repository, governancePath); err != nil {
-				r.logger.Error(err, "Failed to delete governance folder from repository", "path", governancePath)
-				return "", fmt.Errorf("delete governance folder from repository: %w", err)
-			}
+	// Delete the governance folder and push the deletion to the remote repository
+	if err := r.deleteGovernanceFolderFromRepository(ctx, repository, governancePath); err != nil {
+		r.logger.Error(err, "Failed to delete governance folder from repository", "path", governancePath)
+		return ctrl.Result{}, fmt.Errorf("delete governance folder from repository: %w", err)
+	}
 
-			r.logger.Info("Governance folder deleted successfully from repository")
-			return governancev1alpha1.MRTActionStateDeleteRemoveFinalizer, nil
-		},
-	)
+	r.logger.Info("Governance folder deleted successfully from repository")
+	return ctrl.Result{}, nil
 }
 
 // deleteGovernanceFolderFromRepository deletes the governance folder from the local git repository and pushes to remote
@@ -363,24 +346,19 @@ func (r *ManifestRequestTemplateReconciler) deleteGovernanceFolderFromRepository
 }
 
 // handleStateDeleteRemoveFinalizer removes the finalizer from MRT to complete deletion.
-// State: MRTActionStateDeleteRemoveFinalizer → MRTActionStateEmpty
 func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveFinalizer(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateDeleteRemoveFinalizer, "Removing GovernanceFinalizer from MRT",
-		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			// Remove the finalizer from MRT.
-			r.logger.Info("Removing GovernanceFinalizer to complete deletion")
-			controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
-			if err := r.Update(ctx, mrt); err != nil {
-				r.logger.Error(err, "Failed to remove finalizer")
-				return "", fmt.Errorf("remove finalizer from ManifestRequestTemplate: %w", err)
-			}
-			r.logger.Info("Deletion complete, finalizer removed")
-			return governancev1alpha1.MRTActionStateEmpty, nil
-		},
-	)
+	// Remove the finalizer from MRT.
+	r.logger.Info("Removing GovernanceFinalizer to complete deletion")
+	controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
+	if err := r.Update(ctx, mrt); err != nil {
+		r.logger.Error(err, "Failed to remove finalizer")
+		return ctrl.Result{}, fmt.Errorf("remove finalizer from ManifestRequestTemplate: %w", err)
+	}
+	r.logger.Info("Deletion complete, finalizer removed")
+	return ctrl.Result{}, nil
 }
 
 func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(

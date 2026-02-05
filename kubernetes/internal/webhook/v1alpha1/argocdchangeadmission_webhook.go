@@ -187,8 +187,8 @@ func (v *ArgoCDChangeAdmissionValidator) checkRevisionApprovalStatus(
 	// Check if it's the latest approved revision
 	mcaRecord := mca.Status.ApprovalHistory[requestedMCAIdx]
 	if mcaRecord.CommitSHA != mca.Spec.CommitSHA {
-		v.logger.Info("Application revision is older than last approved commit in MCA", "lastApprovedCommitSHA", mca.Spec.CommitSHA)
-		return admission.Denied(fmt.Sprintf("Change from commit %s is older than last approved commit %s in MCA.", revision, mca.Spec.CommitSHA))
+		v.logger.Info("Application revision doesn't equal the last approved commit in MCA", "lastApprovedCommitSHA", mca.Spec.CommitSHA)
+		return admission.Denied(fmt.Sprintf("Change from commit %s doesn't equal the last approved commit %s in MCA.", revision, mca.Spec.CommitSHA))
 	}
 
 	// Revision is approved and latest - allow it

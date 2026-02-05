@@ -891,21 +891,17 @@ func (p *BaseGitProvider) DeleteFolder(ctx context.Context, folderPath string) e
 		return nil
 	}
 
+	// Stage the deletion
+	if err := worktree.RemoveGlob(filepath.Join(folderPath, "**")); err != nil {
+		rollback()
+		return fmt.Errorf("failed to stage folder deletion in git: %w", err)
+	}
+
 	// Remove the folder from the local worktree
 	if err := os.RemoveAll(localFolderPath); err != nil {
 		rollback()
 		return fmt.Errorf("failed to remove folder from local path: %w", err)
 	}
-
-	// Stage the deletion
-	if err := worktree.RemoveGlob(folderPath + "/**"); err != nil {
-		// If RemoveGlob doesn't work, try removing the folder itself
-		if _, err := worktree.Remove(folderPath); err != nil {
-			rollback()
-			return fmt.Errorf("failed to stage folder deletion in git: %w", err)
-		}
-	}
-
 	// Create signed commit and push it to the remote repo
 	commitMsg := fmt.Sprintf("Delete governance folder: %s", folderPath)
 	_, err = p.commitAndPush(ctx, worktree, commitMsg, pgpEntity)
