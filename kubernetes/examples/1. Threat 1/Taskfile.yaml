@@ -1,0 +1,133 @@
+version: '3'
+
+vars:
+  NAMESPACE: "controller-system"
+  POD_LABEL: "control-plane=controller-manager"
+  TARGET_FILE: "app-manifests/nginx-deploy.yaml"
+  TEMP_PIN_FILE: ".initial_pin"
+
+tasks:
+
+  0-setup:1-start-governance:
+    desc: "Push the MRT manifest to the remote repository and wait, trigger the ArgoCD sync and capture the initial pin."
+    cmds:
+      - |
+        # Pushing MRT manifest to remote repository
+        git add app-manifests/mrt.yaml
+        git commit -m "Start Governance process"
+        git push origin main
+        sleep 10 # Wait until changes are in remote repository
+      - |
+        # Triggering ArgoCD sync and waiting for stabilization
+        kubectl -n argocd patch application application-my --type=merge -p '{"spec": {"source": {"targetRevision": "HEAD"}}}'
+        # Wait for the application to sync and stabilize
+        sleep 120
+  
+  0-setup:2-verify-governance:
+    desc: "Verify that governance resources are created and capture the initial ArgoCD pin."
+    cmds:
+      - |
+        # Verify that all governance resources are created and in expected state
+        kubectl get mrt mrt-my -n test-ns
+        kubectl get msr msr-my -n test-ns
+        kubectl get mca mca-my -n test-ns
+      - |
+        #Capturing initial ArgoCD pin for later comparison
+        kubectl get application application-my -n argocd -o jsonpath='{.spec.source.targetRevision}' > {{.TEMP_PIN_FILE}}
+        echo "Initial Pin stored in {{.TEMP_PIN_FILE}}: $(cat {{.TEMP_PIN_FILE}})"
+      - |
+        #Pull the latest changes to ensure local repository is up to date
+        git pull origin main
+
+  1-malicious-changes:1-change-image:
+    desc: "Modify the nginx image in the deployment manifest to a different version, simulating an unapproved change."
+    cmds:
+      - |
+        # Simulating malicious modification
+        sed -i 's|image: nginx:1.14.2|image: nginx:latest|g' {{.TARGET_FILE}}
+        echo "Modifications applied locally:"
+        grep "image:" {{.TARGET_FILE}}
+      
+  1-malicious-changes:2-commit-push:
+    desc: "Commit and push the malicious changes to the remote repository."
+    cmds:
+      - |
+        # Executing force bypass
+        git add {{.TARGET_FILE}}
+        git commit -m "Malicious update: Upgrade nginx without approval"
+        git push origin main
+        echo "Malicious commit pushed: $(git rev-parse HEAD)"
+
+  2-verify-system:1-wait-detection:
+    desc: "Verify controller detected the unapproved change"
+    cmds:
+      - |
+        # Watch controller logs for detection of unapproved change"
+        echo "Waiting for log message: 'History record added, ready to notify governors'..."
+      - |
+        # Stream logs with a timeout, searching for the specific success message.
+        timeout 60s kubectl logs -f -n {{.NAMESPACE}} -l {{.POD_LABEL}} | \
+        grep -m 1 "History record added, ready to notify governors" || \
+        (echo "Failure: controller did not detect the change within given time." && exit 1)
+        echo "Success: controller detected unapproved change and created MSR."
+
+  3-verify-state:1-verify-no-update:
+    desc: "Verify ArgoCD state was not updated and remains pinned to the initial commit."
+    cmds:
+      - |
+        # Verifying ArgoCD state"
+        INITIAL_PIN=$(cat {{.TEMP_PIN_FILE}})
+        CURRENT_PIN=$(kubectl get application application-my -n argocd -o jsonpath='{.spec.source.targetRevision}')
+        MALICIOUS_COMMIT=$(git rev-parse HEAD)
+
+        echo "Initial Pin: $INITIAL_PIN"
+        echo "Current Pin: $CURRENT_PIN"
+        echo "Malicious HEAD: $MALICIOUS_COMMIT"
+
+        # The current pin should match the initial pin.
+        if [ "$CURRENT_PIN" = "$INITIAL_PIN" ]; then
+            echo "Success: ArgoCD is still pinned to $CURRENT_PIN."
+        else
+            echo "Failure: ArgoCD updated to $CURRENT_PIN!"
+            exit 1
+        fi
+      - rm -f {{.TEMP_PIN_FILE}}
+
+  4-cleanup:1-repo:
+    desc: "Revert malicious changes, remove MRT file, and clean up governance artifacts from the repo."
+    cmds:
+      - |
+        # Syncing repository
+        git pull origin main
+
+      - |
+        # Revert the malicious change back to the setup state
+        sed -i 's|image: nginx:latest|image: nginx:1.14.2|g' {{.TARGET_FILE}}
+
+      - |
+        # Remove the MRT file
+        rm -f app-manifests/mrt.yaml
+        
+        # Governance folder should be already removed by the controller 
+        # rm -rf app-manifests/.qubmango 
+
+      - |
+        # Pushing cleanup commit
+        git add .
+        git commit -m "Cleanup: Revert Threat 1 scenario" || true
+        git push origin main
+
+  4-cleanup:2-cluster:
+    desc: "Delete the MRT from the cluster. ArgoCD will be automatically reset to track HEAD."
+    cmds:
+      - |
+        # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
+        kubectl delete mrt mrt-my -n test-ns --ignore-not-found --wait=true
+
+  4-cleanup:3-sync:
+    desc: "Force ArgoCD to sync to the clean state."
+    cmds:
+      - |
+        # Trigger a refresh and wait
+        kubectl -n argocd annotate application application-my argocd.argoproj.io/refresh=normal --overwrite
+        sleep 10
