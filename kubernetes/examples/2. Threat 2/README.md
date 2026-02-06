@@ -18,7 +18,7 @@ An insider attempts to push a change through an insecure approval process by col
 1. Complete the steps in the [0. Setup README](../0.%20Setup/README.md).
 2. Copy this scenario's `Taskfile.yaml` into the root of your test git repository (the repository **ArgoCD** and **Qubmango** are watching).
 3. Ensure the `qubmango` CLI is installed and configured for:
-- **Owner** identity (repo config points to Owner SSH/PGP keys)
+   - **Owner** identity (repo config points to Owner SSH/PGP keys)
 
 Notes:
 - This scenario simulates the “PR merged with a weak approver” by creating a feature branch, creating a PR, approving as Voter3 and merging it to `main`. The key expected behavior is that *Git approvals do not bypass the cryptographic quorum policy*.
@@ -27,16 +27,22 @@ Notes:
 
 ### 0. Start governance
 
-1. Run the following command to start the governance process by pushing the initial manifest to the remote repository and triggering the Argo CD sync:
+1. Start the governance process by committing/pushing the `MRT` manifest and triggering an ArgoCD refresh.
 
 ```bash
 task 0-setup:1-start-governance
 ```
 
-2. Verify that the governance resources (MRT, MSR, MCA) are created in the cluster and the **ArgoCD** `Application` is pinned to the initial Commit SHA:
+2. Verify that governance resources (`MRT`, `MSR`, `MCA`) exist, and capture the initial ArgoCD `Application` pin (`targetRevision`) for later comparison.
 
 ```bash
 task 0-setup:2-verify-governance
+```
+
+3. Print the policy tree from `app-manifests/mrt.yaml` so it’s visible while you run the scenario.
+
+```bash
+task 0-setup:3-verify-policy
 ```
 
 ### 1. Collusive change
@@ -47,17 +53,17 @@ task 0-setup:2-verify-governance
 task 1-collusion:1-branch-and-change
 ```
 
-2. Push the feature branch to the remote repository:
+2. Push the feature branch to the remote repository.
 
 ```bash
 task 1-collusion:2-push-branch
 ```
 
-3. Create a Pull Request from the feature branch into `main`, approve it as **Voter3**, and merge it.
+3. In GitHub, create a Pull Request from the feature branch into `main`, approve it as **Voter3**, and merge it.
 
 This reflects the real-world weakness: the code passes a basic Git approval process, but should still be blocked by the cryptographic quorum policy.
 
-4. After the PR is merged, update your local `main` branch:
+4. Pull the updated `main` branch locally:
 
 ```bash
 task 1-collusion:3-pull-main
@@ -71,14 +77,15 @@ task 1-collusion:3-pull-main
 task 2-verify-system:1-wait-detection
 ```
 
-1. Get the `MSR` details:
+2. Get the `MSR` details. The version should be incremented (e.g., from `0` to `1`):
+
 ```bash
 task 2-verify-system:2-show-msr
 ```
 
 ### 3. Attempt to bypass quorum
 
-1. Sign the MSR as **Owner** using the `qubmango` CLI configured with the Owner's credentials:
+1. Sign the MSR as **Owner**. This satisfies the `Owner` branch of the policy, but should still be insufficient.
 
 ```bash
 task 3-signatures:1-owner-sign
@@ -86,26 +93,40 @@ task 3-signatures:1-owner-sign
 
 ### 4. Verify defense
 
-1. Wait for a few minutes to allow the controller to process the new signature and evaluate the policy:
+1. Wait for a few minutes to allow the controller to process the new signature and verify the `MSR`:
 
 ```bash
 task 4-verify-state:1-verify-msr-in-progress
 ```
 
-2. 
+2. Verify ArgoCD remains pinned to the original safe commit (no `MCA` was issued).
+
+```bash
+task 4-verify-state:2-verify-argocd-pinned
+```
 
 ## Outcomes
 
-- Owner’s signature is accepted.
-- A GitHub PR approval by Voter3 does **not** satisfy `ANY(Voter1, Voter2)`.
-- (Optional) Even if Voter3 attempts to sign, it still does **not** satisfy `ANY(Voter1, Voter2)`.
+- **Owner’s** signature is accepted.
+- A GitHub PR approval by **Voter3** does **not** satisfy `ANY(Voter1, Voter2)`.
 - No new `MCA` is issued, and ArgoCD `targetRevision` is not updated.
 
 ## Cleanup
 
+1. Revert the local repo state (revert nginx change and remove the `MRT` file), then push the cleanup commit.
+
 ```bash
 task 5-cleanup:1-repo
-task 5-cleanup:2-cluster
-task 5-cleanup:3-sync
 ```
 
+2. Delete the `MRT` from the cluster.
+
+```bash
+task 5-cleanup:2-cluster
+```
+
+3. Force ArgoCD to refresh to converge back to the clean state.
+
+```bash
+task 5-cleanup:3-sync
+```

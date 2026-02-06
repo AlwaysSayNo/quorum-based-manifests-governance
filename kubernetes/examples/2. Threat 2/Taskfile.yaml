@@ -41,12 +41,20 @@ tasks:
         kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
         kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
       - |
-        #Capturing initial ArgoCD pin for later comparison
+        # Capturing initial ArgoCD pin for later comparison
         kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}' > {{.TEMP_PIN_FILE}}
         echo "Initial pin stored in {{.TEMP_PIN_FILE}}: $(cat {{.TEMP_PIN_FILE}})"
       - |
-        #Pull the latest changes to ensure local repository is up to date
+        # Pull the latest changes to ensure local repository is up to date
         git pull origin main
+
+  0-setup:3-verify-policy:
+    desc: "Print the MRT approval policy."
+    cmds:
+      - |
+        command -v yq >/dev/null 2>&1 || (echo "yq is required for this task" && exit 1)
+        echo "MRT policy (.spec.governancePolicy):"
+        yq '.spec.governancePolicy' app-manifests/mrt.yaml
 
   1-collusion:1-branch-and-change:
     desc: "Create a feature branch and update nginx image to 1.28.2."
@@ -93,7 +101,7 @@ tasks:
         echo "Success: controller detected change and issued MSR."
 
   2-verify-system:2-show-msr:
-    desc: "Show MSR status/version and collected signatures."
+    desc: "Show MSR version."
     cmds:
       - |
         echo "MSR spec.version: $(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')"
@@ -128,12 +136,12 @@ tasks:
     desc: "Verify ArgoCD targetRevision remains pinned to the initial safe commit SHA."
     cmds:
       - |
-        # Verifying ArgoCD state"
+        # Verifying ArgoCD state
         INITIAL_PIN=$(cat {{.TEMP_PIN_FILE}})
         CURRENT_PIN=$(kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}')
 
         echo "Initial pin: $INITIAL_PIN"
-        echo "Current pin:  $CURRENT_PIN"
+        echo "Current pin: $CURRENT_PIN"
 
         # The current pin should match the initial pin.
         if [ "$CURRENT_PIN" = "$INITIAL_PIN" ]; then
@@ -166,6 +174,7 @@ tasks:
       - |
         # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
         kubectl delete mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
+        sleep 30
 
   5-cleanup:3-sync:
     desc: "Force ArgoCD to sync to the clean state."
