@@ -1,0 +1,197 @@
+version: "3"
+
+vars:
+  NAMESPACE: "controller-system"
+  POD_LABEL: "control-plane=controller-manager"
+
+  APP_NAME: "application-my"
+  APP_NAMESPACE: "argocd"
+
+  MRT_NAME: "mrt-my"
+  MSR_NAME: "msr-my"
+  MCA_NAME: "mca-my"
+  WORK_NAMESPACE: "test-ns"
+
+  TARGET_FILE: "app-manifests/nginx-deploy.yaml"
+  TEMP_PIN_FILE: ".initial_pin"
+  FEATURE_BRANCH: "feature/nginx-1-28-2"
+
+  QUBMANGO_BIN: "qubmango"
+  REPO_ALIAS: ""
+
+tasks:
+
+  0-setup:1-start-governance:
+    desc: "Push the MRT manifest to the remote repository, trigger ArgoCD sync, and wait for stabilization."
+    cmds:
+      - |
+        git add app-manifests/mrt.yaml
+        git commit -m "Start Governance process" || true
+        git push origin main
+        sleep 10
+      - |
+        kubectl -n {{.APP_NAMESPACE}} patch application {{.APP_NAME}} --type=merge -p '{"spec": {"source": {"targetRevision": "HEAD"}}}'
+        sleep 120
+
+  0-setup:2-verify-governance:
+    desc: "Verify that governance resources are created and capture the initial ArgoCD pin."
+    cmds:
+      - |
+        # Verify that all governance resources are created and in expected state
+        kubectl get mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
+      - |
+        # Capturing initial ArgoCD pin for later comparison
+        kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}' > {{.TEMP_PIN_FILE}}
+        echo "Initial pin stored in {{.TEMP_PIN_FILE}}: $(cat {{.TEMP_PIN_FILE}})"
+      - |
+        # Pull the latest changes to ensure local repository is up to date
+        git pull origin main
+
+  0-setup:3-verify-policy:
+    desc: "Print the MRT approval policy (should be ALL(owner, ANY(voter1, voter2)))."
+    cmds:
+      - |
+        command -v yq >/dev/null 2>&1 || (echo "yq is required for this task" && exit 1)
+        echo "MRT policy (.spec.governancePolicy):"
+        yq '.spec.governancePolicy' app-manifests/mrt.yaml
+
+  1-collusion:1-branch-and-change:
+    desc: "Create a feature branch and update nginx image to 1.28.2."
+    cmds:
+      - |
+        # Create and switch to feature branch
+        git pull origin main
+        git checkout -B {{.FEATURE_BRANCH}}
+      - |
+        # Update nginx image version in the deployment manifest
+        sed -i 's|image: nginx:1.14.2|image: nginx:1.28.2|g' {{.TARGET_FILE}}
+        echo "Updated image line:"
+        grep "image:" {{.TARGET_FILE}}
+
+  1-collusion:2-push-branch:
+    desc: "Push the feature branch to origin."
+    cmds:
+      - |
+        # Commit the change locally
+        git add {{.TARGET_FILE}}
+        git commit -m "Change: Upgrade nginx to 1.28.2" || true
+        git push -u origin {{.FEATURE_BRANCH}}
+        echo "Pushed branch {{.FEATURE_BRANCH}} to origin."
+
+  1-collusion:3-pull-main:
+    desc: "After merging the PR in GitHub, pull the updated main branch locally."
+    cmds:
+      - |
+        echo "Updating local main from origin..."
+        git checkout main
+        git pull origin main
+        echo "Current main HEAD: $(git rev-parse HEAD)"
+
+  2-verify-system:1-wait-detection:
+    desc: "Wait until the controller detects the change and notifies governors."
+    cmds:
+      - |
+        echo "Waiting for log message: 'History record added, ready to notify governors'..."
+      - |
+        # Stream logs with a timeout, searching for the specific success message.
+        timeout 120s kubectl logs -f -n {{.NAMESPACE}} -l {{.POD_LABEL}} | \
+          grep -m 1 "History record added, ready to notify governors" || \
+          (echo "Failure: controller did not detect the change within given time." && exit 1)
+        echo "Success: controller detected change and issued MSR."
+
+  2-verify-system:2-show-msr:
+    desc: "Show MSR status/version and counted (authorized) signatures."
+    cmds:
+      - |
+        echo "MSR spec.version: $(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')"
+
+  3-signatures:1-owner-sign:
+    desc: "Sign the latest MSR as Owner."
+    cmds:
+      - |
+        command -v {{.QUBMANGO_BIN}} >/dev/null 2>&1 || (echo "qubmango CLI not found on PATH" && exit 1)
+        VERSION=$(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')
+        echo "Signing MSR version $VERSION as current CLI identity (expected: Owner)"
+        {{.QUBMANGO_BIN}} sign msr $VERSION --repo {{.REPO_ALIAS}}
+
+  3-signatures:2-voter3-sign:
+    desc: "Sign the latest MSR as Voter3."
+    cmds:
+      - |
+        command -v {{.QUBMANGO_BIN}} >/dev/null 2>&1 || (echo "qubmango CLI not found on PATH" && exit 1)
+        VERSION=$(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')
+        echo "Reconfigure your qubmango CLI to use Voter3 SSH/PGP keys before continuing."
+        echo "Signing MSR version $VERSION as current CLI identity (expected: Voter3)"
+        {{.QUBMANGO_BIN}} sign msr $VERSION --repo {{.REPO_ALIAS}}
+
+  4-verify-state:1-verify-msr-in-progress:
+    desc: "Assert that MCA is not updated."
+    cmds:
+      - |
+        echo "Waiting for MSR to be evaluated and MCA to be updated..."
+        timeout 120s bash -c '
+          while true; do
+            MCA_VERSION=$(kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath="{.status.policy[0].version}")
+            if [ "$MCA_VERSION" != "0" ]; then
+              echo "Failure: MCA policy version updated to $MCA_VERSION, expected to remain at 0."
+              exit 1
+            fi
+            sleep 5
+          done
+        '
+        echo "Success: MSR remained In Progress and MCA policy version is still 0."
+
+  4-verify-state:2-verify-argocd-pinned:
+    desc: "Verify ArgoCD targetRevision remains pinned to the initial safe commit SHA."
+    cmds:
+      - |
+        # Verifying ArgoCD state
+        INITIAL_PIN=$(cat {{.TEMP_PIN_FILE}})
+        CURRENT_PIN=$(kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}')
+
+        echo "Initial pin: $INITIAL_PIN"
+        echo "Current pin: $CURRENT_PIN"
+
+        # The current pin should match the initial pin.
+        if [ "$CURRENT_PIN" = "$INITIAL_PIN" ]; then
+          echo "Success: ArgoCD is still pinned to $CURRENT_PIN."
+        else
+          echo "Failure: ArgoCD pin changed to $CURRENT_PIN"
+          exit 1
+        fi
+
+  5-cleanup:1-repo:
+    desc: "Revert the scenario change, remove MRT file, and clean up repo state."
+    cmds:
+      - |
+        rm -f {{.TEMP_PIN_FILE}} || true
+      - |
+        git checkout main
+        git pull origin main
+      - |
+        sed -i 's|image: nginx:1.28.2|image: nginx:1.14.2|g' {{.TARGET_FILE}}
+      - |
+        rm -f app-manifests/mrt.yaml
+      - |
+        git add .
+        git commit -m "Cleanup: Revert Threat 3 scenario" || true
+        git push origin main
+
+  5-cleanup:2-cluster:
+    desc: "Delete the MRT from the cluster. ArgoCD will be automatically reset to track HEAD."
+    cmds:
+      - |
+        # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
+        kubectl delete mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
+        sleep 30
+
+  5-cleanup:3-sync:
+    desc: "Force ArgoCD to sync to the clean state."
+    cmds:
+      - |
+        # Trigger a refresh and wait
+        kubectl -n {{.APP_NAMESPACE}} annotate application {{.APP_NAME}} argocd.argoproj.io/refresh=normal --overwrite
+        sleep 10
+
