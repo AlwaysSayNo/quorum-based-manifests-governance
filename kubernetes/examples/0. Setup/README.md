@@ -14,8 +14,7 @@ Ensure, that you have on your computer next software installed with the followin
 
 You can find the installation instructions for these tools in their official documentation.
 
-Also, for proceeding the next steps, you need to install **go-task** tool `v3.21.0` for executing the tasks defined in the Taskfile 
-and **yq** tool `v4.37.1` for processing YAML files. You can install it by running the following commands:
+Also, for proceeding the next steps, you need to install **go-task** tool `v3.46.3` for executing the tasks defined in the Taskfile and **yq** tool `v4.52.2` for processing YAML files. You can install it by running the following commands:
 
 ```bash
 go install github.com/go-task/task/v3/cmd/task@latest
@@ -150,7 +149,7 @@ task 1-minikube:2-docker-env
 3. Create all necessary namespaces in Minikube:
 
 ```bash
-task 1-minikube:3-create-namespaces
+task 1-minikube:3-namespaces
 ```
 
 ### 2. Install Cert-Manager
@@ -245,9 +244,17 @@ rm Taskfile.yaml
 Finally, commit all the created files to your GitHub repository, except the mrt.yaml file, which will be used in the next steps:
 
 ```bash
-git add -- !app-manifests/mrt.yaml
+git add -- ':!app-manifests/mrt.yaml'
 git commit -m "Setup governance repository"
 git push origin main
+```
+
+### 7. Apply the Argo CD Application manifest
+
+Apply the Argo CD Application manifest to the cluster, which will create the Application in Argo CD and trigger the synchronization.
+
+```bash
+task 6-app-manifests-apply:1-application
 ```
 
 ## CLI setup
