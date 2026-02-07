@@ -1006,6 +1006,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              deletionProcessingState:
+                description: DeletionProcessingState tracks the progress of the deletion
+                  process.
+                type: string
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
                   from the git repository
