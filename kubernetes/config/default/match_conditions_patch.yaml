@@ -6,7 +6,7 @@
   - name: "require-argocd-annotation"
     expression: "has(object.metadata) && has(object.metadata.annotations) && 'argocd.argoproj.io/tracking-id' in object.metadata.annotations"
   - name: "allow-governance-requests"
-    expression: "!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username != 'system:serviceaccount:system:controller-controller-manager')"
+    expression: "!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username != 'system:serviceaccount:controller-system:qubmango-controller-controller-manager')"
     # config/default/kustomization.yaml
     #   namePrefix: controller-
     # config/manager/manager.yaml

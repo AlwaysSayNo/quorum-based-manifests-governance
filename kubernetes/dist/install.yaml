@@ -2075,7 +2075,7 @@ spec:
         - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
         command:
         - /manager
-        image: ghcr.io/alwayssayno/qubmango-controller:v0.1.0
+        image: ghcr.io/alwayssayno/qubmango-controller:v0.1.1
         livenessProbe:
           httpGet:
             path: /healthz
@@ -2242,7 +2242,7 @@ webhooks:
       in object.metadata.annotations
     name: require-argocd-annotation
   - expression: '!has(request.userInfo) || !has(request.userInfo.username) || (request.userInfo.username
-      != ''system:serviceaccount:system:controller-controller-manager'')'
+      != ''system:serviceaccount:controller-system:qubmango-controller-controller-manager'')'
     name: allow-governance-requests
   name: argocd-change-admission-webhook.governance.nazar.grynko.com
   rules:

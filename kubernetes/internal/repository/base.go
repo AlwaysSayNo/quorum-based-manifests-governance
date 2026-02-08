@@ -845,6 +845,30 @@ func (p *BaseGitProvider) getPGPEntity(
 		}
 	}
 
+	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+		return nil, fmt.Errorf("PGP private key remains encrypted after decrypt attempt")
+	}
+
+	if len(entity.Subkeys) > 0 {
+		if p.pgpSecrets.Passphrase == "" {
+			for _, subkey := range entity.Subkeys {
+				if subkey.PrivateKey != nil && subkey.PrivateKey.Encrypted {
+					return nil, fmt.Errorf("PGP subkey is encrypted, but no passphrase was provided")
+				}
+			}
+		} else {
+			passphrase := []byte(p.pgpSecrets.Passphrase)
+			for _, subkey := range entity.Subkeys {
+				if subkey.PrivateKey == nil || !subkey.PrivateKey.Encrypted {
+					continue
+				}
+				if err := subkey.PrivateKey.Decrypt(passphrase); err != nil || subkey.PrivateKey.Encrypted {
+					return nil, fmt.Errorf("failed to decrypt PGP subkey: %w", err)
+				}
+			}
+		}
+	}
+
 	return entity, nil
 }
 

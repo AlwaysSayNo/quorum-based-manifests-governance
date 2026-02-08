@@ -243,7 +243,7 @@ func (m *Manager) syncSSHSecrets(
 
 	privateKeyBytes, ok := gitSecret.Data["ssh-privatekey"]
 	if !ok {
-		return nil, fmt.Errorf("secret '%s' is missing 'privateKey' field", secretRef.Name)
+		return nil, fmt.Errorf("secret '%s' is missing 'ssh-privatekey' field", secretRef.Name)
 	}
 
 	passphraseBytes, ok := gitSecret.Data["passphrase"]
