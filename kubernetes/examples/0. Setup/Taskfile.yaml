@@ -1,11 +1,11 @@
 version: "3"
 
 env:
-  HTTP_REPO_URL: "" #
-  SSH_REPO_URL: "" #
-  REPO_NAME: "" #
   SOURCE_FOLDER_PATH: "app-manifests"
   QUBMANGO_FOLDER_PATH: ".qubmango"
+  
+  HTTP_REPO_URL: "" #
+  SSH_REPO_URL: "" #
   SLACK_CHANNEL_ID: "" #
 
 tasks:
@@ -35,7 +35,7 @@ tasks:
     desc: "Install cert-manager to Minikube cluster"
     cmds:
       - kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
-      - kubectl wait --for=condition=established --all -n cert-manager --timeout=300s || true
+      - kubectl wait --for=condition=ready pod --all -n cert-manager --timeout=300s || true
 
   2-cert-manager:2-verify:
     desc: "Verify cert-manager installation"

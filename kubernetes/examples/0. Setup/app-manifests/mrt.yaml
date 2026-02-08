@@ -61,7 +61,6 @@ spec:
           VOTER2_PGP_PUBLIC_KEY_PLACEHOLDER
   # The governance policy for approving manifest changes.
   # In this example, the owner must always approve, and at least one voter must approve.
-  governancePolicy:
   require:
     all: true
     require:

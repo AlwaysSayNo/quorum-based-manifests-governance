@@ -19,8 +19,20 @@ vars:
   QUBMANGO_BIN: "qubmango"
   REPO_ALIAS: "" # quorum-based-manifests-governance-test.git
 
+env:
+  HTTP_REPO_URL: "" #
+  SSH_REPO_URL: "" #
+  SLACK_CHANNEL_ID: "" #
+
 tasks:
-  0-setup:1-start-governance:
+
+  0-setup:1-apply-governance-init:
+    desc: "Apply the governance initialization manifest which sets up the repository and cluster for the scenario."
+    cmds:
+      - kubectl apply -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml
+      - kubectl wait --for=condition=ready pod --all -n controller-system --timeout=300s || true
+
+  0-setup:2-start-governance:
     desc: "Push the MRT manifest to the remote repository, trigger ArgoCD sync, and wait for stabilization."
     cmds:
       - |
@@ -29,10 +41,10 @@ tasks:
         git push origin main
         sleep 10
       - |
-        kubectl -n {{.APP_NAMESPACE}} patch application {{.APP_NAME}} --type=merge -p '{"spec": {"source": {"targetRevision": "HEAD"}}}'
+        kubectl -n {{.APP_NAMESPACE}} patch application {{.APP_NAME}} --type=merge -p '{"operation":{"sync":{"prune":true,"syncStrategy":{"hook":{}}}}}'
         sleep 120
 
-  0-setup:2-verify-governance:
+  0-setup:3-verify-governance:
     desc: "Verify that governance resources are created and capture the initial ArgoCD pin."
     cmds:
       - |
@@ -48,7 +60,7 @@ tasks:
         # Pull the latest changes to ensure local repository is up to date
         git pull origin main
 
-  0-setup:3-verify-policy:
+  0-setup:4-verify-policy:
     desc: "Print the MRT approval policy."
     cmds:
       - |
@@ -104,14 +116,14 @@ tasks:
     desc: "Show MSR version."
     cmds:
       - |
-        echo "MSR spec.version: $(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')"
+        echo "MSR spec.version: $(kubectl get manifestsigningrequest {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')"
 
   3-signatures:1-owner-sign:
     desc: "Sign the latest MSR as Owner."
     cmds:
       - |
         command -v {{.QUBMANGO_BIN}} >/dev/null 2>&1 || (echo "qubmango CLI not found on PATH" && exit 1)
-        VERSION=$(kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')
+        VERSION=$(kubectl get manifestsigningrequest {{.MSR_NAME}} -n {{.WORK_NAMESPACE}} -o jsonpath='{.spec.version}')
         echo "Signing MSR version $VERSION as current CLI identity (expected: Owner)"
         {{.QUBMANGO_BIN}} sign msr $VERSION --repo {{.REPO_ALIAS}}
 
@@ -164,7 +176,7 @@ tasks:
       - |
         rm -f app-manifests/mrt.yaml
       - |
-        git add .
+        git add app-manifests/mrt.yaml {{.TARGET_FILE}}
         git commit -m "Cleanup: Revert Threat 2 scenario" || true
         git push origin main
 
@@ -173,7 +185,7 @@ tasks:
     cmds:
       - |
         # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
-        kubectl delete mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
+        kubectl delete manifestrequesttemplate {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
         sleep 30
 
   5-cleanup:3-sync:
@@ -183,3 +195,34 @@ tasks:
         # Trigger a refresh and wait
         kubectl -n {{.APP_NAMESPACE}} annotate application {{.APP_NAME}} argocd.argoproj.io/refresh=normal --overwrite
         sleep 10
+
+  5-cleanup:4-governance-init:
+    desc: "Clean up the governance initialization from the cluster."
+    cmds:
+      - |
+        kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
+  
+  5-cleanup:5-restore-mrt:
+    desc: "Restore the MRT manifest locally."
+    cmds:
+      - |
+        # Restore the MRT file for the next scenario
+        cp '../0. Setup/app-manifests/mrt.yaml' ./app-manifests/
+      - |
+        # Patch the mrt manifest with the correct SSH repo URL
+        sed -i "s|SSH_REPO_URL_PLACEHOLDER|${SSH_REPO_URL}|g" app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct Slack notification channel ID
+        sed -i "s|SLACK_CHANNEL_ID_PLACEHOLDER|${SLACK_CHANNEL_ID}|g" app-manifests/mrt.yaml
+
+        # Read the PGP public key from a file (assumed to be at ./secrets/pgp-public-key.asc)
+        yq -i '.spec.pgp.publicKey = load_str("./secrets/pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct owner public pgp key
+        yq -i '.spec.governors.members[0].publicKey = load_str("./secrets/owner-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter1 public pgp key
+        yq -i '.spec.governors.members[1].publicKey = load_str("./secrets/voter1-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter2 public pgp key
+        yq -i '.spec.governors.members[2].publicKey = load_str("./secrets/voter2-pgp-public-key.asc")' app-manifests/mrt.yaml

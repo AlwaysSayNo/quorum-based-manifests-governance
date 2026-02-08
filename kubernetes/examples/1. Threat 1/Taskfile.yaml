@@ -15,13 +15,18 @@ vars:
   TARGET_FILE: "app-manifests/nginx-deploy.yaml"
   TEMP_PIN_FILE: ".initial_pin"
 
+env:
+  HTTP_REPO_URL: "" #
+  SSH_REPO_URL: "" #
+  SLACK_CHANNEL_ID: "" #
+
 tasks:
 
   0-setup:1-apply-governance-init:
     desc: "Apply the governance initialization manifest which sets up the repository and cluster for the scenario."
     cmds:
       - kubectl apply -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml
-      - kubectl wait --for=condition=established --all -n controller-system --timeout=300s || true
+      - kubectl wait --for=condition=ready pod --all -n controller-system --timeout=300s || true
 
   0-setup:2-start-governance:
     desc: "Push the MRT manifest to the remote repository and wait, trigger the ArgoCD sync and capture the initial pin."
@@ -34,7 +39,7 @@ tasks:
         sleep 10 # Wait until changes are in remote repository
       - |
         # Triggering ArgoCD sync and waiting for stabilization
-        kubectl -n argocd patch application application-my --type=merge -p '{"spec": {"source": {"targetRevision": "HEAD"}}}'
+        kubectl -n {{.APP_NAMESPACE}} patch application {{.APP_NAME}} --type=merge -p '{"operation":{"sync":{"prune":true,"syncStrategy":{"hook":{}}}}}'
         # Wait for the application to sync and stabilize
         sleep 120
 
@@ -136,6 +141,7 @@ tasks:
       - |
         # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
         kubectl delete manifestrequesttemplate {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
+        sleep 30
 
   4-cleanup:3-sync:
     desc: "Force ArgoCD to sync to the clean state."
@@ -150,3 +156,28 @@ tasks:
     cmds:
       - |
         kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
+
+  4-cleanup:5-restore-mrt:
+    desc: "Restore the MRT manifest locally."
+    cmds:
+      - |
+        # Restore the MRT file for the next scenario
+        cp '../0. Setup/app-manifests/mrt.yaml' ./app-manifests/
+      - |
+        # Patch the mrt manifest with the correct SSH repo URL
+        sed -i "s|SSH_REPO_URL_PLACEHOLDER|${SSH_REPO_URL}|g" app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct Slack notification channel ID
+        sed -i "s|SLACK_CHANNEL_ID_PLACEHOLDER|${SLACK_CHANNEL_ID}|g" app-manifests/mrt.yaml
+
+        # Read the PGP public key from a file (assumed to be at ./secrets/pgp-public-key.asc)
+        yq -i '.spec.pgp.publicKey = load_str("./secrets/pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct owner public pgp key
+        yq -i '.spec.governors.members[0].publicKey = load_str("./secrets/owner-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter1 public pgp key
+        yq -i '.spec.governors.members[1].publicKey = load_str("./secrets/voter1-pgp-public-key.asc")' app-manifests/mrt.yaml
+
+        # Patch the mrt manifest with the correct voter2 public pgp key
+        yq -i '.spec.governors.members[2].publicKey = load_str("./secrets/voter2-pgp-public-key.asc")' app-manifests/mrt.yaml

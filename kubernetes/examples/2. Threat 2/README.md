@@ -27,22 +27,28 @@ Notes:
 
 ### 0. Start governance
 
-1. Start the governance process by committing/pushing the `MRT` manifest and triggering an ArgoCD refresh.
+1. Install the governance resources to the cluster by applying the provided manifest:
 
 ```bash
-task 0-setup:1-start-governance
+task 0-setup:1-apply-governance-init
+```
+
+2. Start the governance process by committing/pushing the `MRT` manifest and triggering an ArgoCD refresh.
+
+```bash
+task 0-setup:2-start-governance
 ```
 
 2. Verify that governance resources (`MRT`, `MSR`, `MCA`) exist, and capture the initial ArgoCD `Application` pin (`targetRevision`) for later comparison.
 
 ```bash
-task 0-setup:2-verify-governance
+task 0-setup:3-verify-governance
 ```
 
 3. Print the policy tree from `app-manifests/mrt.yaml` so it’s visible while you run the scenario.
 
 ```bash
-task 0-setup:3-verify-policy
+task 0-setup:4-verify-policy
 ```
 
 ### 1. Collusive change
@@ -129,4 +135,16 @@ task 5-cleanup:2-cluster
 
 ```bash
 task 5-cleanup:3-sync
+```
+
+4. Finally, clean up the governance initialization from the cluster:
+
+```bash
+task 5-cleanup:4-governance-init
+```
+
+5. Restore the MRT file for the next scenario:
+
+```bash
+task 5-cleanup:5-restore-mrt
 ```
