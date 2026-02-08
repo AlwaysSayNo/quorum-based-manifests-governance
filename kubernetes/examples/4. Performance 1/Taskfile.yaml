@@ -1,0 +1,272 @@
+version: "3"
+
+vars:
+  GENERATOR: "./generator-bin"
+  EXECUTOR: "./executor-bin"
+  INPUT_DIR: "inputs"
+  BASELINE_CSV: "results-baseline.csv"
+  WEBHOOK_CSV: "results-webhook.csv"
+  
+  APP_NAME: "application-my"
+  APP_NAMESPACE: "argocd"
+  MRT_NAME: "mrt-my"
+  WORK_NAMESPACE: "test-ns"
+
+tasks:
+
+  0-prepare:
+    desc: "Create inputs directory for generated test files."
+    cmds:
+      - mkdir -p {{.INPUT_DIR}}
+
+  1-generate:all:
+    desc: "Generate all 25 input files (5 batch sizes × 5 runs)."
+    cmds:
+      - task: 1-generate:batch-1
+      - task: 1-generate:batch-10
+      - task: 1-generate:batch-100
+      - task: 1-generate:batch-500
+      - task: 1-generate:batch-1000
+
+  1-generate:batch-1:
+    desc: "Generate 5 input files for batch size 1."
+    cmds:
+      - "{{.GENERATOR}} --n 1 --seed 1001 --out {{.INPUT_DIR}}/input-1-1.txt"
+      - "{{.GENERATOR}} --n 1 --seed 1002 --out {{.INPUT_DIR}}/input-1-2.txt"
+      - "{{.GENERATOR}} --n 1 --seed 1003 --out {{.INPUT_DIR}}/input-1-3.txt"
+      - "{{.GENERATOR}} --n 1 --seed 1004 --out {{.INPUT_DIR}}/input-1-4.txt"
+      - "{{.GENERATOR}} --n 1 --seed 1005 --out {{.INPUT_DIR}}/input-1-5.txt"
+
+  1-generate:batch-10:
+    desc: "Generate 5 input files for batch size 10."
+    cmds:
+      - "{{.GENERATOR}} --n 10 --seed 2001 --out {{.INPUT_DIR}}/input-10-1.txt"
+      - "{{.GENERATOR}} --n 10 --seed 2002 --out {{.INPUT_DIR}}/input-10-2.txt"
+      - "{{.GENERATOR}} --n 10 --seed 2003 --out {{.INPUT_DIR}}/input-10-3.txt"
+      - "{{.GENERATOR}} --n 10 --seed 2004 --out {{.INPUT_DIR}}/input-10-4.txt"
+      - "{{.GENERATOR}} --n 10 --seed 2005 --out {{.INPUT_DIR}}/input-10-5.txt"
+
+  1-generate:batch-100:
+    desc: "Generate 5 input files for batch size 100."
+    cmds:
+      - "{{.GENERATOR}} --n 100 --seed 4001 --out {{.INPUT_DIR}}/input-100-1.txt"
+      - "{{.GENERATOR}} --n 100 --seed 4002 --out {{.INPUT_DIR}}/input-100-2.txt"
+      - "{{.GENERATOR}} --n 100 --seed 4003 --out {{.INPUT_DIR}}/input-100-3.txt"
+      - "{{.GENERATOR}} --n 100 --seed 4004 --out {{.INPUT_DIR}}/input-100-4.txt"
+      - "{{.GENERATOR}} --n 100 --seed 4005 --out {{.INPUT_DIR}}/input-100-5.txt"
+
+  1-generate:batch-500:
+    desc: "Generate 5 input files for batch size 500."
+    cmds:
+      - "{{.GENERATOR}} --n 500 --seed 5001 --out {{.INPUT_DIR}}/input-500-1.txt"
+      - "{{.GENERATOR}} --n 500 --seed 5002 --out {{.INPUT_DIR}}/input-500-2.txt"
+      - "{{.GENERATOR}} --n 500 --seed 5003 --out {{.INPUT_DIR}}/input-500-3.txt"
+      - "{{.GENERATOR}} --n 500 --seed 5004 --out {{.INPUT_DIR}}/input-500-4.txt"
+      - "{{.GENERATOR}} --n 500 --seed 5005 --out {{.INPUT_DIR}}/input-500-5.txt"
+
+  1-generate:batch-1000:
+    desc: "Generate 5 input files for batch size 1000."
+    cmds:
+      - "{{.GENERATOR}} --n 1000 --seed 6001 --out {{.INPUT_DIR}}/input-1000-1.txt"
+      - "{{.GENERATOR}} --n 1000 --seed 6002 --out {{.INPUT_DIR}}/input-1000-2.txt"
+      - "{{.GENERATOR}} --n 1000 --seed 6003 --out {{.INPUT_DIR}}/input-1000-3.txt"
+      - "{{.GENERATOR}} --n 1000 --seed 6004 --out {{.INPUT_DIR}}/input-1000-4.txt"
+      - "{{.GENERATOR}} --n 1000 --seed 6005 --out {{.INPUT_DIR}}/input-1000-5.txt"
+
+  2-baseline:all:
+    desc: "Run all baseline tests (Without Qubmango webhook)."
+    cmds:
+      - task: 2-baseline:batch-1
+      - task: 2-baseline:batch-10
+      - task: 2-baseline:batch-100
+      - task: 2-baseline:batch-500
+      - task: 2-baseline:batch-1000
+
+  2-baseline:batch-1:
+    desc: "Run baseline tests for batch size 1 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-1.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-2.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-3.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-4.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-5.txt", CSV: "{{.BASELINE_CSV}}"}
+
+  2-baseline:batch-10:
+    desc: "Run baseline tests for batch size 10 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-1.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-2.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-3.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-4.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-5.txt", CSV: "{{.BASELINE_CSV}}"}
+
+  2-baseline:batch-100:
+    desc: "Run baseline tests for batch size 100 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-1.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-2.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-3.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-4.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-5.txt", CSV: "{{.BASELINE_CSV}}"}
+
+  2-baseline:batch-500:
+    desc: "Run baseline tests for batch size 500 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-1.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-2.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-3.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-4.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-5.txt", CSV: "{{.BASELINE_CSV}}"}
+
+  2-baseline:batch-1000:
+    desc: "Run baseline tests for batch size 1000 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-1.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-2.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-3.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-4.txt", CSV: "{{.BASELINE_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-5.txt", CSV: "{{.BASELINE_CSV}}"}
+
+  3-install:1-push-mrt:
+    desc: "Push MRT manifest to remote repository and trigger ArgoCD sync."
+    cmds:
+      - |
+        git add app-manifests/mrt.yaml
+        git commit -m "Start Governance for Performance Test" || true
+        git push origin main
+        sleep 10
+      - |
+        kubectl -n {{.APP_NAMESPACE}} patch application {{.APP_NAME}} --type=merge -p '{"spec": {"source": {"targetRevision": "HEAD"}}}'
+        sleep 120
+
+  3-install:2-verify-governance:
+    desc: "Verify that governance resources are created."
+    cmds:
+      - |
+        # Verify that all governance resources are created and in expected state
+        kubectl get mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
+
+  4-webhook:all:
+    desc: "Run all webhook tests (with Qubmango webhook)."
+    cmds:
+      - task: 4-webhook:batch-1
+      - task: 4-webhook:batch-10
+      - task: 4-webhook:batch-100
+      - task: 4-webhook:batch-500
+      - task: 4-webhook:batch-1000
+
+  4-webhook:batch-1:
+    desc: "Run webhook tests for batch size 1 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-1.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-2.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-3.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-4.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1-5.txt", CSV: "{{.WEBHOOK_CSV}}"}
+
+  4-webhook:batch-10:
+    desc: "Run webhook tests for batch size 10 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-1.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-2.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-3.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-4.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-10-5.txt", CSV: "{{.WEBHOOK_CSV}}"}
+
+  4-webhook:batch-1000:
+    desc: "Run webhook tests for batch size 1000 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-1.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-2.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-3.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-4.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-1000-5.txt", CSV: "{{.WEBHOOK_CSV}}"}
+
+  4-webhook:batch-100:
+    desc: "Run webhook tests for batch size 100 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-1.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-2.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-3.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-4.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-100-5.txt", CSV: "{{.WEBHOOK_CSV}}"}
+
+  4-webhook:batch-500:
+    desc: "Run webhook tests for batch size 500 (5 runs)."
+    cmds:
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-1.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-2.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-3.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-4.txt", CSV: "{{.WEBHOOK_CSV}}"}
+      - task: _run-and-clean
+        vars: {INPUT: "{{.INPUT_DIR}}/input-500-5.txt", CSV: "{{.WEBHOOK_CSV}}"}
+
+  5-cleanup:1-remove-namespaces:
+    desc: "Remove any remaining performance test namespaces."
+    cmds:
+      - kubectl get ns -o name | grep "perf-ns" | xargs kubectl delete || true
+
+  5-cleanup:2-governance-init:
+    desc: "Clean up the governance initialization from the cluster."
+    cmds:
+      - |
+        kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
+
+  # Internal helper
+
+  _run-and-clean:
+    internal: true
+    cmds:
+      - "{{.EXECUTOR}} --input {{.INPUT}} 2>/dev/null >> {{.CSV}}"
+      - kubectl get ns -o name | grep "perf-ns" | xargs kubectl delete || true

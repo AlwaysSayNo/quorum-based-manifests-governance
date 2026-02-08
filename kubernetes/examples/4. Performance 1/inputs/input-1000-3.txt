@@ -1,0 +1,1591 @@
+### INIT ###
+kubectl create namespace perf-ns-init-1
+kubectl create namespace perf-ns-init-2
+kubectl create namespace perf-ns-init-3
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-1
+  namespace: perf-ns-init-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-1
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-1
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-2
+  namespace: perf-ns-init-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-2
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-2
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-3
+  namespace: perf-ns-init-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-3
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-3
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl create configmap perf-cm-1 -n perf-ns-init-1 --from-literal=key=value
+kubectl create configmap perf-cm-2 -n perf-ns-init-2 --from-literal=key=value
+kubectl create configmap perf-cm-3 -n perf-ns-init-3 --from-literal=key=value
+### MAIN ###
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get deployment perf-deploy-1 -n perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-3
+kubectl get namespace perf-ns-init-1
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl annotate deployment perf-deploy-3 -n perf-ns-init-3 perf-test/ts="2498165860666708280" --overwrite
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl annotate namespace perf-ns-init-3 perf-test/ts="8359544307936611328" --overwrite
+kubectl annotate namespace perf-ns-init-2 perf-test/ts="3191627607185139890" --overwrite
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-init-3
+kubectl annotate namespace perf-ns-init-1 perf-test/ts="9046528203546347415" --overwrite
+kubectl get namespace perf-ns-init-2
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-init-2
+kubectl get namespace perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl get namespace perf-ns-init-3
+kubectl create configmap perf-cm-4 -n perf-ns-init-2 --from-literal=key=value
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-4
+  namespace: perf-ns-init-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-4
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-4
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl delete deployment perf-deploy-1 -n perf-ns-init-1 --wait=false
+kubectl get namespace perf-ns-init-2
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl create configmap perf-cm-5 -n perf-ns-init-3 --from-literal=key=value
+kubectl get namespace perf-ns-init-1
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-5
+  namespace: perf-ns-init-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-5
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-5
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl annotate deployment perf-deploy-4 -n perf-ns-init-1 perf-test/ts="3096323611346201531" --overwrite
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get namespace perf-ns-init-3
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl annotate namespace perf-ns-init-2 perf-test/ts="6593992601009491226" --overwrite
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get namespace perf-ns-init-3
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl create namespace perf-ns-1
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl create namespace perf-ns-2
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get namespace perf-ns-init-2
+kubectl annotate configmap perf-cm-5 -n perf-ns-init-3 perf-test/ts="2666643004461222486" --overwrite
+kubectl get namespace perf-ns-init-2
+kubectl get namespace perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl create namespace perf-ns-3
+kubectl get namespace perf-ns-init-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get namespace perf-ns-2
+kubectl get namespace perf-ns-3
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl annotate namespace perf-ns-init-1 perf-test/ts="2471444512533007093" --overwrite
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl create configmap perf-cm-6 -n perf-ns-1 --from-literal=key=value
+kubectl get namespace perf-ns-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-2
+kubectl get namespace perf-ns-init-3
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-6
+  namespace: perf-ns-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-6
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-6
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-1
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl create namespace perf-ns-4
+kubectl create namespace perf-ns-5
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl annotate configmap perf-cm-1 -n perf-ns-init-1 perf-test/ts="8030115051557127772" --overwrite
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-init-3
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl create namespace perf-ns-6
+kubectl get deployment perf-deploy-6 -n perf-ns-1
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-2
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl create configmap perf-cm-7 -n perf-ns-4 --from-literal=key=value
+kubectl get configmap perf-cm-1 -n perf-ns-init-1
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get namespace perf-ns-2
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl create namespace perf-ns-7
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl annotate configmap perf-cm-6 -n perf-ns-1 perf-test/ts="2113231136841123132" --overwrite
+kubectl create namespace perf-ns-8
+kubectl annotate deployment perf-deploy-3 -n perf-ns-init-3 perf-test/ts="916022414480214200" --overwrite
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get namespace perf-ns-3
+kubectl create configmap perf-cm-8 -n perf-ns-7 --from-literal=key=value
+kubectl annotate deployment perf-deploy-3 -n perf-ns-init-3 perf-test/ts="7227983883055094221" --overwrite
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-init-3
+kubectl get namespace perf-ns-3
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl annotate namespace perf-ns-5 perf-test/ts="1753511897998922507" --overwrite
+kubectl get deployment perf-deploy-6 -n perf-ns-1
+kubectl get namespace perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl delete namespace perf-ns-7 --wait=false
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-1
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-6
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get namespace perf-ns-5
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-7
+  namespace: perf-ns-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-7
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-7
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-5
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-7 -n perf-ns-4
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl annotate deployment perf-deploy-4 -n perf-ns-init-1 perf-test/ts="8342287494149932766" --overwrite
+kubectl delete configmap perf-cm-1 -n perf-ns-init-1 --wait=false
+kubectl delete namespace perf-ns-4 --wait=false
+kubectl get deployment perf-deploy-6 -n perf-ns-1
+kubectl get namespace perf-ns-6
+kubectl get namespace perf-ns-init-1
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl create namespace perf-ns-9
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="4056005176429376888" --overwrite
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl delete namespace perf-ns-8 --wait=false
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-6
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get namespace perf-ns-5
+kubectl get deployment perf-deploy-7 -n perf-ns-2
+kubectl get namespace perf-ns-init-1
+kubectl delete namespace perf-ns-2 --wait=false
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="4597301422112872646" --overwrite
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get deployment perf-deploy-6 -n perf-ns-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-8
+  namespace: perf-ns-init-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-8
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-8
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-3
+kubectl create configmap perf-cm-9 -n perf-ns-3 --from-literal=key=value
+kubectl get namespace perf-ns-5
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl annotate deployment perf-deploy-5 -n perf-ns-init-2 perf-test/ts="6381114355726775082" --overwrite
+kubectl get configmap perf-cm-9 -n perf-ns-3
+kubectl annotate namespace perf-ns-6 perf-test/ts="1338630238265193988" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-9
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get namespace perf-ns-5
+kubectl get namespace perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-9
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get deployment perf-deploy-4 -n perf-ns-init-1
+kubectl get configmap perf-cm-9 -n perf-ns-3
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-9
+  namespace: perf-ns-6
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-9
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-9
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl annotate configmap perf-cm-9 -n perf-ns-3 perf-test/ts="2473893761441521689" --overwrite
+kubectl get namespace perf-ns-9
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl annotate namespace perf-ns-init-2 perf-test/ts="4603441343863417891" --overwrite
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-init-3
+kubectl get namespace perf-ns-9
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl create namespace perf-ns-10
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-9 -n perf-ns-3
+kubectl get deployment perf-deploy-9 -n perf-ns-6
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-9
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl delete configmap perf-cm-9 -n perf-ns-3 --wait=false
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-10
+  namespace: perf-ns-init-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-10
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-10
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get namespace perf-ns-6
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl create namespace perf-ns-11
+kubectl get configmap non-existing-resource-xyz -n perf-ns-1
+kubectl get namespace perf-ns-1
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get namespace perf-ns-10
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-11
+  namespace: perf-ns-init-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-11
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-11
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get deployment perf-deploy-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-10
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl create configmap perf-cm-10 -n perf-ns-9 --from-literal=key=value
+kubectl get namespace perf-ns-6
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-6
+kubectl get namespace perf-ns-6
+kubectl annotate namespace perf-ns-10 perf-test/ts="6296086428620194451" --overwrite
+kubectl annotate namespace perf-ns-1 perf-test/ts="986014773045322426" --overwrite
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get namespace perf-ns-1
+kubectl annotate configmap perf-cm-2 -n perf-ns-init-2 perf-test/ts="3539520711786994353" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl delete deployment perf-deploy-4 -n perf-ns-init-1 --wait=false
+kubectl get namespace perf-ns-init-3
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl delete deployment perf-deploy-2 -n perf-ns-init-2 --wait=false
+kubectl get configmap non-existing-resource-xyz -n perf-ns-5
+kubectl delete namespace perf-ns-9 --wait=false
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-6
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get namespace perf-ns-init-1
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl annotate namespace perf-ns-11 perf-test/ts="2765969476807523719" --overwrite
+kubectl annotate configmap perf-cm-5 -n perf-ns-init-3 perf-test/ts="7367170557579196617" --overwrite
+kubectl get deployment perf-deploy-3 -n perf-ns-init-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-1
+kubectl create namespace perf-ns-12
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl get namespace perf-ns-12
+kubectl get namespace perf-ns-1
+kubectl get namespace perf-ns-3
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="4518366845577857740" --overwrite
+kubectl get deployment perf-deploy-5 -n perf-ns-init-2
+kubectl get namespace perf-ns-10
+kubectl delete deployment perf-deploy-5 -n perf-ns-init-2 --wait=false
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-12
+  namespace: perf-ns-11
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-12
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-12
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl annotate namespace perf-ns-3 perf-test/ts="6262738233559299" --overwrite
+kubectl get namespace perf-ns-init-3
+kubectl get configmap perf-cm-6 -n perf-ns-1
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl create configmap perf-cm-11 -n perf-ns-12 --from-literal=key=value
+kubectl get namespace perf-ns-11
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl delete deployment perf-deploy-3 -n perf-ns-init-3 --wait=false
+kubectl delete namespace perf-ns-12 --wait=false
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-10
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-5
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-13
+  namespace: perf-ns-5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-13
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-13
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-1
+kubectl get namespace perf-ns-5
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-3
+kubectl annotate namespace perf-ns-11 perf-test/ts="4661280071462242453" --overwrite
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl annotate namespace perf-ns-10 perf-test/ts="8145283052370406813" --overwrite
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get deployment perf-deploy-6 -n perf-ns-1
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get namespace perf-ns-11
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl create namespace perf-ns-13
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl create namespace perf-ns-14
+kubectl get namespace perf-ns-14
+kubectl get namespace perf-ns-init-1
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-5 -n perf-ns-init-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get namespace perf-ns-13
+kubectl get namespace perf-ns-3
+kubectl delete namespace perf-ns-1 --wait=false
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl delete namespace perf-ns-13 --wait=false
+kubectl annotate deployment perf-deploy-11 -n perf-ns-init-2 perf-test/ts="6732336389889351993" --overwrite
+kubectl create namespace perf-ns-15
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl get configmap perf-cm-3 -n perf-ns-init-3
+kubectl create configmap perf-cm-12 -n perf-ns-3 --from-literal=key=value
+kubectl get deployment perf-deploy-9 -n perf-ns-6
+kubectl get namespace perf-ns-14
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl annotate deployment perf-deploy-10 -n perf-ns-init-1 perf-test/ts="8085427225108722735" --overwrite
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="6089362357305273288" --overwrite
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-8 -n perf-ns-init-3
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl delete namespace perf-ns-init-3 --wait=false
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-15
+kubectl get namespace perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get namespace perf-ns-init-2
+kubectl get namespace perf-ns-14
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get namespace perf-ns-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get deployment perf-deploy-9 -n perf-ns-6
+kubectl create namespace perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-15
+kubectl get namespace perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl create configmap perf-cm-13 -n perf-ns-14 --from-literal=key=value
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get namespace perf-ns-6
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-13 -n perf-ns-14
+kubectl get deployment perf-deploy-9 -n perf-ns-6
+kubectl create configmap perf-cm-14 -n perf-ns-init-1 --from-literal=key=value
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get deployment perf-deploy-9 -n perf-ns-6
+kubectl get namespace perf-ns-10
+kubectl delete namespace perf-ns-6 --wait=false
+kubectl create configmap perf-cm-15 -n perf-ns-init-2 --from-literal=key=value
+kubectl get namespace perf-ns-15
+kubectl annotate deployment perf-deploy-11 -n perf-ns-init-2 perf-test/ts="2276457139009770463" --overwrite
+kubectl get namespace perf-ns-15
+kubectl get namespace perf-ns-16
+kubectl create configmap perf-cm-16 -n perf-ns-16 --from-literal=key=value
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl annotate configmap perf-cm-12 -n perf-ns-3 perf-test/ts="8887421751080906267" --overwrite
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-13 -n perf-ns-14
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-15
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-15
+kubectl annotate configmap perf-cm-12 -n perf-ns-3 perf-test/ts="1622902487709596971" --overwrite
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get namespace perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-5
+kubectl get namespace perf-ns-init-2
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-5
+kubectl get namespace perf-ns-14
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-14
+  namespace: perf-ns-5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-14
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-14
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-14
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-15 -n perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-15
+  namespace: perf-ns-init-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-15
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-15
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-15
+kubectl get namespace perf-ns-14
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl annotate deployment perf-deploy-12 -n perf-ns-11 perf-test/ts="7164383951464099946" --overwrite
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-15 -n perf-ns-init-2
+kubectl delete configmap perf-cm-13 -n perf-ns-14 --wait=false
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-15 -n perf-ns-init-2
+kubectl annotate deployment perf-deploy-10 -n perf-ns-init-1 perf-test/ts="7092596296963064549" --overwrite
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-15
+kubectl delete namespace perf-ns-15 --wait=false
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get deployment perf-deploy-14 -n perf-ns-5
+kubectl create configmap perf-cm-17 -n perf-ns-16 --from-literal=key=value
+kubectl get deployment perf-deploy-13 -n perf-ns-5
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl delete configmap perf-cm-17 -n perf-ns-16 --wait=false
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl delete configmap perf-cm-15 -n perf-ns-init-2 --wait=false
+kubectl get namespace perf-ns-10
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-init-1
+kubectl annotate deployment perf-deploy-15 -n perf-ns-init-2 perf-test/ts="9119986021469404807" --overwrite
+kubectl get namespace perf-ns-14
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="7042288273403175474" --overwrite
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get namespace perf-ns-14
+kubectl get deployment perf-deploy-14 -n perf-ns-5
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-5
+kubectl create configmap perf-cm-18 -n perf-ns-16 --from-literal=key=value
+kubectl delete namespace perf-ns-5 --wait=false
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get namespace perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="3263730515794833231" --overwrite
+kubectl get namespace perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl annotate configmap perf-cm-16 -n perf-ns-16 perf-test/ts="5255189189791152296" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl create namespace perf-ns-17
+kubectl get namespace perf-ns-10
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get namespace perf-ns-3
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-16
+  namespace: perf-ns-init-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-16
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-16
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-11
+kubectl create namespace perf-ns-18
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl annotate namespace perf-ns-18 perf-test/ts="495250405897269412" --overwrite
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-init-2
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="154898064977996433" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl annotate configmap perf-cm-2 -n perf-ns-init-2 perf-test/ts="888479698742092344" --overwrite
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get deployment perf-deploy-16 -n perf-ns-init-2
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get namespace perf-ns-10
+kubectl get deployment perf-deploy-16 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get namespace perf-ns-14
+kubectl annotate namespace perf-ns-init-2 perf-test/ts="2658904183474810515" --overwrite
+kubectl get deployment perf-deploy-16 -n perf-ns-init-2
+kubectl annotate namespace perf-ns-3 perf-test/ts="3379074926819582725" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-17
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-17
+  namespace: perf-ns-17
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-17
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-17
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl annotate deployment perf-deploy-16 -n perf-ns-init-2 perf-test/ts="1644303684119700063" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get namespace perf-ns-init-2
+kubectl get namespace perf-ns-3
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="1822898742565302307" --overwrite
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get namespace perf-ns-18
+kubectl get namespace perf-ns-3
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl annotate namespace perf-ns-16 perf-test/ts="2225933463871200307" --overwrite
+kubectl get namespace perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get namespace perf-ns-18
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl create configmap perf-cm-19 -n perf-ns-3 --from-literal=key=value
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-18
+kubectl get namespace perf-ns-14
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl create configmap perf-cm-20 -n perf-ns-18 --from-literal=key=value
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl annotate configmap perf-cm-4 -n perf-ns-init-2 perf-test/ts="5422216863713781533" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl create namespace perf-ns-19
+kubectl create configmap perf-cm-21 -n perf-ns-init-2 --from-literal=key=value
+kubectl get namespace perf-ns-3
+kubectl get namespace perf-ns-14
+kubectl create configmap perf-cm-22 -n perf-ns-16 --from-literal=key=value
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl annotate configmap perf-cm-22 -n perf-ns-16 perf-test/ts="5641217161911858501" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-18
+  namespace: perf-ns-18
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-18
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-18
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl annotate deployment perf-deploy-12 -n perf-ns-11 perf-test/ts="2279064683162780972" --overwrite
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl create configmap perf-cm-23 -n perf-ns-14 --from-literal=key=value
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-19
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get namespace perf-ns-19
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-19
+  namespace: perf-ns-init-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-19
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-19
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-14
+kubectl get namespace perf-ns-16
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl annotate deployment perf-deploy-19 -n perf-ns-init-1 perf-test/ts="8239900943957868495" --overwrite
+kubectl create namespace perf-ns-20
+kubectl get namespace perf-ns-init-1
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl get namespace perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-3
+kubectl create namespace perf-ns-21
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl get namespace perf-ns-init-1
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-20
+  namespace: perf-ns-10
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-20
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-20
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl annotate deployment perf-deploy-15 -n perf-ns-init-2 perf-test/ts="962146215300103427" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get namespace perf-ns-19
+kubectl annotate namespace perf-ns-11 perf-test/ts="1907595498492624491" --overwrite
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-21
+  namespace: perf-ns-21
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-21
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-21
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get namespace perf-ns-20
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get namespace perf-ns-17
+kubectl get namespace perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-18
+kubectl get deployment perf-deploy-20 -n perf-ns-10
+kubectl get deployment perf-deploy-11 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get namespace perf-ns-17
+kubectl get configmap non-existing-resource-xyz -n perf-ns-21
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-20
+kubectl get namespace perf-ns-20
+kubectl create namespace perf-ns-22
+kubectl get configmap perf-cm-18 -n perf-ns-16
+kubectl annotate namespace perf-ns-17 perf-test/ts="6267522503299300145" --overwrite
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-18
+kubectl get configmap non-existing-resource-xyz -n perf-ns-18
+kubectl get configmap perf-cm-21 -n perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-22
+kubectl get configmap perf-cm-21 -n perf-ns-init-2
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get deployment perf-deploy-19 -n perf-ns-init-1
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get namespace perf-ns-22
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-22
+kubectl get namespace perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-3
+kubectl get deployment perf-deploy-10 -n perf-ns-init-1
+kubectl get namespace perf-ns-17
+kubectl get namespace perf-ns-17
+kubectl get namespace perf-ns-22
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get deployment perf-deploy-16 -n perf-ns-init-2
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl delete configmap perf-cm-18 -n perf-ns-16 --wait=false
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl get namespace perf-ns-20
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-18
+kubectl get namespace perf-ns-init-1
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-22
+  namespace: perf-ns-19
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-22
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-22
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-22 -n perf-ns-19
+kubectl get namespace perf-ns-14
+kubectl get configmap non-existing-resource-xyz -n perf-ns-14
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-23
+  namespace: perf-ns-14
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-23
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-23
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-init-2
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-24
+  namespace: perf-ns-18
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-24
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-24
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl annotate namespace perf-ns-10 perf-test/ts="5127415909997182390" --overwrite
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-11
+kubectl get configmap non-existing-resource-xyz -n perf-ns-17
+kubectl create configmap perf-cm-24 -n perf-ns-init-1 --from-literal=key=value
+kubectl delete deployment perf-deploy-10 -n perf-ns-init-1 --wait=false
+kubectl get namespace perf-ns-init-2
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get namespace perf-ns-init-2
+kubectl annotate namespace perf-ns-17 perf-test/ts="773921709595982394" --overwrite
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl get configmap non-existing-resource-xyz -n perf-ns-11
+kubectl get configmap perf-cm-21 -n perf-ns-init-2
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap perf-cm-21 -n perf-ns-init-2
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get configmap perf-cm-23 -n perf-ns-14
+kubectl get configmap non-existing-resource-xyz -n perf-ns-10
+kubectl delete namespace perf-ns-10 --wait=false
+kubectl annotate namespace perf-ns-16 perf-test/ts="2058312058081651478" --overwrite
+kubectl create configmap perf-cm-25 -n perf-ns-11 --from-literal=key=value
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-2
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl annotate configmap perf-cm-2 -n perf-ns-init-2 perf-test/ts="8231306085755519024" --overwrite
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get deployment perf-deploy-15 -n perf-ns-init-2
+kubectl annotate deployment perf-deploy-17 -n perf-ns-17 perf-test/ts="649154524282184218" --overwrite
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get configmap perf-cm-24 -n perf-ns-init-1
+kubectl get namespace perf-ns-21
+kubectl get namespace perf-ns-init-2
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get configmap non-existing-resource-xyz -n perf-ns-17
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get namespace perf-ns-20
+kubectl get namespace perf-ns-init-1
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get namespace perf-ns-16
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-17
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-25
+  namespace: perf-ns-16
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-25
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-25
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-11
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl get namespace perf-ns-init-2
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl annotate namespace perf-ns-17 perf-test/ts="3179560925089038784" --overwrite
+kubectl annotate deployment perf-deploy-25 -n perf-ns-16 perf-test/ts="3288733892657640595" --overwrite
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get namespace perf-ns-14
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl get configmap perf-cm-2 -n perf-ns-init-2
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-26
+  namespace: perf-ns-21
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-26
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-26
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get configmap perf-cm-4 -n perf-ns-init-2
+kubectl get configmap perf-cm-23 -n perf-ns-14
+kubectl annotate configmap perf-cm-24 -n perf-ns-init-1 perf-test/ts="3564112322831862665" --overwrite
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl create configmap perf-cm-26 -n perf-ns-init-1 --from-literal=key=value
+kubectl get namespace perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-17
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl delete namespace perf-ns-14 --wait=false
+kubectl delete namespace perf-ns-init-2 --wait=false
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get namespace perf-ns-21
+kubectl get deployment perf-deploy-19 -n perf-ns-init-1
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get namespace perf-ns-3
+kubectl get configmap perf-cm-26 -n perf-ns-init-1
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-19
+kubectl annotate namespace perf-ns-22 perf-test/ts="6233904875717412781" --overwrite
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get namespace perf-ns-16
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-19
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl create configmap perf-cm-27 -n perf-ns-20 --from-literal=key=value
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-24 -n perf-ns-init-1
+kubectl get namespace perf-ns-20
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl annotate deployment perf-deploy-17 -n perf-ns-17 perf-test/ts="3147716523586607122" --overwrite
+kubectl get deployment perf-deploy-19 -n perf-ns-init-1
+kubectl annotate configmap perf-cm-12 -n perf-ns-3 perf-test/ts="8284993852248524446" --overwrite
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-27
+  namespace: perf-ns-18
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-27
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-27
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-28
+  namespace: perf-ns-22
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-28
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-28
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-17
+kubectl annotate namespace perf-ns-17 perf-test/ts="4259781785032849685" --overwrite
+kubectl get namespace perf-ns-16
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get namespace perf-ns-init-1
+kubectl get deployment perf-deploy-19 -n perf-ns-init-1
+kubectl get namespace perf-ns-21
+kubectl get namespace perf-ns-19
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-21
+kubectl create configmap perf-cm-28 -n perf-ns-init-1 --from-literal=key=value
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-init-1
+kubectl get namespace perf-ns-21
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get configmap perf-cm-25 -n perf-ns-11
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get deployment perf-deploy-22 -n perf-ns-19
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl create namespace perf-ns-23
+kubectl get configmap perf-cm-16 -n perf-ns-16
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get configmap perf-cm-25 -n perf-ns-11
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-3
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get namespace perf-ns-16
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perf-deploy-29
+  namespace: perf-ns-18
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: perf-deploy-29
+  template:
+    metadata:
+      labels:
+        app: perf-deploy-29
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["sleep", "7200"]
+EOF
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl annotate configmap perf-cm-20 -n perf-ns-18 perf-test/ts="5553848080115452834" --overwrite
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl get configmap perf-cm-24 -n perf-ns-init-1
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get deployment perf-deploy-17 -n perf-ns-17
+kubectl get configmap non-existing-resource-xyz -n perf-ns-init-1
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl get configmap non-existing-resource-xyz -n perf-ns-23
+kubectl get configmap non-existing-resource-xyz -n perf-ns-19
+kubectl get namespace perf-ns-21
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl create namespace perf-ns-24
+kubectl get namespace perf-ns-22
+kubectl get configmap non-existing-resource-xyz -n perf-ns-22
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-24 -n perf-ns-init-1
+kubectl create namespace perf-ns-25
+kubectl get configmap non-existing-resource-xyz -n perf-ns-24
+kubectl delete deployment perf-deploy-19 -n perf-ns-init-1 --wait=false
+kubectl delete configmap perf-cm-24 -n perf-ns-init-1 --wait=false
+kubectl get namespace perf-ns-21
+kubectl create namespace perf-ns-26
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get namespace perf-ns-21
+kubectl get deployment perf-deploy-29 -n perf-ns-18
+kubectl get namespace perf-ns-3
+kubectl annotate namespace perf-ns-21 perf-test/ts="6511728555398982843" --overwrite
+kubectl get namespace perf-ns-11
+kubectl annotate namespace perf-ns-24 perf-test/ts="2110552058789740249" --overwrite
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl annotate deployment perf-deploy-22 -n perf-ns-19 perf-test/ts="5599322233144503533" --overwrite
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get namespace perf-ns-25
+kubectl get namespace perf-ns-22
+kubectl get namespace perf-ns-17
+kubectl get deployment perf-deploy-27 -n perf-ns-18
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-25
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get namespace perf-ns-17
+kubectl annotate deployment perf-deploy-29 -n perf-ns-18 perf-test/ts="8314899641823683284" --overwrite
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get deployment perf-deploy-25 -n perf-ns-16
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get namespace perf-ns-23
+kubectl get configmap non-existing-resource-xyz -n perf-ns-20
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get deployment perf-deploy-25 -n perf-ns-16
+kubectl get namespace perf-ns-3
+kubectl get namespace perf-ns-20
+kubectl get namespace perf-ns-11
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get namespace perf-ns-17
+kubectl get namespace perf-ns-3
+kubectl get namespace perf-ns-26
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl annotate namespace perf-ns-22 perf-test/ts="8694406234813010531" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-3
+kubectl delete deployment perf-deploy-22 -n perf-ns-19 --wait=false
+kubectl annotate deployment perf-deploy-24 -n perf-ns-18 perf-test/ts="2572204027194767719" --overwrite
+kubectl delete namespace perf-ns-17 --wait=false
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get namespace perf-ns-18
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get deployment perf-deploy-29 -n perf-ns-18
+kubectl get namespace perf-ns-24
+kubectl get configmap perf-cm-20 -n perf-ns-18
+kubectl get configmap perf-cm-28 -n perf-ns-init-1
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get namespace perf-ns-25
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-12 -n perf-ns-3
+kubectl create namespace perf-ns-27
+kubectl get namespace perf-ns-27
+kubectl get configmap non-existing-resource-xyz -n perf-ns-18
+kubectl get configmap non-existing-resource-xyz -n perf-ns-23
+kubectl get namespace perf-ns-24
+kubectl get configmap perf-cm-26 -n perf-ns-init-1
+kubectl get namespace perf-ns-27
+kubectl get namespace perf-ns-16
+kubectl get namespace perf-ns-25
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get configmap perf-cm-22 -n perf-ns-16
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get configmap non-existing-resource-xyz -n perf-ns-25
+kubectl get deployment perf-deploy-25 -n perf-ns-16
+kubectl get deployment perf-deploy-21 -n perf-ns-21
+kubectl get namespace perf-ns-16
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get configmap perf-cm-14 -n perf-ns-init-1
+kubectl get deployment perf-deploy-29 -n perf-ns-18
+kubectl get namespace perf-ns-22
+kubectl get namespace perf-ns-27
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl annotate configmap perf-cm-27 -n perf-ns-20 perf-test/ts="5782220903825744766" --overwrite
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get configmap perf-cm-28 -n perf-ns-init-1
+kubectl get deployment perf-deploy-18 -n perf-ns-18
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get configmap perf-cm-27 -n perf-ns-20
+kubectl delete configmap perf-cm-27 -n perf-ns-20 --wait=false
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get configmap perf-cm-25 -n perf-ns-11
+kubectl get configmap perf-cm-26 -n perf-ns-init-1
+kubectl get deployment perf-deploy-25 -n perf-ns-16
+kubectl get namespace perf-ns-22
+kubectl annotate configmap perf-cm-28 -n perf-ns-init-1 perf-test/ts="4548583565915978261" --overwrite
+kubectl get configmap non-existing-resource-xyz -n perf-ns-16
+kubectl delete configmap perf-cm-25 -n perf-ns-11 --wait=false
+kubectl get configmap perf-cm-26 -n perf-ns-init-1
+kubectl get namespace perf-ns-25
+kubectl get namespace perf-ns-26
+kubectl get deployment perf-deploy-28 -n perf-ns-22
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get namespace perf-ns-25
+kubectl get deployment perf-deploy-12 -n perf-ns-11
+kubectl annotate namespace perf-ns-init-1 perf-test/ts="4870025815859275936" --overwrite
+kubectl get deployment perf-deploy-26 -n perf-ns-21
+kubectl get configmap perf-cm-19 -n perf-ns-3
+kubectl get namespace perf-ns-27
+kubectl get configmap non-existing-resource-xyz -n perf-ns-27
+kubectl get namespace perf-ns-11
+kubectl get namespace perf-ns-23
+kubectl get deployment perf-deploy-24 -n perf-ns-18
+kubectl get namespace perf-ns-26
+kubectl annotate namespace perf-ns-21 perf-test/ts="7763647753473131481" --overwrite
+kubectl get deployment perf-deploy-21 -n perf-ns-21
