@@ -849,6 +849,9 @@ func (r *ManifestChangeApprovalReconciler) repository(
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) repomanager.GitRepository {
 	mrt, _ := r.getExistingMRTForMCA(ctx, mca)
-	repo, _ := r.RepoManager.GetProviderForMRT(ctx, mrt)
+	
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	repo, _ := r.RepoManager.GetProviderForMRT(gitCtx, mrt)
 	return repo
 }

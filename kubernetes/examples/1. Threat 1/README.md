@@ -17,16 +17,22 @@ A malicious actor (Owner) manually modifies the `nginx-deployment.yaml` changing
 
 ### 0. Start governance
 
-1. Run the following command to start the governance process by pushing the initial manifest to the remote repository and triggering the Argo CD sync:
+1. Install the governance resources to the cluster by applying the provided manifest:
 
 ```bash
-task 0-setup:1-start-governance
+task 0-setup:1-apply-governance-init
 ```
 
-2. Verify that the governance resources (MRT, MSR, MCA) are created in the cluster and the **ArgoCD** `Application` is pinned to the initial Commit SHA:
+2. Run the following command to start the governance process by pushing the initial manifest to the remote repository and triggering the Argo CD sync:
 
 ```bash
-task 0-setup:2-verify-governance
+task 0-setup:2-start-governance
+```
+
+3. Verify that the governance resources (MRT, MSR, MCA) are created in the cluster and the **ArgoCD** `Application` is pinned to the initial Commit SHA:
+
+```bash
+task 0-setup:3-verify-governance
 ```
 
 ### 1. Malicious changes
@@ -85,4 +91,10 @@ task 4-cleanup:2-cluster
 
 ```bash
 task 4-cleanup:3-sync
+```
+
+4. Finally, clean up the governance initialization from the cluster:
+
+```bash
+task 4-cleanup:4-governance-init
 ```

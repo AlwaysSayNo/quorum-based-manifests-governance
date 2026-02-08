@@ -199,7 +199,7 @@ func (r *ManifestRequestTemplateReconciler) withLock(
 	nextState, err := handler(ctx, mrt)
 	if err != nil {
 		r.logger.Error(err, "Handler failed, releasing lock with failure", "state", state)
-		_ = r.releaseLockWithFailure(ctx, mrt, state, err)
+		err = r.releaseLockWithFailure(ctx, mrt, state, err)
 		return ctrl.Result{}, err
 	}
 
@@ -227,7 +227,7 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 	nextRevisionState, err := handler(ctx, mrt, revision)
 	if err != nil {
 		r.logger.Error(err, "Revision handler failed, releasing lock", "parentState", parentState, "currentRevisionState", mrt.Status.RevisionProcessingState)
-		_ = r.releaseLockWithFailure(ctx, mrt, parentState, err)
+		err = r.releaseLockWithFailure(ctx, mrt, parentState, err)
 		return ctrl.Result{}, err
 	}
 
@@ -236,7 +236,7 @@ func (r *ManifestRequestTemplateReconciler) withRevisionLock(
 	mrt.Status.RevisionProcessingState = nextRevisionState
 	if err := r.Status().Update(ctx, mrt); err != nil {
 		r.logger.Error(err, "Failed to update RevisionProcessingState", "newState", nextRevisionState)
-		_ = r.releaseLockWithFailure(ctx, mrt, parentState, fmt.Errorf("update RevisionProcessingState: %w", err))
+		err = r.releaseLockWithFailure(ctx, mrt, parentState, fmt.Errorf("update RevisionProcessingState: %w", err))
 		return ctrl.Result{}, err
 	}
 
@@ -1540,6 +1540,8 @@ func (r *ManifestRequestTemplateReconciler) repositoryWithError(ctx context.Cont
 }
 
 func (r *ManifestRequestTemplateReconciler) repository(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) repomanager.GitRepository {
-	repo, _ := r.RepoManager.GetProviderForMRT(ctx, mrt)
+	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	repo, _ := r.RepoManager.GetProviderForMRT(gitCtx, mrt)
 	return repo
 }

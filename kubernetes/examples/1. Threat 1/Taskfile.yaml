@@ -16,7 +16,14 @@ vars:
   TEMP_PIN_FILE: ".initial_pin"
 
 tasks:
-  0-setup:1-start-governance:
+
+  0-setup:1-apply-governance-init:
+    desc: "Apply the governance initialization manifest which sets up the repository and cluster for the scenario."
+    cmds:
+      - kubectl apply -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml
+      - kubectl wait --for=condition=established --all -n controller-system --timeout=300s || true
+
+  0-setup:2-start-governance:
     desc: "Push the MRT manifest to the remote repository and wait, trigger the ArgoCD sync and capture the initial pin."
     cmds:
       - |
@@ -31,14 +38,14 @@ tasks:
         # Wait for the application to sync and stabilize
         sleep 120
 
-  0-setup:2-verify-governance:
+  0-setup:3-verify-governance:
     desc: "Verify that governance resources are created and capture the initial ArgoCD pin."
     cmds:
       - |
         # Verify that all governance resources are created and in expected state
-        kubectl get mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
-        kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
-        kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestrequesttemplate {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestsigningrequest {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestchangeapproval {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
       - |
         #Capturing initial ArgoCD pin for later comparison
         kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}' > {{.TEMP_PIN_FILE}}
@@ -119,7 +126,7 @@ tasks:
 
       - |
         # Pushing cleanup commit
-        git add .
+        git add app-manifests/mrt.yaml {{.TARGET_FILE}}
         git commit -m "Cleanup: Revert Threat 1 scenario" || true
         git push origin main
 
@@ -128,7 +135,7 @@ tasks:
     cmds:
       - |
         # Deleting the MRT should trigger the controller to clean up associated MSR/MCA.
-        kubectl delete mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
+        kubectl delete manifestrequesttemplate {{.MRT_NAME}} -n {{.WORK_NAMESPACE}} --ignore-not-found --wait=true
 
   4-cleanup:3-sync:
     desc: "Force ArgoCD to sync to the clean state."
@@ -137,3 +144,9 @@ tasks:
         # Trigger a refresh and wait
         kubectl -n {{.APP_NAMESPACE}} annotate application {{.APP_NAME}} argocd.argoproj.io/refresh=normal --overwrite
         sleep 10
+
+  4-cleanup:4-governance-init:
+    desc: "Clean up the governance initialization from the cluster."
+    cmds:
+      - |
+        kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
