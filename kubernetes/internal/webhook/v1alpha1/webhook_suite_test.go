@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -38,13 +39,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	admissionwh "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
-
-// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
 	ctx       context.Context
@@ -67,6 +66,8 @@ var _ = BeforeSuite(func() {
 
 	var err error
 	err = governancev1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = argoappv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
@@ -109,17 +110,30 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	// TODO: fix later
-	// err = SetupManifestChangeApprovalWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupManifestSigningRequestWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupManifestChangeApprovalWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	// +kubebuilder:scaffold:webhook
+	hookServer := mgr.GetWebhookServer()
+	hookServer.Register("/mca/validate/argocd-requests", &admissionwh.Webhook{
+		Handler: NewArgoCDChangeAdmissionValidator(mgr.GetClient(), admissionwh.NewDecoder(mgr.GetScheme())),
+	})
+	hookServer.Register("/mrt/mutate", admissionwh.WithCustomDefaulter(
+		mgr.GetScheme(),
+		&governancev1alpha1.ManifestRequestTemplate{},
+		&ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
+	))
+	hookServer.Register("/mrt/validate", admissionwh.WithCustomValidator(
+		mgr.GetScheme(),
+		&governancev1alpha1.ManifestRequestTemplate{},
+		&ManifestRequestTemplateWebhook{Client: mgr.GetClient()},
+	))
+	hookServer.Register("/msr/validate", admissionwh.WithCustomValidator(
+		mgr.GetScheme(),
+		&governancev1alpha1.ManifestSigningRequest{},
+		&ManifestSigningRequestCustomValidator{Client: mgr.GetClient()},
+	))
+	hookServer.Register("/mca/validate", admissionwh.WithCustomValidator(
+		mgr.GetScheme(),
+		&governancev1alpha1.ManifestChangeApproval{},
+		&ManifestChangeApprovalCustomValidator{Client: mgr.GetClient()},
+	))
 
 	go func() {
 		defer GinkgoRecover()

@@ -13,8 +13,7 @@ tasks:
   1-minikube:1-start:
     desc: "Start Minikube cluster"
     cmds:
-      - minikube start --driver=docker --memory=3900 --cpus=2 # Adjust resources as needed
-      # - minikube start --force # Force start to bypass any potential issues with existing cluster state
+      - minikube start --driver=docker --memory=8g --cpus=4 # Adjust resources as needed
       - minikube status
 
   1-minikube:2-docker-env:

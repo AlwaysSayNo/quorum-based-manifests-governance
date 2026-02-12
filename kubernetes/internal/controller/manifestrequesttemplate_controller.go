@@ -160,13 +160,15 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	// Handle deletion
 	if !mrt.ObjectMeta.DeletionTimestamp.IsZero() {
 		r.logger.Info("MRT is marked for deletion", "actionState", mrt.Status.ActionState)
-		return r.reconcileDelete(ctx, mrt)
+		result, err := r.reconcileDelete(ctx, mrt)
+		return r.handleResult(result, err)
 	}
 
 	// Handle initialization (before finalizer is set)
 	if !controllerutil.ContainsFinalizer(mrt, GovernanceFinalizer) {
 		r.logger.Info("MRT not initialized, starting initialization flow", "actionState", mrt.Status.ActionState)
-		return r.reconcileCreate(ctx, mrt)
+		result, err := r.reconcileCreate(ctx, mrt)
+		return r.handleResult(result, err)
 	}
 
 	// Handle normal reconciliation (after initialization)
@@ -307,19 +309,21 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveGovernanceFol
 ) (ctrl.Result, error) {
 	r.logger.Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
-	// Get repository provider
-	repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("get repository provider: %w", err)
-	}
-
 	// Construct the governance folder path to delete
 	governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
 
 	r.logger.Info("Deleting governance folder from repository", "path", governancePath, "mrt", mrt.Name)
 
 	// Delete the governance folder and push the deletion to the remote repository
-	if err := r.deleteGovernanceFolderFromRepository(ctx, repository, governancePath); err != nil {
+	_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repository repomanager.GitRepository) (struct{}, error) {
+			return struct{}{}, r.deleteGovernanceFolderFromRepository(repoCtx, repository, governancePath)
+		},
+	)
+	if err != nil {
 		r.logger.Error(err, "Failed to delete governance folder from repository", "path", governancePath)
 		return ctrl.Result{}, fmt.Errorf("delete governance folder from repository: %w", err)
 	}
@@ -448,22 +452,26 @@ func (r *ManifestRequestTemplateReconciler) handleStateCheckGovernancePathEmpty(
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
 			r.logger.Info("Checking governance path is empty", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
-			// Get the latest revision from the repository
-			repository, err := r.RepoManager.GetProviderForMRT(ctx, mrt)
-			if err != nil {
-				return "", fmt.Errorf("get repository provider: %w", err)
-			}
-
-			latestRevision, err := repository.GetLatestRevision(ctx)
-			if err != nil {
-				return "", fmt.Errorf("get latest revision from repository: %w", err)
-			}
-
 			// Get all files at the latest revision using the governance path
 			governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
-			changedFiles, _, err := repository.GetChangedFiles(ctx, "", latestRevision, governancePath)
+			changedFiles, err := withGitRepository(ctx, defaultGitOperationTimeout,
+				func(repoCtx context.Context) (repomanager.GitRepository, error) {
+					return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+				},
+				func(repoCtx context.Context, repository repomanager.GitRepository) ([]governancev1alpha1.FileChange, error) {
+					latestRevision, err := repository.GetLatestRevision(repoCtx)
+					if err != nil {
+						return nil, fmt.Errorf("get latest revision from repository: %w", err)
+					}
+					changedFiles, _, err := repository.GetChangedFiles(repoCtx, "", latestRevision, governancePath)
+					if err != nil {
+						return nil, fmt.Errorf("get files from governance path: %w", err)
+					}
+					return changedFiles, nil
+				},
+			)
 			if err != nil {
-				return "", fmt.Errorf("get files from governance path: %w", err)
+				return "", err
 			}
 
 			// Check if any files exist in the governance path
@@ -515,7 +523,18 @@ func (r *ManifestRequestTemplateReconciler) createLinkedDefaultResources(
 	}
 
 	// Fetch all changed files in the repository, that where created before.
-	fileChanges, _, err := r.repository(ctx, mrt).GetChangedFiles(ctx, "", revision, application.Spec.Source.Path)
+	fileChanges, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) ([]governancev1alpha1.FileChange, error) {
+			fileChanges, _, err := repo.GetChangedFiles(repoCtx, "", revision, application.Spec.Source.Path)
+			if err != nil {
+				return nil, err
+			}
+			return fileChanges, nil
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("fetch changes between init commit and %s: %w", revision, err)
 	}
@@ -727,9 +746,15 @@ func (r *ManifestRequestTemplateReconciler) checkForNewCommits(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (bool, string, error) {
-
-	// Get Remote HEAD
-	remoteHead, err := r.repository(ctx, mrt).GetRemoteHeadCommit(ctx)
+	remoteHead, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+			// Get latest revision (Sync + local HEAD). This path honors context and is less prone to indefinite hangs.
+			return repo.GetLatestRevision(repoCtx)
+		},
+	)
 	if err != nil {
 		return false, "", err
 	}
@@ -797,7 +822,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileNormal(
 		}
 
 		r.logger.V(3).Info("No new revisions to process")
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: GitPollInterval}, nil
 	}
 
 	// Execute action based on current ActionState
@@ -979,9 +1004,17 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 	}
 
 	// Check if revision exists in the repository.
-	if hasRevision, err := r.repository(ctx, mrt).HasRevision(ctx, revision); err != nil {
+	hasRevision, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (bool, error) {
+			return repo.HasRevision(repoCtx, revision)
+		},
+	)
+	if err != nil {
 		r.logger.Error(err, "Failed to check if repository has revision", "revision", revision)
-		return false, "", fmt.Errorf("get latest revision from repository: %w", err)
+		return false, "", fmt.Errorf("check repository has revision %s: %w", revision, err)
 	} else if !hasRevision {
 		// Revision is not part of the main branch. Skip it.
 		return true, fmt.Sprintf("No commit for revision %s in the repository", revision), nil
@@ -992,9 +1025,17 @@ func (r *ManifestRequestTemplateReconciler) shouldSkipRevision(
 	if err != nil {
 		return false, "", fmt.Errorf("get MSR for MRT: %w", err)
 	}
-	if notAfter, err := r.repository(ctx, mrt).IsNotAfter(ctx, msr.Spec.CommitSHA, revision); err != nil {
+	notAfter, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (bool, error) {
+			return repo.IsNotAfter(repoCtx, msr.Spec.CommitSHA, revision)
+		},
+	)
+	if err != nil {
 		r.logger.Error(err, "Failed to check if revision is after last MSR revision", "revision", revision, "msrRevision", msr.Spec.CommitSHA)
-		return false, "", fmt.Errorf("check if revision is after last MSR revision")
+		return false, "", fmt.Errorf("check if revision %s is not after %s: %w", revision, msr.Spec.CommitSHA, err)
 	} else if notAfter {
 		return true, fmt.Sprintf("Revision %s comes before last processed MSR commit %s", revision, msr.Spec.CommitSHA), nil
 	}
@@ -1065,11 +1106,28 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 	}
 
 	// Get changed alias from git repository.
-	changedFiles, contentMap, err := r.repository(ctx, mrt).GetChangedFiles(ctx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
+	type changedFilesResult struct {
+		changedFiles []governancev1alpha1.FileChange
+		contentMap   map[string]string
+	}
+	res, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (changedFilesResult, error) {
+			changedFiles, contentMap, err := repo.GetChangedFiles(repoCtx, mca.Spec.CommitSHA, revision, application.Spec.Source.Path)
+			if err != nil {
+				return changedFilesResult{}, err
+			}
+			return changedFilesResult{changedFiles: changedFiles, contentMap: contentMap}, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
 		return false, fmt.Errorf("get changed files: %w", err)
 	}
+	changedFiles := res.changedFiles
+	contentMap := res.contentMap
 
 	// Filter all files, that ArgoCD shouldn't accept/monitor + content of governanceFolder.
 	changedFiles = r.filterNonManifestFiles(changedFiles, mrt)

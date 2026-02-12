@@ -25,7 +25,6 @@ env:
   SLACK_CHANNEL_ID: "" #
 
 tasks:
-
   0-setup:1-apply-governance-init:
     desc: "Apply the governance initialization manifest which sets up the repository and cluster for the scenario."
     cmds:
@@ -49,9 +48,9 @@ tasks:
     cmds:
       - |
         # Verify that all governance resources are created and in expected state
-        kubectl get mrt {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
-        kubectl get msr {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
-        kubectl get mca {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestrequesttemplate {{.MRT_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestsigningrequest {{.MSR_NAME}} -n {{.WORK_NAMESPACE}}
+        kubectl get manifestchangeapproval {{.MCA_NAME}} -n {{.WORK_NAMESPACE}}
       - |
         # Capturing initial ArgoCD pin for later comparison
         kubectl get application {{.APP_NAME}} -n {{.APP_NAMESPACE}} -o jsonpath='{.spec.source.targetRevision}' > {{.TEMP_PIN_FILE}}
@@ -201,7 +200,7 @@ tasks:
     cmds:
       - |
         kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
-  
+
   5-cleanup:5-restore-mrt:
     desc: "Restore the MRT manifest locally."
     cmds:

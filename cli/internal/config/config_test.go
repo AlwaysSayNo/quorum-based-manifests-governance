@@ -53,7 +53,6 @@ var _ = Describe("Config Loading", func() {
 			Expect(cfg).NotTo(BeNil())
 			Expect(cfg.GetData()).To(Equal(ConfigData{}))
 
-			// Verify that the file was actually created on disk
 			_, err = os.Stat(configPath)
 			Expect(os.IsNotExist(err)).To(BeFalse(), "The config file should have been created")
 		})
@@ -74,10 +73,25 @@ var _ = Describe("Config Loading", func() {
 		})
 	})
 
+	Context("when the config file contains invalid yaml", func() {
+		It("should return a parse error", func() {
+			// SETUP
+			Expect(os.WriteFile(configPath, []byte("{invalid:"), 0644)).To(Succeed())
+
+			// ACT
+			cfg, err := LoadConfigWithPath(configPath)
+
+			// VERIFY
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("could not unmarshal"))
+			Expect(cfg).To(BeNil())
+		})
+	})
+
 	Context("when the config file exists with valid data", func() {
 		It("should correctly unmarshal the data", func() {
 			// SETUP
-			yamlContent := "{user: {name: John Doe, email: john.doe@example.com}, currentRepository: my-repo, repositories: [{alias: my-repo, url: 'git@github.com:test/repo.git'}]}"
+			yamlContent := "{user: {name: John Doe, email: john.doe@example.com}, currentRepository: my-repo, repositories: [{alias: my-repo, url: 'git@github.com:test/repo.git', sshKeyPath: /keys/id_rsa, pgpKeyPath: /keys/id_rsa.pgp, governancePublicKey: pub, governanceFolderPath: /governance, msrName: msr, mcaName: mca}]}"
 			Expect(os.WriteFile(configPath, []byte(yamlContent), 0644)).To(Succeed())
 
 			// ACT
@@ -89,6 +103,7 @@ var _ = Describe("Config Loading", func() {
 
 			data := cfg.GetData()
 			Expect(data.User.Name).To(Equal("John Doe"))
+			Expect(data.User.Email).To(Equal("john.doe@example.com"))
 			Expect(data.CurrentRepository).To(Equal("my-repo"))
 			Expect(data.Repositories).To(HaveLen(1))
 			Expect(data.Repositories[0].Alias).To(Equal("my-repo"))
@@ -110,72 +125,75 @@ var _ = Describe("Config Modification", func() {
 	Describe("AddRepository", func() {
 		It("should return an error if a repository with the same alias already exists", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: my-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp}]}"
+			initialContent := "{repositories: [{alias: my-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp, governancePublicKey: pub, governanceFolderPath: /governance, msrName: msr, mcaName: mca}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 
 			// ACT
-			err = cfg.AddRepository("my-repo", "url", "ssh", "pgp")
+			err = cfg.AddRepository(GitRepository{Alias: "my-repo", URL: "url"})
 
 			// VERIFY
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("repository with alias my-repo already exists"))
 		})
 
-		It("should add a new repository to the list and save the file", func() {
+		It("should add new repositories and persist them", func() {
 			// SETUP
-
-			// Check empty config
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg.GetData().Repositories).To(BeEmpty())
 
-			// Add the first repo
-			err = cfg.AddRepository("repo1", "url1", "ssh1", "pgp1")
-			Expect(err).NotTo(HaveOccurred())
+			repo1 := GitRepository{
+				Alias:                "repo1",
+				URL:                  "url1",
+				SSHKeyPath:           "/keys/repo1",
+				PGPKeyPath:           "/keys/repo1.pgp",
+				GovernancePublicKey:  "pub1",
+				GovernanceFolderPath: "/governance/repo1",
+				MSRName:              "msr1",
+				MCAName:              "mca1",
+			}
+			repo2 := GitRepository{Alias: "repo2", URL: "url2"}
 
-			// Add a second repo
-			err = cfg.AddRepository("repo2", "url2", "ssh2", "pgp2")
-			Expect(err).NotTo(HaveOccurred())
+			// ACT
+			Expect(cfg.AddRepository(repo1)).To(Succeed())
+			Expect(cfg.AddRepository(repo2)).To(Succeed())
 
 			// VERIFY
-			// Load the config from disk again to verify it was saved correctly
 			reloadedCfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 			repos := reloadedCfg.GetData().Repositories
 			Expect(repos).To(HaveLen(2))
 			Expect(repos[0].Alias).To(Equal("repo1"))
+			Expect(repos[0].GovernanceFolderPath).To(Equal("/governance/repo1"))
 			Expect(repos[1].Alias).To(Equal("repo2"))
-			Expect(repos[1].SSHKeyPath).To(Equal("ssh2"))
 		})
 	})
 
 	Describe("EditRepository", func() {
 		It("should return an error if the repository to edit does not exist", func() {
 			// SETUP
-
-			// Check empty config
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 
 			// ACT
-			err = cfg.EditRepository("non-existent", "url", "ssh", "pgp")
+			err = cfg.EditRepository(GitRepository{Alias: "non-existent", URL: "url"})
 
 			// VERIFY
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("repository with alias non-existent does not exist"))
 		})
 
-		It("should update the details of an existing repository", func() {
+		It("should update only provided fields and keep existing values", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: my-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp}]}"
+			initialContent := "{repositories: [{alias: my-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp, governancePublicKey: pub, governanceFolderPath: /governance, msrName: msr, mcaName: mca}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 
 			// ACT
-			err = cfg.EditRepository("my-repo", "new-url", "new-ssh", "new-pgp")
+			err = cfg.EditRepository(GitRepository{Alias: "my-repo", URL: "new-url", MCAName: "new-mca"})
 			Expect(err).NotTo(HaveOccurred())
 
 			// VERIFY
@@ -184,14 +202,16 @@ var _ = Describe("Config Modification", func() {
 			repos := reloadedCfg.GetData().Repositories
 			Expect(repos).To(HaveLen(1))
 			Expect(repos[0].URL).To(Equal("new-url"))
-			Expect(repos[0].SSHKeyPath).To(Equal("new-ssh"))
+			Expect(repos[0].MCAName).To(Equal("new-mca"))
+			Expect(repos[0].SSHKeyPath).To(Equal("ssh"))
+			Expect(repos[0].GovernanceFolderPath).To(Equal("/governance"))
 		})
 	})
 
 	Describe("RemoveRepository", func() {
 		It("should return an error if the repository to remove does not exist", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: my-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp}]}"
+			initialContent := "{repositories: [{alias: my-repo, url: url}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
@@ -204,16 +224,15 @@ var _ = Describe("Config Modification", func() {
 			Expect(err.Error()).To(ContainSubstring("repository with alias non-existent does not exist"))
 		})
 
-		It("should remove the specified repository from the list", func() {
+		It("should remove the repository and clear current selection if needed", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: repo1, url: url1, sshKeyPath: ssh1, pgpKeyPath: pgp1}, {alias: repo-to-delete, url: url2, sshKeyPath: ssh2, pgpKeyPath: pgp2}, {alias: repo3, url: url3, sshKeyPath: ssh3, pgpKeyPath: pgp3}]}"
+			initialContent := "{currentRepository: repo-to-delete, repositories: [{alias: repo1, url: url1}, {alias: repo-to-delete, url: url2}, {alias: repo3, url: url3}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
 
 			// ACT
-			err = cfg.RemoveRepository("repo-to-delete")
-			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.RemoveRepository("repo-to-delete")).To(Succeed())
 
 			// VERIFY
 			reloadedCfg, err := LoadConfigWithPath(configPath)
@@ -222,6 +241,7 @@ var _ = Describe("Config Modification", func() {
 			Expect(repos).To(HaveLen(2))
 			Expect(repos[0].Alias).To(Equal("repo1"))
 			Expect(repos[1].Alias).To(Equal("repo3"))
+			Expect(reloadedCfg.GetData().CurrentRepository).To(BeEmpty())
 		})
 	})
 
@@ -259,7 +279,7 @@ var _ = Describe("Config State Management", func() {
 	Describe("UseRepository", func() {
 		It("should return an error if a non-empty alias does not exist", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: existing-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp}]}"
+			initialContent := "{repositories: [{alias: existing-repo, url: url}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())
@@ -312,7 +332,7 @@ var _ = Describe("Config State Management", func() {
 	Describe("GetRepository", func() {
 		It("should return an error if the requested repository alias does not exist", func() {
 			// SETUP
-			initialContent := "{repositories: [{alias: existing-repo, url: url, sshKeyPath: ssh, pgpKeyPath: pgp}]}"
+			initialContent := "{repositories: [{alias: existing-repo, url: url}]}"
 			Expect(os.WriteFile(configPath, []byte(initialContent), 0644)).To(Succeed())
 			cfg, err := LoadConfigWithPath(configPath)
 			Expect(err).NotTo(HaveOccurred())

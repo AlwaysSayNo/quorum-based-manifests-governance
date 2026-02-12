@@ -17,55 +17,85 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"context"
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
-	// TODO (user): Add any additional imports if needed
 )
 
 var _ = Describe("ManifestChangeApproval Webhook", func() {
 	var (
-		obj       *governancev1alpha1.ManifestChangeApproval
-		oldObj    *governancev1alpha1.ManifestChangeApproval
 		validator ManifestChangeApprovalCustomValidator
+		ctx       context.Context
 	)
 
 	BeforeEach(func() {
-		obj = &governancev1alpha1.ManifestChangeApproval{}
-		oldObj = &governancev1alpha1.ManifestChangeApproval{}
+		// SETUP
 		validator = ManifestChangeApprovalCustomValidator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
-		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-		// TODO (user): Add any setup logic common to all tests
+		ctx = context.Background()
 	})
 
-	AfterEach(func() {
-		// TODO (user): Add any teardown logic common to all tests
-	})
+	Describe("ValidateUpdate", func() {
+		It("should fail when spec changes without version increment", func() {
+			oldObj := newMCA("mca-1", 3, "commit-a") // SETUP
+			newObj := newMCA("mca-1", 3, "commit-b")
+			
+			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj) // ACT
 
-	Context("When creating or updating ManifestChangeApproval under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
+			Expect(warnings).To(BeNil()) // VERIFY
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsInvalid(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("version must be incremented on change"))
+		})
+
+		It("should fail when spec changes and version is decremented", func() {
+			// SETUP
+			oldObj := newMCA("mca-1", 5, "commit-a")
+			newObj := newMCA("mca-1", 4, "commit-b")
+
+			// ACT
+			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj)
+
+			// VERIFY
+			Expect(warnings).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsInvalid(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("version must be incremented on change"))
+		})
+
+		It("should allow updates when spec changes and version is incremented", func() {
+			// SETUP
+			oldObj := newMCA("mca-1", 1, "commit-a")
+			newObj := newMCA("mca-1", 2, "commit-b")
+
+			// ACT
+			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj)
+
+			// VERIFY
+			Expect(warnings).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
+		})
 	})
 
 })
+
+func newMCA(name string, version int, commitSHA string) *governancev1alpha1.ManifestChangeApproval {
+	return &governancev1alpha1.ManifestChangeApproval{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ManifestChangeApproval",
+			APIVersion: fmt.Sprintf("%s/%s", governancev1alpha1.GroupVersion.Group, governancev1alpha1.GroupVersion.Version),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: governancev1alpha1.ManifestChangeApprovalSpec{
+			Version:   version,
+			CommitSHA: commitSHA,
+		},
+	}
+}

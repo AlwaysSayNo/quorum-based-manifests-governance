@@ -36,6 +36,8 @@ import (
 	commonvalidation "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation"
 	validationmsr "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation/msr"
 
+	dto "github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api/dto"
+
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
@@ -96,7 +98,8 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	// Handle deletion
 	if !msr.ObjectMeta.DeletionTimestamp.IsZero() {
 		r.logger.Info("MSR is marked for deletion", "actionState", msr.Status.ActionState)
-		return r.reconcileDelete(ctx, msr)
+		result, err := r.reconcileDelete(ctx, msr)
+		return r.handleResult(result, err)
 	}
 
 	// Release lock if hold too long (deadlock prevention)
@@ -108,7 +111,8 @@ func (r *ManifestSigningRequestReconciler) Reconcile(ctx context.Context, req ct
 	// Handle initialization (before finalizer is set)
 	if !controllerutil.ContainsFinalizer(msr, GovernanceFinalizer) {
 		r.logger.Info("MSR not initialized, starting initialization flow", "actionState", msr.Status.ActionState)
-		return r.reconcileCreate(ctx, msr, req)
+		result, err := r.reconcileCreate(ctx, msr, req)
+		return r.handleResult(result, err)
 	}
 
 	// Handle normal reconciliation (after initialization)
@@ -244,8 +248,19 @@ func (r *ManifestSigningRequestReconciler) handleStateGovernorQubmangoSignature(
 		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRActionState, error) {
 			r.logger.Info("Saving qubmango governor MSR signature to Git repository", "msr", msr.Name, "namespace", msr.Namespace)
 			repositoryMSR := r.createRepositoryMSR(msr)
-
-			if _, err := r.repository(ctx, msr).PushGovernorSignature(ctx, &repositoryMSR); err != nil {
+			_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+				func(repoCtx context.Context) (repomanager.GitRepository, error) {
+					mrt, err := r.getExistingMRTForMSR(repoCtx, msr)
+					if err != nil {
+						return nil, err
+					}
+					return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+				},
+				func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+					return repo.PushGovernorSignature(repoCtx, &repositoryMSR)
+				},
+			)
+			if err != nil {
 				r.logger.Error(err, "Failed to save qubmango governor MSR signature to repository")
 				return "", fmt.Errorf("save qubmango governor MSR signature to Git repository: %w", err)
 			}
@@ -479,7 +494,19 @@ func (r *ManifestSigningRequestReconciler) saveInRepository(
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) error {
 	repositoryMSR := r.createRepositoryMSR(msr)
-	if _, err := r.repository(ctx, msr).PushMSR(ctx, &repositoryMSR); err != nil {
+	_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			mrt, err := r.getExistingMRTForMSR(repoCtx, msr)
+			if err != nil {
+				return nil, err
+			}
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+			return repo.PushMSR(repoCtx, &repositoryMSR)
+		},
+	)
+	if err != nil {
 		r.logger.Error(err, "Failed to push MSR to repository", "msr", msr.Name, "namespace", msr.Namespace)
 		return fmt.Errorf("push initial ManifestSigningRequest to repository: %w", err)
 	}
@@ -600,26 +627,47 @@ func (r *ManifestSigningRequestReconciler) handleMSRRulesFulfillmentStateCheckSi
 	return r.withRulesFulfillmentLock(ctx, msr, governancev1alpha1.MSRActionStateMSRRulesFulfillment, governancev1alpha1.MSRActionStateMSRRulesFulfillment,
 		func(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (governancev1alpha1.MSRRulesFulfillmentState, error) {
 			r.logger.Info("Checking MSR signature and rules fulfillment", "version", msr.Spec.Version)
-
-			repo := r.repository(ctx, msr)
-
-			// Check, that it's new commit hash
-			remoteHead, err := repo.GetRemoteHeadCommit(ctx)
-			if err != nil {
-				r.logger.Error(err, "Failed to get remote repository HEAD")
-				return "", fmt.Errorf("get remote repository HEAD: %w", err)
+			type msrFetchResult struct {
+				repoMSR    *dto.ManifestSigningRequestManifestObject
+				msrBytes   []byte
+				msrSig     dto.SignatureData
+				govSigs    []dto.SignatureData
+				remoteHead string
 			}
+			res, err := withGitRepository(ctx, defaultGitOperationTimeout,
+				func(repoCtx context.Context) (repomanager.GitRepository, error) {
+					mrt, err := r.getExistingMRTForMSR(repoCtx, msr)
+					if err != nil {
+						return nil, err
+					}
+					return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+				},
+				func(repoCtx context.Context, repo repomanager.GitRepository) (msrFetchResult, error) {
+					remoteHead, err := repo.GetLatestRevision(repoCtx)
+					if err != nil {
+						return msrFetchResult{}, fmt.Errorf("get remote repository HEAD: %w", err)
+					}
+					repoMSR, msrBytes, msrSig, govSigs, err := repo.FetchMSRByVersion(repoCtx, msr)
+					if err != nil {
+						return msrFetchResult{}, fmt.Errorf("fetch MSR from repository: %w", err)
+					}
+					return msrFetchResult{repoMSR: repoMSR, msrBytes: msrBytes, msrSig: msrSig, govSigs: govSigs, remoteHead: remoteHead}, nil
+				},
+			)
+			if err != nil {
+				r.logger.Error(err, "Failed to fetch MSR or remote HEAD from repository", "version", msr.Spec.Version)
+				return "", err
+			}
+			repoMSR := res.repoMSR
+			msrBytes := res.msrBytes
+			msrSig := res.msrSig
+			govSigs := res.govSigs
+			remoteHead := res.remoteHead
 			if msr.Status.LastObservedCommitHash == remoteHead {
 				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
 			}
-
-			// Fetch MSR from repository for the current version
-			repoMSR, msrBytes, msrSig, govSigs, err := repo.FetchMSRByVersion(ctx, msr)
-			if err != nil {
-				r.logger.Error(err, "Failed to fetch MSR from repository", "version", msr.Spec.Version)
-				return "", fmt.Errorf("fetch MSR from repository: %w", err)
-			} else if repoMSR.Spec.PublicKey != msr.Spec.PublicKey {
-				r.logger.Error(err, "Repository and in-cluster MSR public keys are different")
+			if repoMSR.Spec.PublicKey != msr.Spec.PublicKey {
+				r.logger.Info("Repository and in-cluster MSR public keys are different")
 				return governancev1alpha1.MSRRulesFulfillmentStateAbort, nil
 			}
 
@@ -986,7 +1034,7 @@ func (r *ManifestSigningRequestReconciler) repository(
 	msr *governancev1alpha1.ManifestSigningRequest,
 ) repomanager.GitRepository {
 	mrt, _ := r.getExistingMRTForMSR(ctx, msr)
-	
+
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	repo, _ := r.RepoManager.GetProviderForMRT(gitCtx, mrt)

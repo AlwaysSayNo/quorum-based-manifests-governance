@@ -509,7 +509,19 @@ func (r *ManifestChangeApprovalReconciler) saveInRepository(
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) error {
 	repositoryMCA := r.createRepositoryMCA(mca)
-	if _, err := r.repository(ctx, mca).PushMCA(ctx, &repositoryMCA); err != nil {
+	_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			mrt, err := r.getExistingMRTForMCA(repoCtx, mca)
+			if err != nil {
+				return nil, err
+			}
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+			return repo.PushMCA(repoCtx, &repositoryMCA)
+		},
+	)
+	if err != nil {
 		r.logger.Error(err, "Failed to push initial ManifestChangeApproval in repository")
 		return fmt.Errorf("push initial ManifestChangeApproval to repository: %w", err)
 	}
@@ -521,22 +533,65 @@ func (r *ManifestChangeApprovalReconciler) saveSummaryChanges(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) error {
-	fileChanges, content, err := r.repository(ctx, mca).GetChangedFiles(ctx, mca.Spec.PreviousCommitSHA, mca.Spec.CommitSHA, mca.Spec.Locations.SourcePath)
+	type changedFilesResult struct {
+		fileChanges []governancev1alpha1.FileChange
+		content     map[string]string
+	}
+	res, err := withGitRepository(ctx, defaultGitOperationTimeout,
+		func(repoCtx context.Context) (repomanager.GitRepository, error) {
+			mrt, err := r.getExistingMRTForMCA(repoCtx, mca)
+			if err != nil {
+				return nil, err
+			}
+			return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+		},
+		func(repoCtx context.Context, repo repomanager.GitRepository) (changedFilesResult, error) {
+			fileChanges, content, err := repo.GetChangedFiles(repoCtx, mca.Spec.PreviousCommitSHA, mca.Spec.CommitSHA, mca.Spec.Locations.SourcePath)
+			if err != nil {
+				return changedFilesResult{}, err
+			}
+			return changedFilesResult{fileChanges: fileChanges, content: content}, nil
+		},
+	)
 	if err != nil {
 		r.logger.Error(err, "Failed to get changed files from repository")
 		return fmt.Errorf("get changed files: %w", err)
 	}
+	fileChanges := res.fileChanges
+	content := res.content
 
 	applyContent := r.createApplyManifest(fileChanges, content)
 	if applyContent != "" {
-		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, applyContent, ApplySummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+		_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+			func(repoCtx context.Context) (repomanager.GitRepository, error) {
+				mrt, err := r.getExistingMRTForMCA(repoCtx, mca)
+				if err != nil {
+					return nil, err
+				}
+				return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+			},
+			func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+				return repo.PushSummaryFile(repoCtx, applyContent, ApplySummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+			},
+		)
 		if err != nil {
 			return fmt.Errorf("push apply summary manifest: %w", err)
 		}
 	}
 	deleteContent := r.createDeleteManifest(fileChanges, content)
 	if deleteContent != "" {
-		_, err := r.repository(ctx, mca).PushSummaryFile(ctx, deleteContent, DeleteSummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+		_, err := withGitRepository(ctx, defaultGitOperationTimeout,
+			func(repoCtx context.Context) (repomanager.GitRepository, error) {
+				mrt, err := r.getExistingMRTForMCA(repoCtx, mca)
+				if err != nil {
+					return nil, err
+				}
+				return r.RepoManager.GetProviderForMRT(repoCtx, mrt)
+			},
+			func(repoCtx context.Context, repo repomanager.GitRepository) (string, error) {
+				return repo.PushSummaryFile(repoCtx, deleteContent, DeleteSummaryFileName, mca.Spec.Locations.GovernancePath, mca.Spec.Version)
+			},
+		)
 		if err != nil {
 			return fmt.Errorf("push delete summary manifest: %w", err)
 		}
@@ -849,7 +904,7 @@ func (r *ManifestChangeApprovalReconciler) repository(
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) repomanager.GitRepository {
 	mrt, _ := r.getExistingMRTForMCA(ctx, mca)
-	
+
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	repo, _ := r.RepoManager.GetProviderForMRT(gitCtx, mrt)

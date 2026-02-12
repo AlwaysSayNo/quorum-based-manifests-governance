@@ -21,7 +21,6 @@ env:
   SLACK_CHANNEL_ID: "" #
 
 tasks:
-
   0-setup:1-apply-governance-init:
     desc: "Apply the governance initialization manifest which sets up the repository and cluster for the scenario."
     cmds:
