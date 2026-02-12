@@ -153,10 +153,10 @@ func (w *ManifestRequestTemplateWebhook) ValidateUpdate(
 	var allErrs field.ErrorList
 
 	// Check version is updated
-	governancecontroller.ValidateVersionUpdated(oldMRT, newMRT, allErrs)
+	allErrs = governancecontroller.ValidateVersionUpdated(oldMRT, newMRT, allErrs)
 
 	// Check immutable fields
-	governancecontroller.ValidateImmutableFields(oldMRT, newMRT, allErrs)
+	allErrs = governancecontroller.ValidateImmutableFields(oldMRT, newMRT, allErrs)
 
 	// Check nested approval rules
 	if isValid, errorField := w.isApprovalRuleValid(newMRT.Spec.Require, w.getMembersMap(newMRT), field.NewPath("spec").Child("require")); !isValid {
@@ -199,8 +199,10 @@ func (w *ManifestRequestTemplateWebhook) isApprovalRuleValid(
 	}
 
 	if len(rule.Require) > 0 {
-		for _, child := range rule.Require {
-			isValid, err := w.approvalRuleValidCheck(child, membersMap, path.Child("require"))
+		for i, child := range rule.Require {
+			// Recursively validate each child rule (including deeply nested ones)
+			childPath := path.Child("require").Index(i)
+			isValid, err := w.isApprovalRuleValid(child, membersMap, childPath)
 			if !isValid {
 				return isValid, err
 			}

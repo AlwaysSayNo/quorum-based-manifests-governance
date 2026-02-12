@@ -1272,7 +1272,7 @@ func ValidateImmutableFields(
 	allErrs field.ErrorList,
 ) field.ErrorList {
 	// Validate, that gitRepository.ssh (secret and url) is immutable
-	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
+	if !reflect.DeepEqual(oldMRT.Spec.GitRepository.SSH, newMRT.Spec.GitRepository.SSH) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh"), newMRT.Spec.GitRepository.SSH, "ssh is immutable and cannot be changed after creation"))
 	}
 

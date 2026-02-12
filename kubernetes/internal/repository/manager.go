@@ -276,14 +276,14 @@ func (m *Manager) syncSSHSecrets(
 	return publicKeys, nil
 }
 
-// refreshProviderSecrets refreshes the SSH and PGP secrets for a provider by fetching them from Kubernetes.
+// refreshProviderSecretsLocked refreshes the SSH and PGP secrets for a provider by fetching them from Kubernetes.
 // This ensures that rotated secrets are always used for git operations.
-func (m *Manager) refreshProviderSecrets(
+// Note: the caller must already hold m.mu.
+func (m *Manager) refreshProviderSecretsLocked(
 	ctx context.Context,
 	repoURL string,
 ) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.logger.Info("Start refresh provider secrets")
 
 	mrt, ok := m.mrtReferences[repoURL]
 	if !ok {
@@ -317,6 +317,7 @@ func (m *Manager) refreshProviderSecrets(
 		}
 	}
 
+	m.logger.Info("Finish refresh provider secrets")
 	return nil
 }
 
@@ -331,7 +332,7 @@ func (m *Manager) refreshSecretsIfExpired(
 
 	// Check, if never refreshed or TTL expired
 	if !exists || (currentTime-lastRefresh) > m.secretRefreshTTL {
-		if err := m.refreshProviderSecrets(ctx, repoURL); err != nil {
+		if err := m.refreshProviderSecretsLocked(ctx, repoURL); err != nil {
 			m.logger.Error(err, "Failed to refresh provider secrets")
 			return
 		}
