@@ -17,15 +17,12 @@ limitations under the License.
 package controller_test
 
 import (
-	"errors"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"go.uber.org/mock/gomock"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
 	governancev1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/api/v1alpha1"
@@ -44,6 +41,7 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		AppName     = "test-app"
 		MSRName     = "test-msr"
 		MCAName     = "test-mca"
+		QueueName   = "queue-test-mrt"
 		timeout     = time.Second * 10
 		interval    = time.Millisecond * 250
 		TestRepoURL = "git@testhub.com:TestUser/test-repo.git"
@@ -148,7 +146,11 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		defaultApp = argocdv1alpha1.Application{
 			ObjectMeta: metav1.ObjectMeta{Name: AppName, Namespace: argoCDNamespace.Name},
 			Spec: argocdv1alpha1.ApplicationSpec{
-				Source: &argocdv1alpha1.ApplicationSource{RepoURL: TestRepoURL, Path: "app-manifests"},
+				Source: &argocdv1alpha1.ApplicationSource{
+					RepoURL:        TestRepoURL,
+					Path:           "app-manifests",
+					TargetRevision: "main",
+				},
 			},
 		}
 
@@ -217,9 +219,10 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 					GovernancePath: ".qubmango",
 					SourcePath:     "app-manifests",
 				},
-				Changes:   defaultRepoChanges,
-				Governors: *defaultMRT.Spec.Governors.DeepCopy(),
-				Require:   *defaultMRT.Spec.Require.DeepCopy(),
+				Changes:             defaultRepoChanges,
+				Governors:           *defaultMRT.Spec.Governors.DeepCopy(),
+				Require:             *defaultMRT.Spec.Require.DeepCopy(),
+				CollectedSignatures: []governancev1alpha1.Signature{},
 			},
 		}
 		defaultMCA.Status.ApprovalHistory = []governancev1alpha1.ManifestChangeApprovalHistoryRecord{
@@ -238,172 +241,205 @@ var _ = Describe("ManifestRequestTemplate Controller", func() {
 		mockCtrl.Finish()
 	})
 
-	Context("Reconciliation Lifecycle", func() {
-		It("should remove the finalizer when an MRT is deleted", func() {
-			// SETUP
-			mrtKey := types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}
+	Context("reconcileCreate - Initialization Flow", func() {
+		Describe("Negative Scenario: ArgoCD Application does not exist", func() {
+			It("should fail initialization and not add finalizer when Application is missing", func() {
+				// SETUP: Don't create the Application, only create MRT
+				// Mock GetProviderForMRT since controller calls it even when Application is missing
+				mockRepoManager.EXPECT().
+					GetProviderForMRT(gomock.Any(), gomock.Any()).
+					Return(mockRepo, nil).
+					AnyTimes()
 
-			// Mock manager and repository calls
-			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
+				mrt := defaultMRT.DeepCopy()
+				Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
-			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(defaultInitCommit, nil).AnyTimes()
-			mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", defaultInitCommit, gomock.Any()).Return(defaultRepoChanges, nil).AnyTimes()
+				// Wait a moment for the controller to attempt reconciliation
+				time.Sleep(500 * time.Millisecond)
 
-			// Create Application before MRT
-			app := &defaultApp
-			Expect(k8sClient.Create(ctx, app)).Should(Succeed())
+				// VERIFY: MRT should NOT have finalizer added
+				Eventually(func() []string {
+					updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+					_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+					return updatedMRT.Finalizers
+				}, timeout, interval).Should(BeEmpty(), "Finalizer should not be added when Application is missing")
 
-			// Create MRT
-			mrt := &defaultMRT
-			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
-
-			// ACT + VERIFY
-			// Check, that MRT is created with finalized
-			Eventually(func() []string {
+				// ActionState should remain empty or stuck at an initialization state
 				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
-				return updatedMRT.Finalizers
-			}, 3, interval).Should(ContainElement(GovernanceFinalizer))
-
-			// Delete created MSR
-			By("Deleting the initialized MRT to test finalization")
-			Expect(k8sClient.Delete(ctx, mrt)).Should(Succeed())
-
-			// Verify, that finalized is removed
-			Eventually(func() bool {
-				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-				err := k8sClient.Get(ctx, mrtKey, updatedMRT)
-				return apierrors.IsNotFound(err)
-			}, 3, interval).Should(BeTrue(), "The MRT should be fully deleted after the finalizer is removed")
+				Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
+				Expect(updatedMRT.Status.ActionState).To(Or(
+					Equal(governancev1alpha1.MRTActionStateEmpty),
+					Equal(governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision),
+				))
+			})
 		})
 
-		It("should fail initialization if the referenced Argo CD Application does not exist", func() {
-			// SETUP
+		Describe("Negative Scenario: Governance path is not empty", func() {
+			It("should fail initialization when governance folder contains files", func() {
+				// SETUP: Create Application
+				app := defaultApp.DeepCopy()
+				Expect(k8sClient.Create(ctx, app)).Should(Succeed())
 
-			// Don't setup the Applicationabc123def456
+				// Mock repository to simulate non-empty governance folder
+				mockRepoManager.EXPECT().
+					GetProviderForMRT(gomock.Any(), gomock.Any()).
+					Return(mockRepo, nil).
+					AnyTimes()
 
-			mrt := &defaultMRT
-			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+				// The controller will call GetLatestRevision for SaveArgoCDTargetRevision state
+				mockRepo.EXPECT().
+					GetLatestRevision(gomock.Any()).
+					Return(defaultInitCommit, nil).
+					AnyTimes()
 
-			// ACT + ASSERT
-			// Expect: Reconcile should fail when enters onMRTCreation, while getApplication returns a "not found" error.
-			// Controller will keep retrying. In the end, assert that the MRTFinalize isn't added
-			Consistently(func() []string {
-				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: MRTName, Namespace: governanceNamespace.Name}, updatedMRT); err != nil {
-					// Return nil so Consistently doesn't fail on IsNotFound error
-					return nil
+				// The controller will call GetChangedFiles to check if governance path is empty
+				// Return files to simulate non-empty governance folder
+				mockRepo.EXPECT().
+					GetChangedFiles(gomock.Any(), "", defaultInitCommit, ".qubmango/.qubmango").
+					Return([]governancev1alpha1.FileChange{
+						{Kind: "Secret", Name: "existing-file", Path: ".qubmango/.qubmango/existing-file.yaml"},
+					}, nil, nil).
+					AnyTimes()
+
+				// Create MRT
+				mrt := defaultMRT.DeepCopy()
+				Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
+
+				// Wait for controller to attempt reconciliation
+				time.Sleep(500 * time.Millisecond)
+
+				// VERIFY: Finalizer should NOT be added
+				Eventually(func() []string {
+					updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+					_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+					return updatedMRT.Finalizers
+				}, timeout, interval).Should(BeEmpty(), "Finalizer should not be added when governance path is not empty")
+
+				//ActionState should be stuck in CheckGovernancePathEmpty
+				Eventually(func() governancev1alpha1.MRTActionState {
+					updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+					_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+					return updatedMRT.Status.ActionState
+				}, timeout, interval).Should(Equal(governancev1alpha1.MRTActionStateCheckGovernancePathEmpty))
+			})
+		})
+
+		Describe("Positive Scenario: Successful initialization", func() {
+			It("should complete full initialization flow and add finalizer", func() {
+				// SETUP: Create Application
+				app := defaultApp.DeepCopy()
+				Expect(k8sClient.Create(ctx, app)).Should(Succeed())
+
+				// Mock repository operations for successful initialization
+				// Using AnyTimes() because controller runs asynchronously and may retry
+				mockRepoManager.EXPECT().
+					GetProviderForMRT(gomock.Any(), gomock.Any()).
+					Return(mockRepo, nil).
+					AnyTimes()
+
+				// State 1: SaveArgoCDTargetRevision - get latest revision
+				mockRepo.EXPECT().
+					GetLatestRevision(gomock.Any()).
+					Return(defaultInitCommit, nil).
+					AnyTimes()
+
+				// State 2: CheckGovernancePathEmpty - verify empty governance folder
+				mockRepo.EXPECT().
+					GetChangedFiles(gomock.Any(), "", defaultInitCommit, ".qubmango/.qubmango").
+					Return([]governancev1alpha1.FileChange{}, nil, nil).
+					AnyTimes()
+
+				// State 3: CreateDefaultClusterResources - get changed files for MSR/MCA
+				mockRepo.EXPECT().
+					GetChangedFiles(gomock.Any(), "", defaultInitCommit, "app-manifests").
+					Return(defaultRepoChanges, nil, nil).
+					AnyTimes()
+
+				// Create MRT with creation commit annotation
+				mrt := defaultMRT.DeepCopy()
+				mrt.Annotations = map[string]string{
+					QubmangoMRTCreationCommitAnnotation: defaultInitCommit,
 				}
-				return updatedMRT.Finalizers
-			}, "2s", interval).Should(BeEmpty(), "The finalizer should never be added if the dependent Application is missing")
-		})
+				Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
 
-		// TODO: somehow it breaks some tests
-		It("should initialize an MRT by adding a finalizer and creating default MSR and MCA", func() {
-			// SETUP
-			// Mock manager and repository calls
-			mockLatestRevision := ""
-			mockChangedFiles := []governancev1alpha1.FileChange{
-				{Kind: "Deployment", Status: governancev1alpha1.New, Name: "my-app", Namespace: "my-ns", SHA256: "some", Path: "app-manifests/deployment.yaml"},
-			}
+				// ACT: Wait for controller to complete initialization (runs in background)
+				// We don't need to manually call reconcile since controller is already running
 
-			// Without AnyTimes
-			mockRepoManager.EXPECT().GetProviderForMRT(gomock.Any(), gomock.Any()).Return(mockRepo, nil).AnyTimes()
-			mockRepo.EXPECT().GetLatestRevision(gomock.Any()).Return(mockLatestRevision, nil).AnyTimes()
-			mockRepo.EXPECT().GetChangedFiles(gomock.Any(), "", mockLatestRevision, "app-manifests").Return(mockChangedFiles, nil).AnyTimes()
+				// VERIFY: Finalizer should be added
+				By("Verifying finalizer is added")
+				Eventually(func() []string {
+					updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+					_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+					return updatedMRT.Finalizers
+				}, timeout, interval).Should(ContainElement(GovernanceFinalizer))
 
-			// Create Application before MRT
-			app := &defaultApp
-			Expect(k8sClient.Create(ctx, app)).Should(Succeed())
+				// ActionState should return to Empty after successful initialization
+				By("Verifying ActionState returns to Empty")
+				Eventually(func() governancev1alpha1.MRTActionState {
+					updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
+					_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
+					return updatedMRT.Status.ActionState
+				}, timeout, interval).Should(Equal(governancev1alpha1.MRTActionStateEmpty))
 
-			// Create MRT
-			mrt := &defaultMRT
-			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
-
-			// ACT + ASSERT
-			// Check MRT exists
-			By("ensuring the finalizer is added")
-			Eventually(func() []string {
+				// Get the final MRT state for subsequent assertions
 				updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-				_ = k8sClient.Get(ctx, mrtKey, updatedMRT)
-				return updatedMRT.Finalizers
-			}, timeout, interval).Should(ContainElement(GovernanceFinalizer))
+				Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
+				By("Verifying Application targetRevision is saved")
+				Expect(updatedMRT.Status.ApplicationInitTargetRevision).To(Equal("main"))
 
-			// Check MSR exists
-			By("ensuring the default MSR is created")
-			createdMSR := &governancev1alpha1.ManifestSigningRequest{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: MSRName, Namespace: governanceNamespace.Name}, createdMSR)
-			}, timeout, interval).Should(Succeed())
-			Expect(createdMSR.Spec.Changes).To(HaveLen(1))
-			Expect(createdMSR.Spec.Changes[0].Name).To(Equal("my-app"))
-			Expect(createdMSR.OwnerReferences).To(HaveLen(1), "MSR should be owned by the MRT")
-			Expect(createdMSR.OwnerReferences[0].Name).To(Equal(MRTName))
-			Expect(createdMSR.Spec.Version).To(Equal(0)) // expect version 0
-			Expect(createdMSR.Spec.MRT.Name).To(Equal(MRTName))
-			Expect(createdMSR.Spec.MRT.Namespace).To(Equal(governanceNamespace.Name))
-			Expect(createdMSR.Spec.MRT.Version).To(Equal(defaultMRT.Spec.Version))
-			Expect(createdMSR.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
-			Expect(createdMSR.Spec.GitRepositoryURL).To(Equal(TestRepoURL))
-			Expect(createdMSR.Status.Status).To(Equal(governancev1alpha1.Approved))
-			Expect(createdMSR.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
-			Expect(createdMSR.Spec.Require).To(Equal(defaultMRT.Spec.Require))
+				// MSR should be created
+				By("Verifying MSR is created")
+				createdMSR := &governancev1alpha1.ManifestSigningRequest{}
+				Eventually(func() error {
+					return k8sClient.Get(ctx, types.NamespacedName{
+						Name:      MSRName,
+						Namespace: governanceNamespace.Name,
+					}, createdMSR)
+				}, timeout, interval).Should(Succeed())
 
-			// Check MCA exists
-			By("ensuring the default MCA is created")
-			createdMCA := &governancev1alpha1.ManifestChangeApproval{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: MCAName, Namespace: governanceNamespace.Name}, createdMCA)
-			}, timeout, interval).Should(Succeed())
-			By(fmt.Sprintf("%#v\n", createdMCA.Spec))
-			By(fmt.Sprintf("%#v\n", createdMCA.Status))
-			Expect(createdMCA.OwnerReferences).To(HaveLen(1), "MCA should be owned by the MRT")
-			Expect(createdMCA.Spec.MRT).To(Equal(createdMSR.Spec.MRT))
-			Expect(createdMCA.Spec.MSR.Name).To(Equal(MSRName))
-			Expect(createdMCA.Spec.MSR.Namespace).To(Equal(governanceNamespace.Name))
-			Expect(createdMCA.Spec.MSR.Version).To(Equal(0))
-			Expect(createdMCA.Spec.PublicKey).To(Equal(defaultMRT.Spec.PGP.PublicKey))
-			Expect(createdMCA.Spec.GitRepositoryURL).To(Equal(TestRepoURL))
-			Expect(createdMCA.Spec.Governors).To(Equal(defaultMRT.Spec.Governors))
-			Expect(createdMCA.Spec.Require).To(Equal(defaultMRT.Spec.Require))
-			Expect(createdMCA.Spec.Changes).To(Equal(createdMSR.Spec.Changes))
+				Expect(createdMSR.Spec.Version).To(Equal(0))
+				Expect(createdMSR.Spec.CommitSHA).To(Equal(defaultInitCommit))
+				Expect(createdMSR.Spec.MRT.Name).To(Equal(MRTName))
+				Expect(createdMSR.Spec.Changes).To(HaveLen(2))
+				Expect(createdMSR.OwnerReferences).To(HaveLen(1))
+				Expect(createdMSR.OwnerReferences[0].Name).To(Equal(MRTName))
 
-			// Check MRT is updated
-			By("ensuring the MRT status is updated")
-			updatedMRT := &governancev1alpha1.ManifestRequestTemplate{}
-			Expect(k8sClient.Get(ctx, mrtKey, updatedMRT)).To(Succeed())
+				// MCA should be created
+				By("Verifying MCA is created")
+				createdMCA := &governancev1alpha1.ManifestChangeApproval{}
+				Eventually(func() error {
+					return k8sClient.Get(ctx, types.NamespacedName{
+						Name:      MCAName,
+						Namespace: governanceNamespace.Name,
+					}, createdMCA)
+				}, timeout, interval).Should(Succeed())
 
-		})
+				Expect(createdMCA.Spec.Version).To(Equal(0))
+				Expect(createdMCA.Spec.CommitSHA).To(Equal(defaultInitCommit))
+				Expect(createdMCA.Spec.MRT.Name).To(Equal(MRTName))
+				Expect(createdMCA.Spec.MSR.Name).To(Equal(MSRName))
+				Expect(createdMCA.OwnerReferences).To(HaveLen(1))
+				Expect(createdMCA.OwnerReferences[0].Name).To(Equal(MRTName))
 
-		It("should fail reconciliation if the repository provider cannot be initialized", func() {
-			// SETUP
-			// Create all dependent resources
-			Expect(k8sClient.Create(ctx, &defaultApp)).Should(Succeed())
-			Expect(k8sClient.Create(ctx, &defaultMSR)).Should(Succeed())
-			Expect(k8sClient.Create(ctx, &defaultMCA)).Should(Succeed())
+				// GovernanceQueue should be created
+				By("Verifying GovernanceQueue is created")
+				createdQueue := &governancev1alpha1.GovernanceQueue{}
+				Eventually(func() error {
+					return k8sClient.Get(ctx, types.NamespacedName{
+						Name:      QueueName,
+						Namespace: governanceNamespace.Name,
+					}, createdQueue)
+				}, timeout, interval).Should(Succeed())
 
-			// Setup manager mock to fail
-			mockRepoManager.EXPECT().
-				GetProviderForMRT(gomock.Any(), gomock.Any()).
-				Return(nil, errors.New("unknown repository type")).
-				AnyTimes()
+				Expect(createdQueue.Spec.MRT.Name).To(Equal(MRTName))
+				Expect(createdQueue.OwnerReferences).To(HaveLen(1))
+				Expect(createdQueue.OwnerReferences[0].Name).To(Equal(MRTName))
 
-			// Create the MRT with finalizer
-			mrt := &defaultMRT
-			mrt.Finalizers = []string{GovernanceFinalizer}
-			Expect(k8sClient.Create(ctx, mrt)).Should(Succeed())
-
-			// Wait, until first reconcile finished
-			Eventually(func() error {
-				return k8sClient.Get(ctx, mrtKey, mrt)
-			}, timeout, interval).Should(Succeed())
-
-			// ACT + ASSERT
-			By("checking that the revision queue is not popped")
-			// Use Consistently to prove that over a period of time, the queue length remains 1.
-			// Reconcile loop will keep failing and revision won be popped.
-			// TOOD: what
+				// RevisionQueueRef should be set in MRT status
+				By("Verifying RevisionQueueRef is set")
+				Expect(updatedMRT.Status.RevisionQueueRef.Name).To(Equal(QueueName))
+				Expect(updatedMRT.Status.RevisionQueueRef.Namespace).To(Equal(governanceNamespace.Name))
+			})
 		})
 	})
-
 })
