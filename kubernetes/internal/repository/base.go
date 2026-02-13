@@ -210,7 +210,7 @@ func (p *BaseGitProvider) IsNotAfter(
 	}
 
 	// Check if the ancestorCommit is childCommit
-	isTheSame := ancestorCommit.Hash.String() == childCommit.String()
+	isTheSame := ancestorCommit.Hash.String() == childCommit.Hash.String()
 
 	return !isChild || isTheSame, nil
 }

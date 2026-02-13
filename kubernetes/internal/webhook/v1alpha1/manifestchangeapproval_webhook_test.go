@@ -42,12 +42,15 @@ var _ = Describe("ManifestChangeApproval Webhook", func() {
 
 	Describe("ValidateUpdate", func() {
 		It("should fail when spec changes without version increment", func() {
-			oldObj := newMCA("mca-1", 3, "commit-a") // SETUP
+			// SETUP
+			oldObj := newMCA("mca-1", 3, "commit-a")
 			newObj := newMCA("mca-1", 3, "commit-b")
 			
-			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj) // ACT
+			// ACT
+			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj)
 
-			Expect(warnings).To(BeNil()) // VERIFY
+			// VERIFY
+			Expect(warnings).To(BeNil())
 			Expect(err).To(HaveOccurred())
 			Expect(apierrors.IsInvalid(err)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("version must be incremented on change"))

@@ -1,4 +1,4 @@
-package github
+package repository
 
 // Test non-encrypted PGP private key
 // gpg --full-generate-key
