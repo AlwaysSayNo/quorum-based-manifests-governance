@@ -49,6 +49,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 mocks: 
 	mockgen -source=internal/controller/manifestrequesttemplate_controller.go -destination=internal/controller/mocks/manifestrequesttemplate_controller_mock.go -package=controller_mock
 	mockgen -source=internal/repository/manager.go -destination=internal/repository/mocks/manager_mock.go -package=manager_mock
+	mockgen -source=internal/notifier/notifier.go -destination=internal/notifier/mocks/notifier_mock.go -package=notifier_mock
 
 .PHONY: generate
 generate: controller-gen mocks## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

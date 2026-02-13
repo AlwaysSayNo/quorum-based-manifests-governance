@@ -173,7 +173,7 @@ func (r *GovernanceQueueReconciler) getMRTAndQueue(ctx context.Context, event *g
 	mrtRef := event.Spec.MRT
 	var mrt governancev1alpha1.ManifestRequestTemplate
 	if err := r.Get(ctx, types.NamespacedName{Namespace: mrtRef.Namespace, Name: mrtRef.Name}, &mrt); err != nil {
-		return nil, nil, fmt.Errorf("fetch ManifestRequestTemplate for GovernanceEvent", err)
+		return nil, nil, fmt.Errorf("fetch ManifestRequestTemplate for GovernanceEvent: %w", err)
 	}
 
 	// Get GovernanceQueue for MRT.
@@ -181,7 +181,7 @@ func (r *GovernanceQueueReconciler) getMRTAndQueue(ctx context.Context, event *g
 	var queue governancev1alpha1.GovernanceQueue
 	if err := r.Get(ctx, types.NamespacedName{Namespace: queueRef.Namespace, Name: queueRef.Name}, &queue); err != nil {
 		r.logger.Error(err, "Failed to get GovernanceQueue for MRT.", "mrt", mrtRef, "queue", queueRef)
-		return &mrt, nil, fmt.Errorf("fetch ManifestRequestTemplate for ManifestRequestTemplate", err)
+		return &mrt, nil, fmt.Errorf("fetch GovernanceQueue for ManifestRequestTemplate: %w", err)
 	}
 
 	return &mrt, &queue, nil
