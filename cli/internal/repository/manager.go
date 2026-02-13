@@ -154,7 +154,7 @@ func (m *Manager) GetProvider(
 	}
 	sshPublicKeys, err := crypto.SyncSSHSecrets(ctx, sshSecrets)
 	if err != nil {
-		return nil, fmt.Errorf("sync ssh secrets", err)
+		return nil, fmt.Errorf("sync ssh secrets: %w", err)
 	}
 
 	// Get pgp secrets
