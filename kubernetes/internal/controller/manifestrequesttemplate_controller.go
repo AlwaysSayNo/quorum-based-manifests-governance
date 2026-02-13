@@ -370,7 +370,7 @@ func (r *ManifestRequestTemplateReconciler) isLockForMoreThan(
 	duration time.Duration,
 ) bool {
 	condition := meta.FindStatusCondition(mrt.Status.Conditions, governancev1alpha1.Progressing)
-	return condition != nil && condition.Status == metav1.ConditionTrue && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
+	return condition != nil && condition.Status == metav1.ConditionTrue && time.Since(condition.LastTransitionTime.Time) >= duration
 }
 
 // reconcileCreate handles the logic for a newly created MRT, that has not been initialized.
@@ -1322,7 +1322,7 @@ func (r *ManifestRequestTemplateReconciler) getMRTFromChangedFiles(
 	// Get path of the MRT, if it's current reconciled MRT and updated
 	updatedMRTPath := ""
 	for _, f := range changedFiles {
-		if f.Kind == mrt.Kind && f.Namespace == mrt.Namespace && f.Name == f.Name && f.Status == governancev1alpha1.Updated {
+		if f.Kind == mrt.Kind && f.Namespace == mrt.Namespace && f.Name == mrt.Name && f.Status == governancev1alpha1.Updated {
 			updatedMRTPath = f.Path
 		}
 	}

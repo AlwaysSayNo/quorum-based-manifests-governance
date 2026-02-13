@@ -174,7 +174,7 @@ func (r *ManifestSigningRequestReconciler) isLockForMoreThan(
 	duration time.Duration,
 ) bool {
 	condition := meta.FindStatusCondition(msr.Status.Conditions, governancev1alpha1.Progressing)
-	return condition != nil && condition.Status == metav1.ConditionTrue && time.Now().Sub(condition.LastTransitionTime.Time) >= duration
+	return condition != nil && condition.Status == metav1.ConditionTrue && time.Since(condition.LastTransitionTime.Time) >= duration
 }
 
 // reconcileCreate handles initialization of a new MSR.
