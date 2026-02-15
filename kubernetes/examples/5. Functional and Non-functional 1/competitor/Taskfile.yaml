@@ -1,0 +1,262 @@
+version: "3"
+
+vars:
+  # Cosign key pairs (generated during setup, stored in ./secrets/)
+  DEVELOPER_KEY: "./secrets/developer-cosign.key"
+  DEVELOPER_PUB: "./secrets/developer-cosign.pub"
+  OWNER_KEY: "./secrets/owner-cosign.key"
+  OWNER_PUB: "./secrets/owner-cosign.pub"
+  VOTER1_KEY: "./secrets/voter1-cosign.key"
+  VOTER1_PUB: "./secrets/voter1-cosign.pub"
+  VOTER2_KEY: "./secrets/voter2-cosign.key"
+  VOTER2_PUB: "./secrets/voter2-cosign.pub"
+
+  LOCAL_REGISTRY: "localhost:5000"
+  BUNDLE_IMAGE: "localhost:5000/manifests:test-bundle"
+
+  APP_DIR: "./app-manifests"
+
+tasks:
+
+  0-prepare:1-generate-cosign-keys:
+    desc: "Generate cosign key pairs for Developer, Owner, Voter1, Voter2."
+    cmds:
+      - |
+        mkdir -p secrets
+        cd secrets
+      - |
+        COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix developer-cosign
+        COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix owner-cosign
+        COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix voter1-cosign
+        COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix voter2-cosign
+      - ls -la secrets/*.key secrets/*.pub
+
+  1-minikube:1-start:
+    desc: "Start Minikube cluster."
+    cmds:
+      - minikube start --driver=docker --memory=8g --cpus=4
+      - minikube status
+
+  1-minikube:2-docker-env:
+    desc: "Configure shell to use Minikube's Docker daemon"
+    cmds:
+      - eval $(minikube docker-env)
+
+  1-minikube:3-namespaces:
+    desc: "Create necessary namespaces."
+    cmds:
+      - kubectl create namespace test-app || true
+
+  2-kyverno:1-install:
+    desc: "Install Kyverno via Helm."
+    cmds:
+      - helm repo add kyverno https://kyverno.github.io/kyverno/
+      - helm repo update
+      - |
+        helm install kyverno kyverno/kyverno \
+          -n kyverno --create-namespace \
+          --wait --timeout=5m
+
+  2-kyverno:2-verify:
+    desc: "Verify Kyverno installation."
+    cmds:
+      - kubectl get pods -n kyverno
+      - kubectl wait --for=condition=ready pod --all -n kyverno --timeout=300s
+
+  3-policy:1-create:
+    desc: "Create ClusterPolicy requiring Owner + ANY(Voter1, Voter2) signatures."
+    cmds:
+      - |
+        OWNER_PUB_KEY="$(cat {{.OWNER_PUB}})"
+        VOTER1_PUB_KEY="$(cat {{.VOTER1_PUB}})"
+        VOTER2_PUB_KEY="$(cat {{.VOTER2_PUB}})"
+
+        cat <<EOF | kubectl apply -f -
+        apiVersion: kyverno.io/v1
+        kind: ClusterPolicy
+        metadata:
+          name: verify-manifest-signatures
+        spec:
+          validationFailureAction: Enforce
+          background: false
+          rules:
+            - name: verify-deployment-signatures
+              match:
+                any:
+                  - resources:
+                      kinds:
+                        - Deployment
+                      namespaces:
+                        - test-app
+              validate:
+                message: "Deployment must be signed by Owner AND at least one Voter."
+                manifests:
+                  attestors:
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${OWNER_PUB_KEY}
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER1_PUB_KEY}
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER2_PUB_KEY}
+            - name: verify-namespace-signatures
+              match:
+                any:
+                  - resources:
+                      kinds:
+                        - Namespace
+                      names:
+                        - test-app
+              validate:
+                message: "Namespace must be signed by Owner AND at least one Voter."
+                manifests:
+                  attestors:
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${OWNER_PUB_KEY}
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER1_PUB_KEY}
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER2_PUB_KEY}
+            - name: verify-configmap-signatures
+              match:
+                any:
+                  - resources:
+                      kinds:
+                        - ConfigMap
+                      namespaces:
+                        - test-app
+              validate:
+                message: "ConfigMap must be signed by Owner AND at least one Voter."
+                manifests:
+                  attestors:
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${OWNER_PUB_KEY}
+                    - count: 1
+                      entries:
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER1_PUB_KEY}
+                        - keys:
+                            publicKeys: |-
+                              ${VOTER2_PUB_KEY}
+        EOF
+
+  3-policy:2-verify:
+    desc: "Verify Kyverno policy."
+    cmds:
+      - kubectl get clusterpolicy verify-manifest-signatures
+      - kubectl describe clusterpolicy verify-manifest-signatures
+
+  4-registry:1-start:
+    desc: "Start local OCI registry for manifest bundles."
+    cmds:
+      - |
+        docker run -d \
+          --name registry \
+          --restart=always \
+          -p 5000:5000 \
+          registry:2
+      - echo "Waiting for registry..."
+      - sleep 5
+
+  4-registry:2-verify:
+    desc: "Verify OCI registry is running."
+    cmds:
+      - docker ps | grep registry
+      - curl -s http://localhost:5000/v2/_catalog
+
+  5-setup-manifests:1-all:
+    desc: "Create initial manifests."
+    cmds:
+      - mkdir -p {{.APP_DIR}}
+      - |
+        kubectl create namespace test-ns \
+        --dry-run=client -o yaml > {{.APP_DIR}}/namespace.yaml
+      - |
+        kubectl create configmap config-my \
+        --namespace=test-ns \
+        --from-literal=version=v0.1.0 \
+        --dry-run=client -o yaml > {{.APP_DIR}}/configmap.yaml
+      - |
+        # Create deployment 
+        kubectl create deployment nginx-deploy \
+          --image=nginx:1.14.2 \
+          --namespace=test-ns \
+          --replicas=2 \
+          --dry-run=client -o yaml | \
+        kubectl set env \
+          -f - \
+          --local \
+          -o yaml \
+          VERSION=configmap/config-my:version \
+          > {{.APP_DIR}}/nginx-deploy.yaml
+
+  6-changes:1-apply:
+    desc: "Apply developer changes: image bump, namespace annotation, configmap value."
+    cmds:
+      - |
+        # Deployment image: nginx:1.14.2 -> nginx:1.20.0
+        sed -i 's|image: nginx:1.14.2|image: nginx:1.20.0|g' {{.APP_DIR}}/nginx-deploy.yaml
+      - |
+        yq -i '.metadata.annotations.environment = "staging"' {{.APP_DIR}}/namespace.yaml
+      - |
+        sed -i 's|version: v0.1.0|version: v0.2.0|g' {{.APP_DIR}}/configmap.yaml
+
+  6-changes:2-commit-push:
+    desc: "Commit and push the developer changes."
+    cmds:
+      - |
+        git add {{.APP_DIR}}/
+        git commit -m "Maintenance: image bump, annotation, config update"
+        git push origin main
+        echo "Changes pushed. HEAD: $(git rev-parse --short HEAD)"
+
+  7-changes:1-revert-git:
+    desc: "Revert developer changes to initial state."
+    cmds:
+      - |
+        sed -i 's|image: nginx:1.20.0|image: nginx:1.14.2|g' {{.APP_DIR}}/nginx-deploy.yaml
+        yq -i 'del(.metadata.annotations)' {{.APP_DIR}}/namespace.yaml
+        sed -i 's|version: v0.2.0|version: v0.1.0|g' {{.APP_DIR}}/configmap.yaml
+      - |
+        git add {{.APP_DIR}}/
+        git commit -m "Revert maintenance changes"
+        git push origin main
+        echo "Changes reverted and pushed."
+
+  7-cleanup:2-cluster:
+    desc: "Delete test resources from cluster."
+    cmds:
+      - kubectl delete deployment --all -n test-app || true
+      - kubectl delete configmap --all -n test-app || true
+
+  7-cleanup:3-registry:
+    desc: "Recreate OCI registry."
+    cmds:
+      - docker stop registry || true
+      - docker rm registry || true
+
+  8-teardown:all:
+    desc: "Complete teardown of competitor environment."
+    cmds:
+      - helm uninstall kyverno -n kyverno || true
+      - kubectl delete namespace kyverno || true
+      - kubectl delete namespace test-app || true
+      - kubectl delete clusterpolicy verify-manifest-signatures || true
+      - minikube stop
