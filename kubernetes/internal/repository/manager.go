@@ -35,12 +35,14 @@ type GitRepository interface {
 	// This should be called periodically and before any read/write operations.
 	Sync(ctx context.Context) error
 
-	// HasRevision return true, if revision commit is the part of git repository.
+	// HasRevision return true if revision commit is the part of git repository.
 	HasRevision(ctx context.Context, commit string) (bool, error)
 
+	// IsNotAfter return true if the ancestor commit is not after the child commit.
+	// It means that ancestor is either an ancestor of child or is the same commit as child.
 	IsNotAfter(ctx context.Context, ancestor, child string) (bool, error)
 
-	// GetLatestRevision return the last observed revision for the repository.
+	// GetLatestRevision return the last observed revision in the repository.
 	GetLatestRevision(ctx context.Context) (string, error)
 
 	// GetChangedFiles returns a list of files that changed between two commits and a map of their path to content.
@@ -55,12 +57,17 @@ type GitRepository interface {
 	// PushGovernorSignature commits and pushes a qubmango's as a governor signature to the repository.
 	PushGovernorSignature(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequestManifestObject) (string, error)
 
+	// FetchMSRByVersion retrieves the MSR manifest for a specific version from the repository,
+	// along with its signature and the signatures of all governors for that version.
 	FetchMSRByVersion(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) (*dto.ManifestSigningRequestManifestObject, []byte, dto.SignatureData, []dto.SignatureData, error)
 
+	// GetRemoteHeadCommit returns the latest HEAD commit hash from the remote repository.
 	GetRemoteHeadCommit(ctx context.Context) (string, error)
 
+	// GetLocalHeadCommit returns the latest HEAD commit hash from the local clone of the repository.
 	GetLocalHeadCommit(ctx context.Context) (string, error)
 
+	// PushSummaryFile commits and pushes a summary file (e.g., MSR/MCA summary) to the repository.
 	PushSummaryFile(ctx context.Context, content, fileName, toFolder string, version int) (string, error)
 
 	// DeleteFolder deletes a folder from the repository and pushes to remote.

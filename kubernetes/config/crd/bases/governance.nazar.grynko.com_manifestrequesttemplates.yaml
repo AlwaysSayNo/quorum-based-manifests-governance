@@ -41,14 +41,18 @@ spec:
             description: spec defines the desired state of ManifestRequestTemplate
             properties:
               argoCD:
-                description: ArgoCD contains information about the git repository,
-                  branch and path where manifests are stored.
+                description: ArgoCD contains the reference to the ArgoCD application
                 properties:
                   application:
+                    description: Application is the reference to the ArgoCD Application
+                      resource
                     properties:
                       name:
+                        description: Name is the name of the Kubernetes resource
                         type: string
                       namespace:
+                        description: Namespace is the namespace of the Kubernetes
+                          resource
                         type: string
                     required:
                     - name
@@ -58,20 +62,31 @@ spec:
                 - application
                 type: object
               gitRepository:
+                description: GitRepository contains the Git repository configuration
                 properties:
                   ssh:
+                    description: SSH contains the Git repository SSH configuration
                     properties:
                       secretsRef:
+                        description: |-
+                          SecretsRef is the Kubernetes secret reference containing SSH credentials.
+                          It must have:
+                          - 'ssh-privateKey' key with the private SSH key for repository access.
+                          - 'passphrase' key with the passphrase for the private SSH key, if applicable (optional).
                         properties:
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                         required:
                         - name
                         - namespace
                         type: object
                       url:
+                        description: URL is the Git SSH URL for the repository.
                         type: string
                     required:
                     - secretsRef
@@ -81,20 +96,26 @@ spec:
                 - ssh
                 type: object
               governanceFolderPath:
+                description: |-
+                  GovernanceFolderPath is the path in the Git repository, where qubmango will create
+                  the operational folder '.qubmango' for its state and governance artifacts (e.g., signatures, MSRs, MCAs).
                 type: string
               governors:
-                description: Required until GovernorsRef is implemented.
+                description: |-
+                  Governors contains the governance board configuration.
+                  Required until GovernorsRef is implemented.
                 properties:
                   members:
-                    description: List of governors.
+                    description: Members is the list of governance board members
                     items:
                       properties:
                         alias:
-                          description: Alias for governor (for easier identification)
+                          description: Alias is the human-readable name for the governor
                           minLength: 1
                           type: string
                         publicKey:
-                          description: PublicKey of the governor used to verify signatures.
+                          description: PublicKey is the PGP public key of the governor
+                            used to verify signatures
                           minLength: 1
                           type: string
                       required:
@@ -103,14 +124,17 @@ spec:
                       type: object
                     type: array
                   notificationChannels:
-                    description: General list of notification channels to inform governors
-                      about pending approvals.
+                    description: NotificationChannels is the list of channels to inform
+                      governors about pending approvals
                     items:
                       properties:
                         slack:
+                          description: Slack contains the Slack notification channel
+                            configuration
                           properties:
                             channelID:
-                              description: Slack channel ID to notify (e.g., S01234567)
+                              description: ChannelID is the Slack channel ID to notify
+                                (e.g., U0A7XASDMR28)
                               minLength: 1
                               type: string
                           required:
@@ -122,43 +146,56 @@ spec:
                 - members
                 type: object
               mca:
-                description: MCA contains information about MCA metadata.
+                description: |-
+                  MCA initially contains information that is used to create dependent MCA instance.
+                  After creation, it serves as the reference to the instance.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               msr:
-                description: MSR contains information about MSR metadata.
+                description: |-
+                  MSR initially contains information that is used to create dependent MSR instance.
+                  After creation, it serves as the reference to the instance.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               notifications:
-                description: NotificationConfig holds the configuration for different
-                  notification providers.
+                description: Notifications contains the notification configuration
+                  (e.g., Slack)
                 properties:
                   slack:
                     description: |-
-                      Slack contains the configuration for Slack notifications, including the token secret.
+                      Slack contains the Kubernetes secret reference for Slack token
                       If this field is omitted, Slack notifications will be disabled.
                     properties:
                       secretsRef:
-                        description: SecretsRef points to the Secret containing the
-                          'token' key for the Slack Bot.
+                        description: |-
+                          SecretsRef points to the Secret containing the token for the Slack Bot.
+                          It must have:
+                          - 'token' key with the Slack Bot token for sending notifications.
                         properties:
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                         required:
                         - name
@@ -169,15 +206,25 @@ spec:
                     type: object
                 type: object
               pgp:
+                description: PGP contains the PGP configuration for signing and verification
                 properties:
                   publicKey:
+                    description: PublicKey is the PGP public key for signature verification
                     minLength: 1
                     type: string
                   secretsRef:
+                    description: |-
+                      SecretsRef is the Kubernetes secret reference for the PGP private key
+                      It must have:
+                      - 'privateKey' key with the PGP private key for signing.
+                      - 'passphrase' key with the passphrase for the private key, if applicable (optional).
                     properties:
                       name:
+                        description: Name is the name of the Kubernetes resource
                         type: string
                       namespace:
+                        description: Namespace is the namespace of the Kubernetes
+                          resource
                         type: string
                     required:
                     - name
@@ -189,30 +236,28 @@ spec:
                 type: object
               require:
                 description: |-
-                  The policy rules for approvals.
+                  Require defines the admission rules for MSR approval.
                   Required until ApprovalRuleRef is implemented.
                 properties:
                   all:
-                    description: If true, all child rules must be satisfied.
+                    description: All specifies whether all child rules must be satisfied
                     type: boolean
                   atLeast:
-                    description: Specifies the minimum number of child rules that
-                      must be satisfied.
+                    description: AtLeast specifies the minimum number of child rules
+                      that must be satisfied
                     minimum: 1
                     type: integer
                   require:
-                    description: List of child rules.
+                    description: Require is the list of nested approval rules
                     x-kubernetes-preserve-unknown-fields: true
                   signer:
-                    description: Signer can be either PublicKey or Alias of the governor.
-                      If alias is used, it should start with `$` to distinguish it
-                      from PublicKey.
+                    description: Signer is the governor identifier as an alias
                     minLength: 1
                     type: string
                 type: object
               version:
                 description: |-
-                  Version is the current version of the ManifestRequestTemplate.
+                  Version is the incremental version of the policy.
                   Each new MRT must have a version higher than the previous one.
                 minimum: 1
                 type: integer
@@ -230,9 +275,12 @@ spec:
             description: status defines the observed state of ManifestRequestTemplate
             properties:
               actionState:
-                description: ActionState tracks the progress of the main reconcile.
+                description: ActionState tracks the progress of the main reconcile
+                  state.
                 type: string
               applicationInitTargetRevision:
+                description: ApplicationInitTargetRevision is the targetRevision of
+                  the ArgoCD Application at the moment of MRT creation.
                 type: string
               conditions:
                 description: |-
@@ -299,7 +347,7 @@ spec:
                 x-kubernetes-list-type: map
               deletionProcessingState:
                 description: DeletionProcessingState tracks the progress of the deletion
-                  process.
+                  process sub-state.
                 type: string
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
@@ -307,15 +355,17 @@ spec:
                 type: string
               revisionProcessingStep:
                 description: RevisionProcessingState tracks the progress of the revision
-                  processing.
+                  processing sub-state.
                 type: string
               revisionQueueRef:
                 description: RevisionsQueueRef is the reference to the dedicated queue
                   CRD.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 type: object
             type: object

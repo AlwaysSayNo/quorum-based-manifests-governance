@@ -23,13 +23,17 @@ import (
 
 // EventReference holds a reference to a GovernanceEvent object.
 type EventReference struct {
-	UID       types.UID `json:"uid" yaml:"uid"`
-	Name      string    `json:"name" yaml:"name"`
-	Namespace string    `json:"namespace" yaml:"namespace"`
+	// UID is the unique identifier of the GovernanceEvent
+	UID types.UID `json:"uid" yaml:"uid"`
+	// Name is the name of the GovernanceEvent
+	Name string `json:"name" yaml:"name"`
+	// Namespace is the namespace of the GovernanceEvent
+	Namespace string `json:"namespace" yaml:"namespace"`
 }
 
 // GovernanceQueueSpec defines the desired state of GovernanceQueue
 type GovernanceQueueSpec struct {
+	// MRT is the reference to the associated ManifestRequestTemplate
 	// +required
 	MRT ManifestRef `json:"mrt,omitempty" yaml:"mrt,omitempty"`
 }
@@ -37,11 +41,11 @@ type GovernanceQueueSpec struct {
 // GovernanceQueueStatus defines the observed state of GovernanceQueue.
 type GovernanceQueueStatus struct {
 
-	// The ordered queue of event references.
+	// Queue is the ordered list of pending governance event references
 	// +optional
 	Queue []EventReference `json:"queue,omitempty" yaml:"queue,omitempty"`
 
-	// conditions represent the current state of the GovernanceQueue resource.
+	// Conditions represent the current state of the GovernanceQueue resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map

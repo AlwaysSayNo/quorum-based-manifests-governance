@@ -18,15 +18,18 @@ import (
 )
 
 const (
+	// DefaultReposPath is the default directory for storing local Git repository clones
 	DefaultReposPath = "/tmp/qubmango/git/repos"
 )
 
+// MCAInfo holds information about a ManifestChangeApproval.
 type MCAInfo struct {
 	Obj     *dto.ManifestChangeApprovalManifestObject
 	Content []byte
 	Sign    dto.SignatureData
 }
 
+// MSRInfo holds information about a ManifestSigningRequest including.
 type MSRInfo struct {
 	Obj            *dto.ManifestSigningRequestManifestObject
 	Content        []byte
@@ -50,12 +53,16 @@ func NewMyFilePatch(
 	}
 }
 
-// myFilePatch is a helper struct that implements the diff.Patch interface. This allows to pass arbiter subset of FilePatches to the encoder.
+// myFilePatch is a helper struct that implements the diff.Patch interface.
+// This allows passing an arbitrary subset of FilePatches to the encoder.
 type myFilePatch struct {
+	// filePatch is the list of file patches
 	filePatch []diff.FilePatch
-	message   string
+	// message is the commit message associated with this patch
+	message string
 }
 
+// This method implements the diff.Patch interface.
 func (mfp *myFilePatch) FilePatches() []diff.FilePatch {
 	if mfp.filePatch == nil {
 		return nil
@@ -63,35 +70,56 @@ func (mfp *myFilePatch) FilePatches() []diff.FilePatch {
 	return mfp.filePatch
 }
 
+// This method implements the diff.Patch interface.
 func (mfp *myFilePatch) Message() string {
 	return mfp.message
 }
 
+// GitRepositoryFactory creates new GitRepositoryProvider instances for specific Git hosting providers
 type GitRepositoryFactory interface {
 	New(ctx context.Context, remoteURL, localPath string, auth transport.AuthMethod, pgpSecrets crypto.Secrets) (GitRepositoryProvider, error)
 	IdentifyProvider(repoURL string) bool
 }
 
+// GitRepositoryProvider defines the interface for interacting with a Git repository
 type GitRepositoryProvider interface {
+	// Sync ensures the local clone of the repository is up-to-date with the remote.
+	// This should be called periodically and before any read/write operations.
 	Sync(ctx context.Context) error
+
+	// HasRevision returns true if the revision commit is part of the git repository.
 	HasRevision(ctx context.Context, commit string) (bool, error)
+
+	// GetLatestRevision returns the last observed revision in the repository.
 	GetLatestRevision(ctx context.Context) (string, error)
+
+	// GetChangedFilesRaw returns a map of changed files between two commits with their raw content and status.
 	GetChangedFilesRaw(ctx context.Context, fromCommit, toCommit string, fromFolder string) (map[string]dto.FileBytesWithStatus, error)
+
+	// PushGovernorSignature commits and pushes a governor's signature to the repository.
 	PushGovernorSignature(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, user config.UserInfo) (string, error)
+
+	// GetLatestMSR retrieves the latest MSR manifest from the repository along with signatures.
 	GetLatestMSR(ctx context.Context, policy *GovernancePolicy) (*MSRInfo, error)
+
+	// GetMCAHistory retrieves the history of all MCA approvals from the repository.
 	GetMCAHistory(ctx context.Context, policy *GovernancePolicy) ([]MCAInfo, error)
+
+	// GetFileDiffPatchParts returns diff patches for files changed between two commits, grouped by file.
 	GetFileDiffPatchParts(ctx context.Context, msr *dto.ManifestSigningRequestManifestObject, fromCommit, toCommit string) (map[string]diff.Patch, error)
 }
 
 // Manager handles the lifecycle of different repository provider instances.
+// It maintains a cache of providers for each repository URL.
 type Manager struct {
-	// Base directory to store local clones
+	// basePath is the base directory to store local clones
 	basePath string
-	// List of all available providers factories
+	// providers is the list of all available provider factories
 	providers []GitRepositoryFactory
-	// Cache of initialized providersToMRT, keyed by repo URL
+	// providersToMRT is the cache of initialized providers, keyed by repo URL
 	providersToMRT map[string]GitRepositoryProvider
-	mu             sync.Mutex
+	// mu protects concurrent access to the manager's state
+	mu sync.Mutex
 }
 
 func NewManager() *Manager {

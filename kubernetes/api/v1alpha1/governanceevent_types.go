@@ -30,24 +30,26 @@ const (
 
 // NewRevisionPayload holds the data for a NewRevision event.
 type NewRevisionPayload struct {
+	// CommitSHA is the Git commit hash of the new revision
 	CommitSHA string `json:"commitSHA" yaml:"commitSHA"`
 }
 
 // GovernanceEventSpec defines the desired state of GovernanceEvent
 type GovernanceEventSpec struct {
-	// Type indicates the kind of event this is.
+	// Type indicates the kind of event (e.g., NewRevision)
 	Type EventType `json:"type" yaml:"type"`
 
+	// MRT is the reference to the associated ManifestRequestTemplate
 	MRT ManifestRef `json:"mrt,omitempty" yaml:"mrt,omitempty"`
 
-	// NewRevision holds the payload if the event type is NewRevision.
+	// NewRevision holds the payload if the event type is NewRevision
 	// +optional
 	NewRevision *NewRevisionPayload `json:"newRevision,omitempty" yaml:"newRevision,omitempty"`
 }
 
 // GovernanceEventStatus defines the observed state of GovernanceEvent.
 type GovernanceEventStatus struct {
-	// conditions represent the current state of the GovernanceEvent resource.
+	// Conditions represent the current state of the GovernanceEvent resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map

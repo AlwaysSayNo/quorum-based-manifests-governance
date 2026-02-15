@@ -40,10 +40,13 @@ spec:
             description: spec defines the desired state of GovernanceQueue
             properties:
               mrt:
+                description: MRT is the reference to the associated ManifestRequestTemplate
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
@@ -57,7 +60,7 @@ spec:
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the GovernanceQueue resource.
+                  Conditions represent the current state of the GovernanceQueue resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
@@ -119,20 +122,20 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               queue:
-                description: The ordered queue of event references.
+                description: Queue is the ordered list of pending governance event
+                  references
                 items:
                   description: EventReference holds a reference to a GovernanceEvent
                     object.
                   properties:
                     name:
+                      description: Name is the name of the GovernanceEvent
                       type: string
                     namespace:
+                      description: Namespace is the namespace of the GovernanceEvent
                       type: string
                     uid:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
+                      description: UID is the unique identifier of the GovernanceEvent
                       type: string
                   required:
                   - name

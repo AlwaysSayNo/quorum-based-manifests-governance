@@ -40,25 +40,29 @@ spec:
             description: spec defines the desired state of GovernanceEvent
             properties:
               mrt:
+                description: MRT is the reference to the associated ManifestRequestTemplate
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               newRevision:
-                description: NewRevision holds the payload if the event type is NewRevision.
+                description: NewRevision holds the payload if the event type is NewRevision
                 properties:
                   commitSHA:
+                    description: CommitSHA is the Git commit hash of the new revision
                     type: string
                 required:
                 - commitSHA
                 type: object
               type:
-                description: Type indicates the kind of event this is.
+                description: Type indicates the kind of event (e.g., NewRevision)
                 type: string
             required:
             - type
@@ -68,7 +72,7 @@ spec:
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the GovernanceEvent resource.
+                  Conditions represent the current state of the GovernanceEvent resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
