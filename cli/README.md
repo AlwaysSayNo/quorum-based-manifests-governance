@@ -4,7 +4,13 @@ Qubmango CLI is a command-line tool that allows governors to interact with the Q
 
 ## Setup
 
-1. Install the CLI by running `go install github.com/AlwaysSayNo/quorum-based-manifests-governance/cli@latest`.
+1. Install the CLI by running:
+
+```bash
+curl -L https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/latest/download/qubmango -o qubmango
+chmod +x qubmango
+sudo mv qubmango /usr/local/bin/
+```
 
 > Note: or build from source by cloning the repository and running `go build -o qubmango ./cli` in the root directory of the project and running:
 > ```bash
@@ -54,6 +60,9 @@ qubmango config add-repo git-repo \
     msr-name \
     mca-name
 ```
+
+> Note:
+> 1. The SSH key specified in the configuration must have `write` and `read` access to the Git repository, as the CLI needs to push signatures there when approving MSRs.
 
 3. Configure the CLI user information by running:
 
