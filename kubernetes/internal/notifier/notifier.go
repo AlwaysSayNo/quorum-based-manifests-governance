@@ -11,7 +11,7 @@ import (
 type Notifier interface {
 	NotifyGovernorsMSR(ctx context.Context, msr *governancev1alpha1.ManifestSigningRequest) error
 	NotifyGovernorsMCA(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) error
-	NotifyError(ctx context.Context, channels []governancev1alpha1.NotificationChannel, message string) error
+	NotifyError(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, channels []governancev1alpha1.NotificationChannel, message string) error
 
 	// SupportsChannel returns true if the list contains at least one channel, that this notifier supports.
 	SupportsChannel(channels []governancev1alpha1.NotificationChannel) bool

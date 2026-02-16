@@ -114,6 +114,7 @@ func (m *Manager) NotifyGovernorsMCA(
 // NotifyError sends error notifications to all supported channels through registered notifiers.
 func (m *Manager) NotifyError(
 	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
 	channels []governancev1alpha1.NotificationChannel,
 	message string,
 ) error {
@@ -132,7 +133,7 @@ func (m *Manager) NotifyError(
 			continue
 		}
 
-		if err := notifier.NotifyError(ctx, channels, message); err != nil {
+		if err := notifier.NotifyError(ctx, mrt, channels, message); err != nil {
 			logger.Error(err, "Failed to send error notification", "notifier", fmt.Sprintf("%T", notifier), "message", message)
 			if firstErr == nil {
 				firstErr = err

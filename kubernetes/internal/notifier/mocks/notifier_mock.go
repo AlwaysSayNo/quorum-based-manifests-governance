@@ -44,17 +44,17 @@ func (m *MockNotifier) EXPECT() *MockNotifierMockRecorder {
 }
 
 // NotifyError mocks base method.
-func (m *MockNotifier) NotifyError(ctx context.Context, channels []v1alpha1.NotificationChannel, message string) error {
+func (m *MockNotifier) NotifyError(ctx context.Context, mrt *v1alpha1.ManifestRequestTemplate, channels []v1alpha1.NotificationChannel, message string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NotifyError", ctx, channels, message)
+	ret := m.ctrl.Call(m, "NotifyError", ctx, mrt, channels, message)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // NotifyError indicates an expected call of NotifyError.
-func (mr *MockNotifierMockRecorder) NotifyError(ctx, channels, message any) *gomock.Call {
+func (mr *MockNotifierMockRecorder) NotifyError(ctx, mrt, channels, message any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NotifyError", reflect.TypeOf((*MockNotifier)(nil).NotifyError), ctx, channels, message)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NotifyError", reflect.TypeOf((*MockNotifier)(nil).NotifyError), ctx, mrt, channels, message)
 }
 
 // NotifyGovernorsMCA mocks base method.

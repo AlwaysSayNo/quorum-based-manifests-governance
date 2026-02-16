@@ -206,10 +206,17 @@ func (s *slackNotifier) NotifyGovernorsMCA(
 
 func (s *slackNotifier) NotifyError(
 	ctx context.Context,
+	mrt *governancev1alpha1.ManifestRequestTemplate,
 	channels []governancev1alpha1.NotificationChannel,
 	message string,
 ) error {
 	s.logger = log.FromContext(ctx)
+
+	// Get slack token
+	token, err := s.getToken(ctx, mrt)
+	if err != nil {
+		return fmt.Errorf("get slack token: %w", err)
+	}
 
 	// Get slack channels only
 	slackChannels := s.getSlackChannels(channels)
@@ -220,7 +227,7 @@ func (s *slackNotifier) NotifyError(
 	}
 
 	// Create the message
-	api := slack.New("")
+	api := slack.New(token)
 
 	// Header
 	headerText := slack.NewTextBlockObject("mrkdwn", ":warning: Error Processing Manifest Request", false, false)
@@ -256,7 +263,7 @@ func (s *slackNotifier) sendAttachment(
 	attachment slack.Attachment,
 ) {
 	for _, channel := range slackChannels {
-		if channel.ChannelID != "" {
+		if channel.ChannelID == "" {
 			continue
 		}
 
@@ -265,9 +272,9 @@ func (s *slackNotifier) sendAttachment(
 		// Post the message with the attachment.
 		_, _, err := api.PostMessageContext(ctx, channelID, slack.MsgOptionAttachments(attachment))
 		if err != nil {
-			log.FromContext(ctx).Error(err, "Failed to send Slack notification for MCA", "channelID", channelID)
+			log.FromContext(ctx).Error(err, "Failed to send Slack notification", "channelID", channelID)
 		} else {
-			log.FromContext(ctx).Info("Successfully sent Slack notification for MCA", "channelID", channelID)
+			log.FromContext(ctx).Info("Successfully sent Slack notification", "channelID", channelID)
 		}
 	}
 
@@ -289,7 +296,7 @@ func (s *slackNotifier) getToken(
 	if !ok {
 		return "", fmt.Errorf("slack token secret '%s/%s' is missing the 'token' key", slackSecretRef.Namespace, slackSecretRef.Name)
 	}
-	token := string(tokenBytes)
+	token := strings.TrimSpace(string(tokenBytes))
 	if token == "" {
 		return "", fmt.Errorf("token in slack secret '%s/%s' is empty", slackSecretRef.Namespace, slackSecretRef.Name)
 	}
@@ -303,7 +310,7 @@ func (s *slackNotifier) getSlackChannels(
 	var res []*governancev1alpha1.SlackChannel
 
 	for _, channel := range channels {
-		if channel.Slack != nil && channel.Slack.ChannelID != "" {
+		if channel.Slack == nil || channel.Slack.ChannelID == "" {
 			continue
 		}
 
