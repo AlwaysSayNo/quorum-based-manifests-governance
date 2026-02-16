@@ -9,6 +9,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/onsi/ginkgo/v2 v2.27.3
 	github.com/onsi/gomega v1.38.2
+	github.com/slack-go/slack v0.16.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.44.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -19,15 +20,14 @@ require (
 )
 
 require (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.1.0
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.1.0
-	github.com/slack-go/slack v0.16.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v1.0.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v1.0.0
 )
 
-// replace (
-// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
-// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
-// )
+replace (
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
+)
 
 require (
 	cel.dev/expr v0.24.0 // indirect

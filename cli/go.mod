@@ -20,8 +20,10 @@ require (
 )
 
 require (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v0.0.0
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v0.0.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v1.0.0
+	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v1.0.0
+	github.com/go-logr/logr v1.4.3
+	golang.org/x/crypto v0.46.0
 )
 
 replace (
@@ -43,7 +45,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -72,7 +73,6 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
