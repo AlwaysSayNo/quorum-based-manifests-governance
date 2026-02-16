@@ -26,10 +26,10 @@ require (
 	golang.org/x/crypto v0.46.0
 )
 
-replace (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
-)
+// replace (
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
+// )
 
 require (
 	dario.cat/mergo v1.0.0 // indirect

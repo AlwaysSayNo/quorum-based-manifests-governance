@@ -1,5 +1,9 @@
 dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
+github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v1.0.0 h1:Q2cWn5T56LI4wY0k1TiOW4maLeypG3oJSZKjj+Bjo68=
+github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v1.0.0/go.mod h1:HI+rDO6QHZShGWnf+gndUVcstCbGMrigZmJ6oO8RhnM=
+github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v1.0.0 h1:LYBn0gCFBjHPE07ZtQu23TV4Ci7FBEHgNiPjRSHxPZ4=
+github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v1.0.0/go.mod h1:xvVqYv+BZZRm5isLWbTTlA0ssAUwDrnSWvI0+oD2isg=
 github.com/Masterminds/semver/v3 v3.4.0 h1:Zog+i5UMtVoCU8oKka5P7i9q9HgrJeGzI9SA1Xbatp0=
 github.com/Masterminds/semver/v3 v3.4.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Microsoft/go-winio v0.5.2/go.mod h1:WpS1mjBmmwHBEWmogvA2mj8546UReBk4v8QkMxJ6pZY=

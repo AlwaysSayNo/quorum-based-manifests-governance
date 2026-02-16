@@ -24,10 +24,10 @@ require (
 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation v1.0.0
 )
 
-replace (
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
-	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
-)
+// replace (
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../pkg/api
+// 	github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/validation => ../pkg/validation
+// )
 
 require (
 	cel.dev/expr v0.24.0 // indirect

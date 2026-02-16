@@ -10,7 +10,7 @@ require (
 
 require github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api v1.0.0
 
-replace github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../../pkg/api
+// replace github.com/AlwaysSayNo/quorum-based-manifests-governance/pkg/api => ../../pkg/api
 
 require (
 	github.com/cloudflare/circl v1.6.0 // indirect
