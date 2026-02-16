@@ -96,7 +96,7 @@ func (r *GovernanceQueueReconciler) findQueueForEvent(ctx context.Context, obj c
 
 func (r *GovernanceQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "GovernanceQueue", "name", req.Name, "namespace", req.Namespace)
-	r.logger.Info("Reconciling GovernanceQueue")
+	r.logger.V(2).Info("Reconciling GovernanceQueue")
 
 	// Fetch the GovernanceQueue.
 	queue := &governancev1alpha1.GovernanceQueue{}
@@ -134,14 +134,14 @@ func (r *GovernanceQueueReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		patch := client.MergeFrom(queue.DeepCopy())
 		queue.Status.Queue = desiredQueue
 
-		r.logger.Info("Queue is out of sync. Reconciling.", "desiredCount", len(desiredQueue), "actualCount", len(queue.Status.Queue))
+		r.logger.V(2).Info("Queue is out of sync. Reconciling.", "desiredCount", len(desiredQueue), "actualCount", len(queue.Status.Queue))
 		if err := r.Status().Patch(ctx, queue, patch); err != nil {
 			r.logger.Error(err, "Failed to patch queue status")
 			return ctrl.Result{}, fmt.Errorf("patch queue: %w", err)
 		}
-		r.logger.Info("Queue state", "state", queue.Status.Queue)
+		r.logger.V(2).Info("Queue state", "state", queue.Status.Queue)
 	} else {
-		r.logger.Info("Queue is already in sync.")
+		r.logger.V(2).Info("Queue is already in sync.")
 	}
 
 	return ctrl.Result{}, nil

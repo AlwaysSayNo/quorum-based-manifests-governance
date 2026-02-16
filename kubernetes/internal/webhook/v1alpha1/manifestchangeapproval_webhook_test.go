@@ -45,7 +45,7 @@ var _ = Describe("ManifestChangeApproval Webhook", func() {
 			// SETUP
 			oldObj := newMCA("mca-1", 3, "commit-a")
 			newObj := newMCA("mca-1", 3, "commit-b")
-			
+
 			// ACT
 			warnings, err := validator.ValidateUpdate(ctx, oldObj, newObj)
 

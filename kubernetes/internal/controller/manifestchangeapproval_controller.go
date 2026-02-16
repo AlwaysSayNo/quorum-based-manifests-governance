@@ -83,33 +83,40 @@ func (r *ManifestChangeApprovalReconciler) SetupWithManager(mgr ctrl.Manager) er
 // 3. Normal: Process new versions
 func (r *ManifestChangeApprovalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = logf.FromContext(ctx).WithValues("controller", "ManifestChangeApproval", "name", req.Name, "namespace", req.Namespace)
-	r.logger.Info("Reconciling ManifestChangeApproval")
+	r.logger.V(2).Info("Reconciling ManifestChangeApproval")
 
 	// Fetch the MCA instance
 	mca := &governancev1alpha1.ManifestChangeApproval{}
 	if err := r.Get(ctx, req.NamespacedName, mca); err != nil {
+		r.logger.V(2).Info("MCA not found, might have been deleted", "error", err)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// Handle deletion
 	if !mca.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, mca)
+		r.logger.Info("MCA marked for deletion", "actionState", mca.Status.ActionState)
+		result, err := r.reconcileDelete(ctx, mca)
+		return r.handleResult(result, err)
 	}
 
 	// Release lock if hold too long (deadlock prevention)
 	if r.isLockForMoreThan(mca, 30*time.Second) {
-		r.logger.Info("Lock held too long, releasing to prevent deadlock", "actionState", mca.Status.ActionState, "lockDuration", "30s")
+		r.logger.V(1).Info("Lock held too long, releasing to prevent deadlock", "actionState", mca.Status.ActionState, "lockDuration", "30s")
 		return ctrl.Result{Requeue: true}, r.releaseLockWithFailure(ctx, mca, mca.Status.ActionState, fmt.Errorf("lock acquired for too long"))
 	}
 
 	// Handle initialization
 	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
-		return r.reconcileCreate(ctx, mca, req)
+		r.logger.Info("MCA not initialized, starting initialization", "actionState", mca.Status.ActionState)
+		result, err := r.reconcileCreate(ctx, mca, req)
+		return r.handleResult(result, err)
 	}
 
 	// Handle normal reconciliation (after initialization)
-	r.logger.Info("MCA initialized, processing normal reconciliation", "actionState", mca.Status.ActionState)
-	return r.reconcileNormal(ctx, mca, req)
+	r.logger.V(2).Info("MCA initialized, processing normal reconciliation", "actionState", mca.Status.ActionState)
+	result, err := r.reconcileNormal(ctx, mca, req)
+
+	return r.handleResult(result, err)
 }
 
 // reconcileCreate handles the logic for a newly created MCA that has not been initialized.
@@ -119,17 +126,17 @@ func (r *ManifestChangeApprovalReconciler) reconcileDelete(
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(mca, GovernanceFinalizer) {
 		// No custom finalizer is found. Do nothing
+		r.logger.V(2).Info("No finalizer found, deletion already in progress")
 		return ctrl.Result{}, nil
 	}
-
-	// No real clean-up logic is needed
-	r.logger.Info("Successfully finalized ManifestChangeApproval")
 
 	// Remove the custom finalizer. The object will be deleted
 	controllerutil.RemoveFinalizer(mca, GovernanceFinalizer)
 	if err := r.Update(ctx, mca); err != nil {
 		return ctrl.Result{}, fmt.Errorf("remove finalizer %s: %w", GovernanceFinalizer, err)
 	}
+
+	r.logger.Info("Successfully finalized ManifestChangeApproval")
 
 	return ctrl.Result{}, nil
 }
@@ -199,12 +206,12 @@ func (r *ManifestChangeApprovalReconciler) handleStateGitCommit(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateGitPushMCA, "Pushing MCA manifest to Git repository",
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
-			r.logger.Info("Saving initial MCA to Git repository", "mca", mca.Name, "namespace", mca.Namespace)
+			r.logger.V(2).Info("Saving initial MCA to Git repository", "mca", mca.Name, "namespace", mca.Namespace)
 			if err := r.saveInRepository(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to save MCA to repository")
 				return "", fmt.Errorf("save MCA in Git repository: %w", err)
 			}
-			r.logger.Info("MCA saved to repository successfully")
+			r.logger.V(2).Info("MCA saved to repository successfully")
 			return governancev1alpha1.MCAActionStatePushSummaryFiles, nil
 		},
 	)
@@ -218,12 +225,12 @@ func (r *ManifestChangeApprovalReconciler) handleStatePushSummaryFiles(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStatePushSummaryFiles, "Creating and pushing summary files to repository",
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
-			r.logger.Info("Creating and pushing summary files", "mca", mca.Name, "version", mca.Spec.Version)
+			r.logger.V(2).Info("Creating and pushing summary files", "mca", mca.Name, "version", mca.Spec.Version)
 			if err := r.saveSummaryChanges(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to save summary changes")
 				return "", fmt.Errorf("save summary changes: %w", err)
 			}
-			r.logger.Info("Summary files pushed to repository successfully")
+			r.logger.V(2).Info("Summary files pushed to repository successfully")
 			return governancev1alpha1.MCAActionStateUpdateAfterGitPush, nil
 		},
 	)
@@ -237,14 +244,14 @@ func (r *ManifestChangeApprovalReconciler) handleUpdateAfterGitPush(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateUpdateAfterGitPush, "Updating in-cluster MCA information after Git push",
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
-			r.logger.Info("Adding history record after Git push", "version", mca.Spec.Version, "newHistoryCount", len(mca.Status.ApprovalHistory)+1)
+			r.logger.V(2).Info("Adding history record after Git push", "version", mca.Spec.Version, "newHistoryCount", len(mca.Status.ApprovalHistory)+1)
 			newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
 			mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
 			if err := r.Status().Update(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to update MCA with history record", "version", newRecord.Version)
 				return "", fmt.Errorf("update MCA information after Git push: %w", err)
 			}
-			r.logger.Info("MCA history updated successfully")
+			r.logger.V(2).Info("MCA history updated successfully")
 			return governancev1alpha1.MCAActionStateUpdateArgoCD, nil
 		},
 	)
@@ -275,7 +282,7 @@ func (r *ManifestChangeApprovalReconciler) handleStateUpdateArgoCD(
 				return "", fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
 			}
 
-			r.logger.Info("ArgoCD Application updated successfully")
+			r.logger.V(2).Info("ArgoCD Application updated successfully")
 			return governancev1alpha1.MCAActionStateInitSetFinalizer, nil
 		},
 	)
@@ -289,16 +296,35 @@ func (r *ManifestChangeApprovalReconciler) handleStateFinalizer(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mca, governancev1alpha1.MCAActionStateInitSetFinalizer, "Setting the GovernanceFinalizer on MCA",
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAActionState, error) {
-			r.logger.Info("Adding GovernanceFinalizer to complete initialization")
+			r.logger.V(2).Info("Adding GovernanceFinalizer to complete initialization")
 			controllerutil.AddFinalizer(mca, GovernanceFinalizer)
 			if err := r.Update(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to add finalizer")
 				return "", fmt.Errorf("add finalizer in initialization: %w", err)
 			}
-			r.logger.Info("Initialization complete, finalizer added")
+			r.logger.V(2).Info("Initialization complete, finalizer added")
 			return governancev1alpha1.MCAActionStateEmpty, nil
 		},
 	)
+}
+
+// handleResult acts as a middleware to ensure polling is applied on success
+func (r *ManifestChangeApprovalReconciler) handleResult(
+	result ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	// If there is an error, let the controller-runtime handle exponential backoff.
+	if err != nil {
+		return result, err
+	}
+
+	// Skip explicitly requested Requeue.
+	if result.Requeue || result.RequeueAfter > 0 {
+		return result, nil
+	}
+
+	// If the logic returned empty result - use Scheduled interval to requeue later.
+	return ctrl.Result{RequeueAfter: ScheduledInterval}, nil
 }
 
 // reconcileNormal handles reconciliation for initialized MCA resources.
@@ -337,7 +363,7 @@ func (r *ManifestChangeApprovalReconciler) reconcileNormal(
 	// Execute action based on current ActionState
 	switch mca.Status.ActionState {
 	case governancev1alpha1.MCAActionStateNewMCASpec:
-		r.logger.V(2).Info("Processing new MCA spec")
+		r.logger.Info("Processing new MCA spec")
 		return r.handleReconcileNewMCASpec(ctx, mca)
 	default:
 		// If the state is unknown - reset to EmptyState
@@ -357,7 +383,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 	ctx context.Context,
 	mca *governancev1alpha1.ManifestChangeApproval,
 ) (ctrl.Result, error) {
-	r.logger.Info("Starting reconciliation of new MCA spec", "version", mca.Spec.Version, "reconcileState", mca.Status.ReconcileState)
+	r.logger.V(2).Info("Starting reconciliation of new MCA spec", "version", mca.Spec.Version, "reconcileState", mca.Status.ReconcileState)
 
 	// Acquire Lock
 	lockAcquired, err := r.acquireLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, "Processing new MCA Spec")
@@ -378,14 +404,19 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileNewMCASpec(
 	r.logger.V(2).Info("Dispatching to reconcile sub-state handler", "reconcileState", mca.Status.ReconcileState)
 	switch mca.Status.ReconcileState {
 	case governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, governancev1alpha1.MCAReconcileNewMCASpecStateGitPushMCA:
+		r.logger.Info("Handling Git commit for new MCA spec")
 		return r.handleMCAReconcileStateGitCommit(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStatePushSummaryFiles:
+		r.logger.Info("Pushing summary files for new MCA spec")
 		return r.handleMCAReconcileStatePushSummaryFiles(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush:
+		r.logger.Info("Updating after Git push for new MCA spec")
 		return r.handleMCAReconcileStateUpdateAfterGitPush(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateUpdateArgoCD:
+		r.logger.Info("Updating ArgoCD for new MCA spec")
 		return r.handleReconcileStateUpdateArgoCD(ctx, mca)
 	case governancev1alpha1.MCAReconcileNewMCASpecStateNotifyGovernors:
+		r.logger.Info("Notifying governors for new MCA spec")
 		return r.handleReconcileStateNotifyGovernors(ctx, mca)
 	default:
 		err := fmt.Errorf("unknown ReconcileState: %s", string(mca.Status.ReconcileState))
@@ -403,12 +434,12 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateGitCommit(
 ) (ctrl.Result, error) {
 	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
-			r.logger.Info("Pushing updated MCA manifest to Git repository", "version", mca.Spec.Version)
+			r.logger.V(2).Info("Pushing updated MCA manifest to Git repository", "version", mca.Spec.Version)
 			if err := r.saveInRepository(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to push MCA to repository", "version", mca.Spec.Version)
 				return "", fmt.Errorf("save MCA in Git repository: %w", err)
 			}
-			r.logger.Info("MCA pushed to repository, transitioning to push summary files", "version", mca.Spec.Version)
+			r.logger.V(2).Info("MCA pushed to repository, transitioning to push summary files", "version", mca.Spec.Version)
 			return governancev1alpha1.MCAReconcileNewMCASpecStatePushSummaryFiles, nil
 		},
 	)
@@ -422,12 +453,12 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStatePushSummaryFil
 ) (ctrl.Result, error) {
 	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
-			r.logger.Info("Creating and pushing summary files", "version", mca.Spec.Version)
+			r.logger.V(2).Info("Creating and pushing summary files", "version", mca.Spec.Version)
 			if err := r.saveSummaryChanges(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to save summary changes", "version", mca.Spec.Version)
 				return "", fmt.Errorf("save summary changes: %w", err)
 			}
-			r.logger.Info("Summary files pushed to repository, transitioning to update history", "version", mca.Spec.Version)
+			r.logger.V(2).Info("Summary files pushed to repository, transitioning to update history", "version", mca.Spec.Version)
 			return governancev1alpha1.MCAReconcileNewMCASpecStateUpdateAfterGitPush, nil
 		},
 	)
@@ -441,14 +472,14 @@ func (r *ManifestChangeApprovalReconciler) handleMCAReconcileStateUpdateAfterGit
 ) (ctrl.Result, error) {
 	return r.withReconcileLock(ctx, mca, governancev1alpha1.MCAActionStateNewMCASpec, governancev1alpha1.MCAActionStateNewMCASpec,
 		func(ctx context.Context, mca *governancev1alpha1.ManifestChangeApproval) (governancev1alpha1.MCAReconcileNewMCASpecState, error) {
-			r.logger.Info("Adding reconciliation history record", "version", mca.Spec.Version)
+			r.logger.V(2).Info("Adding reconciliation history record", "version", mca.Spec.Version)
 			newRecord := r.createNewMCAHistoryRecordFromSpec(mca)
 			mca.Status.ApprovalHistory = append(mca.Status.ApprovalHistory, newRecord)
 			if err := r.Status().Update(ctx, mca); err != nil {
 				r.logger.Error(err, "Failed to add history record", "version", newRecord.Version)
 				return "", fmt.Errorf("update MCA information after Git push: %w", err)
 			}
-			r.logger.Info("History record added, ready to notify governors", "version", newRecord.Version, "newHistoryCount", len(mca.Status.ApprovalHistory))
+			r.logger.V(2).Info("History record added, ready to notify governors", "version", newRecord.Version, "newHistoryCount", len(mca.Status.ApprovalHistory))
 			return governancev1alpha1.MCAReconcileNewMCASpecStateUpdateArgoCD, nil
 		},
 	)
@@ -479,7 +510,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileStateUpdateArgoCD(
 				return "", fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
 			}
 
-			r.logger.Info("ArgoCD Application updated successfully")
+			r.logger.V(2).Info("ArgoCD Application updated successfully")
 			return governancev1alpha1.MCAReconcileNewMCASpecStateNotifyGovernors, nil
 		},
 	)
@@ -498,7 +529,7 @@ func (r *ManifestChangeApprovalReconciler) handleReconcileStateNotifyGovernors(
 				r.logger.Error(err, "Failed to send notifications to governors", "version", mca.Spec.Version)
 				return "", fmt.Errorf("send notification to governors: %w", err)
 			}
-			r.logger.Info("Notifications sent successfully, spec reconciliation complete", "version", mca.Spec.Version)
+			r.logger.V(2).Info("Notifications sent successfully, spec reconciliation complete", "version", mca.Spec.Version)
 			return governancev1alpha1.MCAReconcileNewMCASpecStateEmpty, nil
 		},
 	)
@@ -673,7 +704,7 @@ func (r *ManifestChangeApprovalReconciler) saveNewHistoryRecord(
 		return fmt.Errorf("update ManifestChangeApproval status with new history record: %w", err)
 	}
 
-	r.logger.Info("Successfully added new MCA record to status")
+	r.logger.V(2).Info("Successfully added new MCA record to status")
 	return nil
 }
 

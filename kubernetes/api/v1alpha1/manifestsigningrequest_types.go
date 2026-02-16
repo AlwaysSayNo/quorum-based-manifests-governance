@@ -81,7 +81,6 @@ const (
 	MSRRulesFulfillmentStateEmpty           MSRRulesFulfillmentState = ""
 	MSRRulesFulfillmentStateCheckSignatures MSRRulesFulfillmentState = "MSRRulesFulfillmentStateCheckSignatures"
 	MSRRulesFulfillmentStateUpdateMCASpec   MSRRulesFulfillmentState = "MSRRulesFulfillmentStateUpdateMCASpec"
-	MSRRulesFulfillmentStateNotifyGovernors MSRRulesFulfillmentState = "MSRRulesFulfillmentStateNotifyGovernors"
 	MSRRulesFulfillmentStateAbort           MSRRulesFulfillmentState = "MSRRulesFulfillmentStateAbort"
 )
 

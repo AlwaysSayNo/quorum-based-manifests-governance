@@ -142,7 +142,7 @@ func (r *ManifestRequestTemplateReconciler) findMRTForQueue(ctx context.Context,
 
 func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = log.FromContext(ctx).WithValues("controller", "ManifestRequestTemplate", "name", req.Name, "namespace", req.Namespace)
-	r.logger.Info("Starting reconciliation", "mrt", req.NamespacedName)
+	r.logger.V(2).Info("Starting reconciliation", "mrt", req.NamespacedName)
 
 	// Fetch the MRT instance
 	mrt := &governancev1alpha1.ManifestRequestTemplate{}
@@ -153,7 +153,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 
 	// Release lock if hold too long (deadlock prevention)
 	if r.isLockForMoreThan(mrt, 30*time.Second) {
-		r.logger.Info("Lock held too long, releasing to prevent deadlock", "actionState", mrt.Status.ActionState, "lockDuration", "30s")
+		r.logger.V(1).Info("Lock held too long, releasing to prevent deadlock", "actionState", mrt.Status.ActionState, "lockDuration", "30s")
 		return ctrl.Result{Requeue: true}, r.releaseLockWithFailure(ctx, mrt, mrt.Status.ActionState, fmt.Errorf("lock acquired for too long"))
 	}
 
@@ -172,7 +172,7 @@ func (r *ManifestRequestTemplateReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// Handle normal reconciliation (after initialization)
-	r.logger.Info("MRT initialized, processing normal reconciliation", "actionState", mrt.Status.ActionState)
+	r.logger.V(2).Info("MRT initialized, processing normal reconciliation", "actionState", mrt.Status.ActionState)
 	result, err := r.reconcileNormal(ctx, mrt)
 
 	return r.handleResult(result, err)
@@ -265,6 +265,8 @@ func (r *ManifestRequestTemplateReconciler) reconcileDelete(
 		return ctrl.Result{}, nil
 	}
 
+	r.logger.Info("Processing MSR deletion", "actionState", mrt.Status.ActionState)
+
 	if _, err := r.handleStateDeleteRestoreArgoCD(ctx, mrt); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to restore ArgoCD Application during deletion: %w", err)
 	}
@@ -298,7 +300,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRestoreArgoCD(
 		return ctrl.Result{}, fmt.Errorf("patch ArgoCD Application targetRevision: %w", err)
 	}
 
-	r.logger.Info("ArgoCD Application targetRevision restored successfully")
+	r.logger.V(2).Info("ArgoCD Application targetRevision restored successfully")
 	return ctrl.Result{}, nil
 }
 
@@ -307,7 +309,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveGovernanceFol
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	r.logger.Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
+	r.logger.V(2).Info("Removing governance folder from repository", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
 	// Construct the governance folder path to delete
 	governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
@@ -328,7 +330,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveGovernanceFol
 		return ctrl.Result{}, fmt.Errorf("delete governance folder from repository: %w", err)
 	}
 
-	r.logger.Info("Governance folder deleted successfully from repository")
+	r.logger.V(2).Info("Governance folder deleted successfully from repository")
 	return ctrl.Result{}, nil
 }
 
@@ -355,13 +357,15 @@ func (r *ManifestRequestTemplateReconciler) handleStateDeleteRemoveFinalizer(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
 	// Remove the finalizer from MRT.
-	r.logger.Info("Removing GovernanceFinalizer to complete deletion")
+	r.logger.V(2).Info("Starting finalizer removal", "currentState", mrt.Status.ActionState)
 	controllerutil.RemoveFinalizer(mrt, GovernanceFinalizer)
 	if err := r.Update(ctx, mrt); err != nil {
 		r.logger.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{}, fmt.Errorf("remove finalizer from ManifestRequestTemplate: %w", err)
 	}
-	r.logger.Info("Deletion complete, finalizer removed")
+
+	r.logger.Info("Successfully finalized ManifestRequestTemplate")
+
 	return ctrl.Result{}, nil
 }
 
@@ -383,7 +387,7 @@ func (r *ManifestRequestTemplateReconciler) reconcileCreate(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	r.logger.Info("Initializing new ManifestRequestTemplate", "mrt", mrt.Name, "namespace", mrt.Namespace, "currentState", mrt.Status.ActionState)
+	r.logger.V(2).Info("Initializing new ManifestRequestTemplate", "mrt", mrt.Name, "namespace", mrt.Namespace, "currentState", mrt.Status.ActionState)
 
 	// Check if there is any available git repository provider
 	if _, err := r.repositoryWithError(ctx, mrt); err != nil {
@@ -424,7 +428,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateSaveArgoCDTargetRevision(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateSaveArgoCDTargetRevision, "Save Application initial targetRevision",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Saving Application initial targetRevision", "mrt", mrt.Name, "namespace", mrt.Namespace)
+			r.logger.V(2).Info("Saving Application initial targetRevision", "mrt", mrt.Name, "namespace", mrt.Namespace)
 			application, err := r.getApplication(ctx, mrt)
 			if err != nil {
 				return "", fmt.Errorf("fetch Application associated with ManifestRequestTemplate: %w", err)
@@ -450,7 +454,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateCheckGovernancePathEmpty(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateCheckGovernancePathEmpty, "Checking governance path is empty",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Checking governance path is empty", "mrt", mrt.Name, "namespace", mrt.Namespace)
+			r.logger.V(2).Info("Checking governance path is empty", "mrt", mrt.Name, "namespace", mrt.Namespace)
 
 			// Get all files at the latest revision using the governance path
 			governancePath := filepath.Join(mrt.Spec.GovernanceFolderPath, QubmangoGovernanceFolder)
@@ -481,7 +485,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateCheckGovernancePathEmpty(
 				return "", err
 			}
 
-			r.logger.Info("Governance path is empty, proceeding with resource creation")
+			r.logger.V(2).Info("Governance path is empty, proceeding with resource creation")
 			return governancev1alpha1.MRTActionStateCreateDefaultClusterResources, nil
 		},
 	)
@@ -495,12 +499,12 @@ func (r *ManifestRequestTemplateReconciler) handleInitStateCreateClusterResource
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateCreateDefaultClusterResources, "Creating MSR/MCA/GovernanceQueue in cluster",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Creating default cluster resources", "mrt", mrt.Name, "namespace", mrt.Namespace)
+			r.logger.V(2).Info("Creating default cluster resources", "mrt", mrt.Name, "namespace", mrt.Namespace)
 			if err := r.createLinkedDefaultResources(ctx, mrt); err != nil {
 				r.logger.Error(err, "Failed to create linked default resources")
 				return "", fmt.Errorf("create linked default resources: %w", err)
 			}
-			r.logger.Info("Default cluster resources created successfully")
+			r.logger.V(2).Info("Default cluster resources created successfully")
 			return governancev1alpha1.MRTActionStateInitSetFinalizer, nil
 		},
 	)
@@ -604,13 +608,13 @@ func (r *ManifestRequestTemplateReconciler) handleStateFinalizing(
 ) (ctrl.Result, error) {
 	return r.withLock(ctx, mrt, governancev1alpha1.MRTActionStateInitSetFinalizer, "Setting the GovernanceFinalizer on MRT",
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate) (governancev1alpha1.MRTActionState, error) {
-			r.logger.Info("Adding GovernanceFinalizer to complete initialization")
+			r.logger.V(2).Info("Adding GovernanceFinalizer to complete initialization")
 			controllerutil.AddFinalizer(mrt, GovernanceFinalizer)
 			if err := r.Update(ctx, mrt); err != nil {
 				r.logger.Error(err, "Failed to add finalizer")
 				return "", fmt.Errorf("add finalizer in initialization: %w", err)
 			}
-			r.logger.Info("Initialization complete, finalizer added")
+			r.logger.V(2).Info("Initialization complete, finalizer added")
 			return governancev1alpha1.MRTActionStateEmpty, nil
 		},
 	)
@@ -865,7 +869,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 	ctx context.Context,
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 ) (ctrl.Result, error) {
-	r.logger.Info("Starting revision processing", "revisionState", mrt.Status.RevisionProcessingState)
+	r.logger.V(2).Info("Starting revision processing", "revisionState", mrt.Status.RevisionProcessingState)
 
 	// Acquire Lock
 	lockAcquired, err := r.acquireLock(ctx, mrt, governancev1alpha1.MRTActionStateNewRevision, "Processing new Git revision")
@@ -896,7 +900,7 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 		return ctrl.Result{}, fmt.Errorf("is any revision event present: %w", err)
 	}
 	if !newRevision {
-		r.logger.Info("Queue is empty but state is NewRevision. Assuming successful cleanup race condition.", "currentRevisionState", mrt.Status.RevisionProcessingState)
+		r.logger.V(2).Info("Queue is empty but state is NewRevision. Assuming successful cleanup race condition.", "currentRevisionState", mrt.Status.RevisionProcessingState)
 		return ctrl.Result{Requeue: true}, r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateEmpty)
 	}
 
@@ -913,18 +917,18 @@ func (r *ManifestRequestTemplateReconciler) handleStateProcessingRevision(
 	switch mrt.Status.RevisionProcessingState {
 	case governancev1alpha1.MRTNewRevisionStateEmpty, governancev1alpha1.MRTNewRevisionStatePreflightCheck:
 		// 1. Decide whether the MSR process should start or revision is worth to skip
-		r.logger.V(2).Info("Dispatching to preflight check", "revision", revision)
+		r.logger.Info("Dispatching to preflight check", "revision", revision)
 		return r.handleSubStatePreflightCheck(ctx, mrt, revision)
 	case governancev1alpha1.MRTNewRevisionStateUpdateMSRSpec:
 		// 2. Update the MSR Spec with data from new revision (changed files, revision hash, etc.)
-		r.logger.V(2).Info("Dispatching to MSR update", "revision", revision)
+		r.logger.Info("Dispatching to MSR update", "revision", revision)
 		return r.handleSubStateUpdateMSR(ctx, mrt, revision)
 	case governancev1alpha1.MRTNewRevisionStateAfterMSRUpdate:
 		// 3. After MSR is updated, finalize and remove event from queue
-		r.logger.V(2).Info("Dispatching to finalization", "revision", revision)
+		r.logger.Info("Dispatching to finalization", "revision", revision)
 		return r.handleSubstateFinish(ctx, mrt, revision)
 	case governancev1alpha1.MRTNewRevisionStateAbort:
-		r.logger.V(2).Info("Dispatching to abort", "revision", revision)
+		r.logger.Info("Dispatching to abort", "revision", revision)
 		mrt.Status.RevisionProcessingState = governancev1alpha1.MRTNewRevisionStateEmpty
 		_ = r.releaseLockAndSetNextState(ctx, mrt, governancev1alpha1.MRTActionStateEmpty)
 		return ctrl.Result{}, err
@@ -946,7 +950,7 @@ func (r *ManifestRequestTemplateReconciler) handleSubStatePreflightCheck(
 ) (ctrl.Result, error) {
 	return r.withRevisionLock(ctx, mrt, governancev1alpha1.MRTActionStateNewRevision, governancev1alpha1.MRTActionStateNewRevision, revision,
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.MRTNewRevisionState, error) {
-			r.logger.Info("Evaluating revision for processing", "revision", revision)
+			r.logger.V(2).Info("Evaluating revision for processing", "revision", revision)
 
 			// Evaluate the revision and return if it should be skipped
 			shouldSkip, reason, err := r.shouldSkipRevision(ctx, mrt, revision)
@@ -1052,7 +1056,7 @@ func (r *ManifestRequestTemplateReconciler) handleSubStateUpdateMSR(
 ) (ctrl.Result, error) {
 	return r.withRevisionLock(ctx, mrt, governancev1alpha1.MRTActionStateNewRevision, governancev1alpha1.MRTActionStateNewRevision, revision,
 		func(ctx context.Context, mrt *governancev1alpha1.ManifestRequestTemplate, revision string) (governancev1alpha1.MRTNewRevisionState, error) {
-			r.logger.Info("Updating MSR with changes from revision", "revision", revision)
+			r.logger.V(2).Info("Updating MSR with changes from revision", "revision", revision)
 
 			continueMSR, err := r.performMSRUpdate(ctx, mrt, revision)
 			if err != nil {
@@ -1151,12 +1155,12 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("The changed files contain MRT with a version that is not higher than the current one. Skipping MSR creation.")
 		// Notify governors about the error
-		_ = r.NotifierManager.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
+		_ = r.NotifierManager.NotifyError(ctx, mrt, mrt.Spec.Governors.NotificationChannels, message)
 		return false, nil
 	}
 
 	// If changedFiles contains updated reconciled MRT, immutable fields must not be changed
-	immutableFieldsChanged, message, err := r.immutableFieldsAreNotChanged(mrt, changedFiles, contentMap)
+	immutableFieldsChanged, message, err := r.immutableFieldsChanged(mrt, changedFiles, contentMap)
 	if err != nil {
 		r.logger.Error(err, "Failed to compare immutable fields of old and new MRT")
 		return false, fmt.Errorf("compare immutable fields of old and new MRT: %w", err)
@@ -1164,7 +1168,7 @@ func (r *ManifestRequestTemplateReconciler) performMSRUpdate(
 		mrt.Status.LastObservedCommitHash = revision
 		r.logger.Info("The changed files contain MRT with changed immutable fields. Skipping MSR creation.")
 		// Notify governors about the error
-		_ = r.NotifierManager.NotifyError(ctx, mrt.Spec.Governors.NotificationChannels, message)
+		_ = r.NotifierManager.NotifyError(ctx, mrt, mrt.Spec.Governors.NotificationChannels, message)
 		return false, nil
 	}
 
@@ -1223,13 +1227,13 @@ func (r *ManifestRequestTemplateReconciler) hasMRTWithOldVersion(
 	allErrs = ValidateVersionUpdated(mrt, updatedMRT, allErrs)
 
 	if len(allErrs) != 0 {
-		return false, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
+		return true, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
 	}
 
-	return true, "", nil
+	return false, "", nil
 }
 
-func (r *ManifestRequestTemplateReconciler) immutableFieldsAreNotChanged(
+func (r *ManifestRequestTemplateReconciler) immutableFieldsChanged(
 	mrt *governancev1alpha1.ManifestRequestTemplate,
 	changedFiles []governancev1alpha1.FileChange,
 	contentMap map[string]string,
@@ -1245,10 +1249,10 @@ func (r *ManifestRequestTemplateReconciler) immutableFieldsAreNotChanged(
 	allErrs = ValidateImmutableFields(mrt, updatedMRT, allErrs)
 
 	if len(allErrs) != 0 {
-		return false, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
+		return true, apierrors.NewInvalid(updatedMRT.GroupVersionKind().GroupKind(), updatedMRT.Name, allErrs).Error(), nil
 	}
 
-	return true, "", nil
+	return false, "", nil
 }
 
 func ValidateVersionUpdated(

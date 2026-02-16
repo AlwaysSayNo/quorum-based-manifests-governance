@@ -108,7 +108,7 @@ func (v *ArgoCDChangeAdmissionValidator) validateAndGetMRT(
 	}
 
 	if mrt == nil {
-		v.logger.Info("No governing MRT found for Application")
+		v.logger.V(2).Info("No governing MRT found for Application")
 		resp := admission.Allowed("No governing MRT found, allow by default")
 		return nil, &resp
 	}
@@ -128,14 +128,14 @@ func (v *ArgoCDChangeAdmissionValidator) validateMRTInitialization(
 	if !controllerutil.ContainsFinalizer(mrt, governancecontroller.GovernanceFinalizer) {
 		// Revision doesn't correspond to the initialization revision (newer revision)
 		if exist && initRevision != revision {
-			v.logger.Info("Governing MRT not initialized yet, wait")
+			v.logger.V(2).Info("Governing MRT not initialized yet, wait")
 			resp := admission.Denied("Governing MRT not initialized yet, deny by default")
 			return &resp
 		}
 
 		// Initialization revision. Allow, to avoid infinite error loop
 		if !exist || initRevision == revision {
-			v.logger.Info("Governance initialization revision, allow")
+			v.logger.V(2).Info("Governance initialization revision, allow")
 			resp := admission.Allowed("Governance initialization revision, allow by default")
 			return &resp
 		}
@@ -159,7 +159,7 @@ func (v *ArgoCDChangeAdmissionValidator) validateRevisionApproval(
 
 	// No MCA found - deny by default
 	if mca == nil {
-		v.logger.Info("No MCA found for MRT")
+		v.logger.V(2).Info("No MCA found for MRT")
 		return admission.Denied("No MCA found for MRT, deny by default")
 	}
 	v.logger.WithValues("mcaName", mca.Name, "mcaNamespace", mca.Namespace)
@@ -192,7 +192,7 @@ func (v *ArgoCDChangeAdmissionValidator) checkRevisionApprovalStatus(
 	}
 
 	// Revision is approved and latest - allow it
-	v.logger.Info("Application request is approved by the latest MCA. Allow", "lastApprovedCommitSHA", mca.Spec.CommitSHA)
+	v.logger.V(2).Info("Application request is approved by the latest MCA. Allow", "lastApprovedCommitSHA", mca.Spec.CommitSHA)
 	return admission.Allowed("Change approved by Manifest Change Approval")
 }
 
