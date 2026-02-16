@@ -133,6 +133,18 @@ func init() {
 		},
 	}
 
+	setKnownHostsCmd := &cobra.Command{
+		Use:   "set-known-hosts <path>",
+		Short: "Set path to SSH known_hosts file for repository connections",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[0]
+
+			// Load config, set known_hosts path, and save the config file.
+			return cliConfig.SetKnownHostsPath(path)
+		},
+	}
+
 	editRepoCmd.Flags().StringVarP(&editSSHURL, "url", "", "", "SSH URL of the repository")
 	editRepoCmd.Flags().StringVarP(&editSSHKeyPath, "ssh-key-path", "", "", "Absolute path to private SSH key, used to connect to the repository")
 	editRepoCmd.Flags().StringVarP(&editPGPKeyPath, "pgp-key-path", "", "", "Absolute path to private PGP key, used for signing")
@@ -147,6 +159,7 @@ func init() {
 	configCmd.AddCommand(editRepoCmd)
 	configCmd.AddCommand(removeRepoCmd)
 	configCmd.AddCommand(setUserCmd)
+	configCmd.AddCommand(setKnownHostsCmd)
 
 	rootCmd.AddCommand(configCmd)
 }

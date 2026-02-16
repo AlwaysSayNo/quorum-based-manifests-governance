@@ -25,6 +25,10 @@ var (
 	ctx           context.Context
 )
 
+const (
+	DefaultKnownHostsPath = "/root/.ssh/known_hosts"
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "qubmango",
 	Short: "A CLI for Quorum Based Manifests Governance",
@@ -168,6 +172,12 @@ func getRepositoryProvider(
 		return nil, fmt.Errorf("get current repo: %w", err)
 	}
 
+	// Get known_hosts path from config or use default
+	knownHostsPath := cliConfig.GetData().KnownHostsPath
+	if knownHostsPath == "" {
+		knownHostsPath = DefaultKnownHostsPath
+	}
+
 	// Initialize the repository provider
 	conf := &manager.GovernorRepositoryConfig{
 		GitRepositoryURL: repositoryInfo.URL,
@@ -175,6 +185,7 @@ func getRepositoryProvider(
 		SSHPassphrase:    sshPass,
 		PGPSecretPath:    repositoryInfo.PGPKeyPath,
 		PGPPassphrase:    pgpPass,
+		KnownHostsPath:   knownHostsPath,
 	}
 	return repoManager.GetProvider(ctx, conf)
 }

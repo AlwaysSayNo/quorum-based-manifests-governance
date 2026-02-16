@@ -15,6 +15,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type Secrets struct {
@@ -53,6 +54,7 @@ func GetSSHSecrets(
 func SyncSSHSecrets(
 	ctx context.Context,
 	secrets *Secrets,
+	knownHostsPath string,
 ) (*ssh.PublicKeys, error) {
 	if secrets == nil {
 		return nil, fmt.Errorf("ssh information is nil")
@@ -63,7 +65,28 @@ func SyncSSHSecrets(
 	}
 
 	// Decrypt private key
-	return DecryptSSHKey(secrets)
+	publicKeys, err := DecryptSSHKey(secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up known hosts callback if path is provided
+	if knownHostsPath != "" {
+		// Check the existence of the knownHostsPath
+		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("known_hosts file does not exist at path: %s", knownHostsPath)
+		}
+
+		// Create callback for hostPaths
+		hostKeyCallback, err := knownhosts.New(knownHostsPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create known_hosts callback from path '%s': %w", knownHostsPath, err)
+		}
+
+		publicKeys.HostKeyCallback = hostKeyCallback
+	}
+
+	return publicKeys, nil
 }
 
 func IsSSHKeyEncrypted(privateKeyStr string) (bool, error) {

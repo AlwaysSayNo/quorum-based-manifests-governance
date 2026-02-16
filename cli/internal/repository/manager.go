@@ -149,6 +149,7 @@ type GovernorRepositoryConfig struct {
 	SSHPassphrase    string
 	PGPSecretPath    string
 	PGPPassphrase    string
+	KnownHostsPath   string
 }
 
 func (m *Manager) GetProvider(
@@ -180,7 +181,7 @@ func (m *Manager) GetProvider(
 	if err != nil {
 		return nil, fmt.Errorf("get ssh secrets: %w", err)
 	}
-	sshPublicKeys, err := crypto.SyncSSHSecrets(ctx, sshSecrets)
+	sshPublicKeys, err := crypto.SyncSSHSecrets(ctx, sshSecrets, conf.KnownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf("sync ssh secrets: %w", err)
 	}

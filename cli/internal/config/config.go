@@ -18,6 +18,7 @@ type Config interface {
 	RemoveRepository(alias string) error
 	UseRepository(alias string) error
 	SetUser(username, email string) error
+	SetKnownHostsPath(path string) error
 	GetRepository(alias string) (GitRepository, error)
 }
 
@@ -40,6 +41,7 @@ type GitRepository struct {
 type ConfigData struct {
 	User              UserInfo        `yaml:"user"`
 	CurrentRepository string          `yaml:"currentRepository"`
+	KnownHostsPath    string          `yaml:"knownHostsPath"`
 	Repositories      []GitRepository `yaml:"repositories"`
 }
 
@@ -215,6 +217,13 @@ func (c *config) SetUser(
 		Email: email,
 	}
 
+	return c.saveData()
+}
+
+func (c *config) SetKnownHostsPath(
+	path string,
+) error {
+	c.Data.KnownHostsPath = path
 	return c.saveData()
 }
 
