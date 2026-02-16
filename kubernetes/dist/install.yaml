@@ -48,25 +48,29 @@ spec:
             description: spec defines the desired state of GovernanceEvent
             properties:
               mrt:
+                description: MRT is the reference to the associated ManifestRequestTemplate
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               newRevision:
-                description: NewRevision holds the payload if the event type is NewRevision.
+                description: NewRevision holds the payload if the event type is NewRevision
                 properties:
                   commitSHA:
+                    description: CommitSHA is the Git commit hash of the new revision
                     type: string
                 required:
                 - commitSHA
                 type: object
               type:
-                description: Type indicates the kind of event this is.
+                description: Type indicates the kind of event (e.g., NewRevision)
                 type: string
             required:
             - type
@@ -76,7 +80,7 @@ spec:
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the GovernanceEvent resource.
+                  Conditions represent the current state of the GovernanceEvent resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
@@ -187,10 +191,13 @@ spec:
             description: spec defines the desired state of GovernanceQueue
             properties:
               mrt:
+                description: MRT is the reference to the associated ManifestRequestTemplate
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
@@ -204,7 +211,7 @@ spec:
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the GovernanceQueue resource.
+                  Conditions represent the current state of the GovernanceQueue resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
@@ -266,20 +273,20 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               queue:
-                description: The ordered queue of event references.
+                description: Queue is the ordered list of pending governance event
+                  references
                 items:
                   description: EventReference holds a reference to a GovernanceEvent
                     object.
                   properties:
                     name:
+                      description: Name is the name of the GovernanceEvent
                       type: string
                     namespace:
+                      description: Namespace is the namespace of the GovernanceEvent
                       type: string
                     uid:
-                      description: |-
-                        UID is a type that holds unique ID values, including UUIDs.  Because we
-                        don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                        intent and helps make sure that UIDs and names do not get conflated.
+                      description: UID is the unique identifier of the GovernanceEvent
                       type: string
                   required:
                   - name
@@ -338,19 +345,31 @@ spec:
             description: spec defines the desired state of ManifestChangeApproval
             properties:
               changes:
+                description: Changes is the list of approved file changes
                 items:
                   properties:
                     kind:
+                      description: Kind is the Kubernetes resource kind (e.g., Deployment,
+                        Service)
                       type: string
                     name:
+                      description: Name is the name of the Kubernetes resource
                       type: string
                     namespace:
+                      description: Namespace is the namespace of the Kubernetes resource
                       type: string
                     path:
+                      description: Path is the file path in the Git repository
                       type: string
                     sha256:
+                      description: |-
+                        SHA256 is the hash of the file content.
+                        If New or Updated, it represents the new content hash.
+                        If Deleted, it represents the last known content hash.
                       type: string
                     status:
+                      description: Status indicates the change type (New, Updated,
+                        or Deleted)
                       type: string
                   required:
                   - kind
@@ -362,33 +381,42 @@ spec:
                   type: object
                 type: array
               collectedSignatures:
-                description: Signers contains all governors, who signed ManifestSigningRequest,
-                  related to this approval
+                description: |-
+                  CollectedSignatures contains all governors' signatures from the associated MSR
+                  that resulted in this MCA.
                 items:
                   properties:
                     signer:
+                      description: |-
+                        Signer is the identifier of the governor who signed the MSR.
+                        It contains governor's alias from the GovernorList.Members board.
                       type: string
                   required:
                   - signer
                   type: object
                 type: array
               commitSha:
+                description: CommitSHA is the Git commit hash for this approval
                 type: string
               gitRepositoryUrl:
+                description: GitRepositoryURL is the SSH URL of the Git repository
                 type: string
               governors:
-                description: Required until GovernorsRef is implemented.
+                description: |-
+                  Governors contains the governance board configuration.
+                  Required until GovernorsRef is implemented.
                 properties:
                   members:
-                    description: List of governors.
+                    description: Members is the list of governance board members
                     items:
                       properties:
                         alias:
-                          description: Alias for governor (for easier identification)
+                          description: Alias is the human-readable name for the governor
                           minLength: 1
                           type: string
                         publicKey:
-                          description: PublicKey of the governor used to verify signatures.
+                          description: PublicKey is the PGP public key of the governor
+                            used to verify signatures
                           minLength: 1
                           type: string
                       required:
@@ -397,14 +425,17 @@ spec:
                       type: object
                     type: array
                   notificationChannels:
-                    description: General list of notification channels to inform governors
-                      about pending approvals.
+                    description: NotificationChannels is the list of channels to inform
+                      governors about pending approvals
                     items:
                       properties:
                         slack:
+                          description: Slack contains the Slack notification channel
+                            configuration
                           properties:
                             channelID:
-                              description: Slack channel ID to notify (e.g., S01234567)
+                              description: ChannelID is the Slack channel ID to notify
+                                (e.g., U0A7XASDMR28)
                               minLength: 1
                               type: string
                           required:
@@ -416,25 +447,32 @@ spec:
                 - members
                 type: object
               locations:
-                description: Location contains information about where to store MSR,
-                  MCA and signatures.
+                description: Locations container with important paths within the Git
+                  repository
                 properties:
                   governancePath:
                     description: |-
-                      GovernancePath where MSR, MCA and Signatures will be stored.
+                      GovernancePath is full path in the Git repository (MRT.GovernanceFolderPath + '.qubmango')
+                      where governance artifacts (MSR, MCA, signatures etc.) will be stored.
                       Default: root of the repo.
                     minLength: 1
                     type: string
                   sourcePath:
+                    description: SourcePath is the path in the Git repository to the
+                      manifests that are being protected.
                     type: string
                 type: object
               mrt:
+                description: MRT is the reference to the parent MRT
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                   version:
+                    description: Version is the version of the referenced resource
                     type: integer
                 required:
                 - name
@@ -442,12 +480,16 @@ spec:
                 - version
                 type: object
               msr:
+                description: MSR is the reference to the associated MSR that was approved
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                   version:
+                    description: Version is the version of the referenced resource
                     type: integer
                 required:
                 - name
@@ -455,37 +497,38 @@ spec:
                 - version
                 type: object
               previousCommitSha:
+                description: PreviousCommitSHA is the previous Git commit hash
                 type: string
               publicKey:
-                description: publicKey is used to sign MCA.
+                description: |-
+                  PublicKey is the PGP public key of the parent MRT PGP private key.
+                  It is used to verify signatures on this MCA.
                 minLength: 1
                 type: string
               require:
                 description: |-
-                  The policy rules for approvals.
+                  Require defines the admission rules that were fulfilled for this approval.
                   Required until ApprovalRuleRef is implemented.
                 properties:
                   all:
-                    description: If true, all child rules must be satisfied.
+                    description: All specifies whether all child rules must be satisfied
                     type: boolean
                   atLeast:
-                    description: Specifies the minimum number of child rules that
-                      must be satisfied.
+                    description: AtLeast specifies the minimum number of child rules
+                      that must be satisfied
                     minimum: 1
                     type: integer
                   require:
-                    description: List of child rules.
+                    description: Require is the list of nested approval rules
                     x-kubernetes-preserve-unknown-fields: true
                   signer:
-                    description: Signer can be either PublicKey or Alias of the governor.
-                      If alias is used, it should start with `$` to distinguish it
-                      from PublicKey.
+                    description: Signer is the governor identifier as an alias
                     minLength: 1
                     type: string
                 type: object
               version:
-                description: 0 is value of the default ManifestSigningRequest, created
-                  by qubmango
+                description: Version is the version of this MCA (0 for default MCA
+                  created by qubmango)
                 minimum: 0
                 type: integer
             required:
@@ -506,25 +549,40 @@ spec:
             description: status defines the observed state of ManifestChangeApproval
             properties:
               actionState:
+                description: ActionState tracks the progress of the main reconcile
+                  state
                 type: string
               approvalHistory:
-                description: History of approvals
+                description: ApprovalHistory is the history of all approved changes
                 items:
                   properties:
                     changes:
+                      description: Changes is the list of approved file changes
                       items:
                         properties:
                           kind:
+                            description: Kind is the Kubernetes resource kind (e.g.,
+                              Deployment, Service)
                             type: string
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                           path:
+                            description: Path is the file path in the Git repository
                             type: string
                           sha256:
+                            description: |-
+                              SHA256 is the hash of the file content.
+                              If New or Updated, it represents the new content hash.
+                              If Deleted, it represents the last known content hash.
                             type: string
                           status:
+                            description: Status indicates the change type (New, Updated,
+                              or Deleted)
                             type: string
                         required:
                         - kind
@@ -536,30 +594,39 @@ spec:
                         type: object
                       type: array
                     collectedSignatures:
+                      description: CollectedSignatures is the list of signatures that
+                        approved this change
                       items:
                         properties:
                           signer:
+                            description: |-
+                              Signer is the identifier of the governor who signed the MSR.
+                              It contains governor's alias from the GovernorList.Members board.
                             type: string
                         required:
                         - signer
                         type: object
                       type: array
                     commitSHA:
-                      description: CommitSHA is the SHA of the approved commit
+                      description: CommitSHA is the Git commit hash of the approved
+                        change
                       type: string
                     governors:
+                      description: Governors is the list of governors who were part
+                        of the board for this approval
                       properties:
                         members:
-                          description: List of governors.
+                          description: Members is the list of governance board members
                           items:
                             properties:
                               alias:
-                                description: Alias for governor (for easier identification)
+                                description: Alias is the human-readable name for
+                                  the governor
                                 minLength: 1
                                 type: string
                               publicKey:
-                                description: PublicKey of the governor used to verify
-                                  signatures.
+                                description: PublicKey is the PGP public key of the
+                                  governor used to verify signatures
                                 minLength: 1
                                 type: string
                             required:
@@ -568,15 +635,17 @@ spec:
                             type: object
                           type: array
                         notificationChannels:
-                          description: General list of notification channels to inform
-                            governors about pending approvals.
+                          description: NotificationChannels is the list of channels
+                            to inform governors about pending approvals
                           items:
                             properties:
                               slack:
+                                description: Slack contains the Slack notification
+                                  channel configuration
                                 properties:
                                   channelID:
-                                    description: Slack channel ID to notify (e.g.,
-                                      S01234567)
+                                    description: ChannelID is the Slack channel ID
+                                      to notify (e.g., U0A7XASDMR28)
                                     minLength: 1
                                     type: string
                                 required:
@@ -588,41 +657,35 @@ spec:
                       - members
                       type: object
                     previousCommitSha:
+                      description: PreviousCommitSHA is the previous Git commit hash
                       type: string
                     require:
-                      description: |-
-                        ApprovalRule defines nested rules for approvals required.
-                        Each rule is a node. Each node can be:
-                        - intermediate node. Contains Require field with child rules:
-                        - AtLeast: number of child rules that must be satisfied
-                        - All: if true, all child rules must be satisfied
-
-                        - leaf node. Doesn't contain Require field, but contains Signer field:
-                        - Signer: the signer (governor) whose approval is required
+                      description: Require defines the approval rules that for the
+                        MSR.
                       properties:
                         all:
-                          description: If true, all child rules must be satisfied.
+                          description: All specifies whether all child rules must
+                            be satisfied
                           type: boolean
                         atLeast:
-                          description: Specifies the minimum number of child rules
-                            that must be satisfied.
+                          description: AtLeast specifies the minimum number of child
+                            rules that must be satisfied
                           minimum: 1
                           type: integer
                         require:
-                          description: List of child rules.
+                          description: Require is the list of nested approval rules
                           x-kubernetes-preserve-unknown-fields: true
                         signer:
-                          description: Signer can be either PublicKey or Alias of
-                            the governor. If alias is used, it should start with `$`
-                            to distinguish it from PublicKey.
+                          description: Signer is the governor identifier as an alias
                           minLength: 1
                           type: string
                       type: object
                     time:
-                      description: Time is the time when the approval was created
+                      description: Time is the timestamp when the approval was created
                       format: date-time
                       type: string
                     version:
+                      description: Version is the version number of this MCA
                       type: integer
                   required:
                   - changes
@@ -636,7 +699,7 @@ spec:
                 type: array
               conditions:
                 description: |-
-                  conditions represent the current state of the ManifestChangeApproval resource.
+                  Conditions represent the current state of the ManifestChangeApproval resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
@@ -698,6 +761,8 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               reconcileState:
+                description: ReconcileState tracks the progress of reconciling new
+                  MCA spec sub-state
                 type: string
             type: object
         required:
@@ -750,14 +815,18 @@ spec:
             description: spec defines the desired state of ManifestRequestTemplate
             properties:
               argoCD:
-                description: ArgoCD contains information about the git repository,
-                  branch and path where manifests are stored.
+                description: ArgoCD contains the reference to the ArgoCD application
                 properties:
                   application:
+                    description: Application is the reference to the ArgoCD Application
+                      resource
                     properties:
                       name:
+                        description: Name is the name of the Kubernetes resource
                         type: string
                       namespace:
+                        description: Namespace is the namespace of the Kubernetes
+                          resource
                         type: string
                     required:
                     - name
@@ -767,20 +836,31 @@ spec:
                 - application
                 type: object
               gitRepository:
+                description: GitRepository contains the Git repository configuration
                 properties:
                   ssh:
+                    description: SSH contains the Git repository SSH configuration
                     properties:
                       secretsRef:
+                        description: |-
+                          SecretsRef is the Kubernetes secret reference containing SSH credentials.
+                          It must have:
+                          - 'ssh-privateKey' key with the private SSH key for repository access.
+                          - 'passphrase' key with the passphrase for the private SSH key, if applicable (optional).
                         properties:
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                         required:
                         - name
                         - namespace
                         type: object
                       url:
+                        description: URL is the Git SSH URL for the repository.
                         type: string
                     required:
                     - secretsRef
@@ -790,20 +870,26 @@ spec:
                 - ssh
                 type: object
               governanceFolderPath:
+                description: |-
+                  GovernanceFolderPath is the path in the Git repository, where qubmango will create
+                  the operational folder '.qubmango' for its state and governance artifacts (e.g., signatures, MSRs, MCAs).
                 type: string
               governors:
-                description: Required until GovernorsRef is implemented.
+                description: |-
+                  Governors contains the governance board configuration.
+                  Required until GovernorsRef is implemented.
                 properties:
                   members:
-                    description: List of governors.
+                    description: Members is the list of governance board members
                     items:
                       properties:
                         alias:
-                          description: Alias for governor (for easier identification)
+                          description: Alias is the human-readable name for the governor
                           minLength: 1
                           type: string
                         publicKey:
-                          description: PublicKey of the governor used to verify signatures.
+                          description: PublicKey is the PGP public key of the governor
+                            used to verify signatures
                           minLength: 1
                           type: string
                       required:
@@ -812,14 +898,17 @@ spec:
                       type: object
                     type: array
                   notificationChannels:
-                    description: General list of notification channels to inform governors
-                      about pending approvals.
+                    description: NotificationChannels is the list of channels to inform
+                      governors about pending approvals
                     items:
                       properties:
                         slack:
+                          description: Slack contains the Slack notification channel
+                            configuration
                           properties:
                             channelID:
-                              description: Slack channel ID to notify (e.g., S01234567)
+                              description: ChannelID is the Slack channel ID to notify
+                                (e.g., U0A7XASDMR28)
                               minLength: 1
                               type: string
                           required:
@@ -831,43 +920,56 @@ spec:
                 - members
                 type: object
               mca:
-                description: MCA contains information about MCA metadata.
+                description: |-
+                  MCA initially contains information that is used to create dependent MCA instance.
+                  After creation, it serves as the reference to the instance.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               msr:
-                description: MSR contains information about MSR metadata.
+                description: |-
+                  MSR initially contains information that is used to create dependent MSR instance.
+                  After creation, it serves as the reference to the instance.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 required:
                 - name
                 - namespace
                 type: object
               notifications:
-                description: NotificationConfig holds the configuration for different
-                  notification providers.
+                description: Notifications contains the notification configuration
+                  (e.g., Slack)
                 properties:
                   slack:
                     description: |-
-                      Slack contains the configuration for Slack notifications, including the token secret.
+                      Slack contains the Kubernetes secret reference for Slack token
                       If this field is omitted, Slack notifications will be disabled.
                     properties:
                       secretsRef:
-                        description: SecretsRef points to the Secret containing the
-                          'token' key for the Slack Bot.
+                        description: |-
+                          SecretsRef points to the Secret containing the token for the Slack Bot.
+                          It must have:
+                          - 'token' key with the Slack Bot token for sending notifications.
                         properties:
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                         required:
                         - name
@@ -878,15 +980,25 @@ spec:
                     type: object
                 type: object
               pgp:
+                description: PGP contains the PGP configuration for signing and verification
                 properties:
                   publicKey:
+                    description: PublicKey is the PGP public key for signature verification
                     minLength: 1
                     type: string
                   secretsRef:
+                    description: |-
+                      SecretsRef is the Kubernetes secret reference for the PGP private key
+                      It must have:
+                      - 'privateKey' key with the PGP private key for signing.
+                      - 'passphrase' key with the passphrase for the private key, if applicable (optional).
                     properties:
                       name:
+                        description: Name is the name of the Kubernetes resource
                         type: string
                       namespace:
+                        description: Namespace is the namespace of the Kubernetes
+                          resource
                         type: string
                     required:
                     - name
@@ -898,30 +1010,28 @@ spec:
                 type: object
               require:
                 description: |-
-                  The policy rules for approvals.
+                  Require defines the admission rules for MSR approval.
                   Required until ApprovalRuleRef is implemented.
                 properties:
                   all:
-                    description: If true, all child rules must be satisfied.
+                    description: All specifies whether all child rules must be satisfied
                     type: boolean
                   atLeast:
-                    description: Specifies the minimum number of child rules that
-                      must be satisfied.
+                    description: AtLeast specifies the minimum number of child rules
+                      that must be satisfied
                     minimum: 1
                     type: integer
                   require:
-                    description: List of child rules.
+                    description: Require is the list of nested approval rules
                     x-kubernetes-preserve-unknown-fields: true
                   signer:
-                    description: Signer can be either PublicKey or Alias of the governor.
-                      If alias is used, it should start with `$` to distinguish it
-                      from PublicKey.
+                    description: Signer is the governor identifier as an alias
                     minLength: 1
                     type: string
                 type: object
               version:
                 description: |-
-                  Version is the current version of the ManifestRequestTemplate.
+                  Version is the incremental version of the policy.
                   Each new MRT must have a version higher than the previous one.
                 minimum: 1
                 type: integer
@@ -939,9 +1049,12 @@ spec:
             description: status defines the observed state of ManifestRequestTemplate
             properties:
               actionState:
-                description: ActionState tracks the progress of the main reconcile.
+                description: ActionState tracks the progress of the main reconcile
+                  state.
                 type: string
               applicationInitTargetRevision:
+                description: ApplicationInitTargetRevision is the targetRevision of
+                  the ArgoCD Application at the moment of MRT creation.
                 type: string
               conditions:
                 description: |-
@@ -1008,7 +1121,7 @@ spec:
                 x-kubernetes-list-type: map
               deletionProcessingState:
                 description: DeletionProcessingState tracks the progress of the deletion
-                  process.
+                  process sub-state.
                 type: string
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
@@ -1016,15 +1129,17 @@ spec:
                 type: string
               revisionProcessingStep:
                 description: RevisionProcessingState tracks the progress of the revision
-                  processing.
+                  processing sub-state.
                 type: string
               revisionQueueRef:
                 description: RevisionsQueueRef is the reference to the dedicated queue
                   CRD.
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                 type: object
             type: object
@@ -1078,19 +1193,31 @@ spec:
             description: spec defines the desired state of ManifestSigningRequest
             properties:
               changes:
+                description: Changes is the list of file changes in this request
                 items:
                   properties:
                     kind:
+                      description: Kind is the Kubernetes resource kind (e.g., Deployment,
+                        Service)
                       type: string
                     name:
+                      description: Name is the name of the Kubernetes resource
                       type: string
                     namespace:
+                      description: Namespace is the namespace of the Kubernetes resource
                       type: string
                     path:
+                      description: Path is the file path in the Git repository
                       type: string
                     sha256:
+                      description: |-
+                        SHA256 is the hash of the file content.
+                        If New or Updated, it represents the new content hash.
+                        If Deleted, it represents the last known content hash.
                       type: string
                     status:
+                      description: Status indicates the change type (New, Updated,
+                        or Deleted)
                       type: string
                   required:
                   - kind
@@ -1102,22 +1229,27 @@ spec:
                   type: object
                 type: array
               commitSha:
+                description: CommitSHA is the Git commit hash for this request
                 type: string
               gitRepositoryUrl:
+                description: GitRepositoryURL is the SSH URL of the Git repository
                 type: string
               governors:
-                description: Required until GovernorsRef is implemented.
+                description: |-
+                  Governors contains the governance board configuration.
+                  Required until GovernorsRef is implemented.
                 properties:
                   members:
-                    description: List of governors.
+                    description: Members is the list of governance board members
                     items:
                       properties:
                         alias:
-                          description: Alias for governor (for easier identification)
+                          description: Alias is the human-readable name for the governor
                           minLength: 1
                           type: string
                         publicKey:
-                          description: PublicKey of the governor used to verify signatures.
+                          description: PublicKey is the PGP public key of the governor
+                            used to verify signatures
                           minLength: 1
                           type: string
                       required:
@@ -1126,14 +1258,17 @@ spec:
                       type: object
                     type: array
                   notificationChannels:
-                    description: General list of notification channels to inform governors
-                      about pending approvals.
+                    description: NotificationChannels is the list of channels to inform
+                      governors about pending approvals
                     items:
                       properties:
                         slack:
+                          description: Slack contains the Slack notification channel
+                            configuration
                           properties:
                             channelID:
-                              description: Slack channel ID to notify (e.g., S01234567)
+                              description: ChannelID is the Slack channel ID to notify
+                                (e.g., U0A7XASDMR28)
                               minLength: 1
                               type: string
                           required:
@@ -1145,25 +1280,32 @@ spec:
                 - members
                 type: object
               locations:
-                description: Location contains information about where to store MSR,
-                  MCA and signatures.
+                description: Locations container with important paths within the Git
+                  repository
                 properties:
                   governancePath:
                     description: |-
-                      GovernancePath where MSR, MCA and Signatures will be stored.
+                      GovernancePath is full path in the Git repository (MRT.GovernanceFolderPath + '.qubmango')
+                      where governance artifacts (MSR, MCA, signatures etc.) will be stored.
                       Default: root of the repo.
                     minLength: 1
                     type: string
                   sourcePath:
+                    description: SourcePath is the path in the Git repository to the
+                      manifests that are being protected.
                     type: string
                 type: object
               mrt:
+                description: MRT is the reference to the parent MRT
                 properties:
                   name:
+                    description: Name is the name of the Kubernetes resource
                     type: string
                   namespace:
+                    description: Namespace is the namespace of the Kubernetes resource
                     type: string
                   version:
+                    description: Version is the version of the referenced resource
                     type: integer
                 required:
                 - name
@@ -1171,37 +1313,38 @@ spec:
                 - version
                 type: object
               previousCommitSha:
+                description: PreviousCommitSHA is the previous Git commit hash
                 type: string
               publicKey:
-                description: publicKey is used to sign MCA.
+                description: |-
+                  PublicKey is the PGP public key of the parent MRT PGP private key.
+                  It is used to verify signatures on this MSR.
                 minLength: 1
                 type: string
               require:
                 description: |-
-                  The policy rules for approvals.
+                  Require defines the admission rules for MSR approval.
                   Required until ApprovalRuleRef is implemented.
                 properties:
                   all:
-                    description: If true, all child rules must be satisfied.
+                    description: All specifies whether all child rules must be satisfied
                     type: boolean
                   atLeast:
-                    description: Specifies the minimum number of child rules that
-                      must be satisfied.
+                    description: AtLeast specifies the minimum number of child rules
+                      that must be satisfied
                     minimum: 1
                     type: integer
                   require:
-                    description: List of child rules.
+                    description: Require is the list of nested approval rules
                     x-kubernetes-preserve-unknown-fields: true
                   signer:
-                    description: Signer can be either PublicKey or Alias of the governor.
-                      If alias is used, it should start with `$` to distinguish it
-                      from PublicKey.
+                    description: Signer is the governor identifier as an alias
                     minLength: 1
                     type: string
                 type: object
               version:
-                description: 0 is value of the default ManifestSigningRequest, created
-                  by qubmango
+                description: Version is the version of this MSR (0 for default MSR
+                  created by qubmango)
                 minimum: 0
                 type: integer
             required:
@@ -1220,11 +1363,18 @@ spec:
             description: status defines the observed state of ManifestSigningRequest
             properties:
               actionState:
+                description: ActionState tracks the progress of the main reconcile
+                  state
                 type: string
               collectedSignatures:
+                description: CollectedSignatures is the list of signatures collected
+                  so far
                 items:
                   properties:
                     signer:
+                      description: |-
+                        Signer is the identifier of the governor who signed the MSR.
+                        It contains governor's alias from the GovernorList.Members board.
                       type: string
                   required:
                   - signer
@@ -1232,7 +1382,7 @@ spec:
                 type: array
               conditions:
                 description: |-
-                  conditions represent the current state of the ManifestSigningRequest resource.
+                  Conditions represent the current state of the ManifestSigningRequest resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
                   The status of each condition is one of True, False, or Unknown.
                 items:
@@ -1295,27 +1445,43 @@ spec:
                 x-kubernetes-list-type: map
               lastObservedCommitHash:
                 description: LastObservedCommitHash is the last observed commit hash
-                  from the git repository
+                  from the Git repository
                 type: string
               reconcileState:
+                description: ReconcileState tracks the progress of reconciling new
+                  MSR spec sub-state
                 type: string
               requestHistory:
+                description: RequestHistory is the history of all signing requests
                 items:
                   properties:
                     changes:
+                      description: Changes is the list of file changes in this request
                       items:
                         properties:
                           kind:
+                            description: Kind is the Kubernetes resource kind (e.g.,
+                              Deployment, Service)
                             type: string
                           name:
+                            description: Name is the name of the Kubernetes resource
                             type: string
                           namespace:
+                            description: Namespace is the namespace of the Kubernetes
+                              resource
                             type: string
                           path:
+                            description: Path is the file path in the Git repository
                             type: string
                           sha256:
+                            description: |-
+                              SHA256 is the hash of the file content.
+                              If New or Updated, it represents the new content hash.
+                              If Deleted, it represents the last known content hash.
                             type: string
                           status:
+                            description: Status indicates the change type (New, Updated,
+                              or Deleted)
                             type: string
                         required:
                         - kind
@@ -1327,29 +1493,37 @@ spec:
                         type: object
                       type: array
                     collectedSignatures:
+                      description: CollectedSignatures is the list of signatures collected
+                        for this request
                       items:
                         properties:
                           signer:
+                            description: |-
+                              Signer is the identifier of the governor who signed the MSR.
+                              It contains governor's alias from the GovernorList.Members board.
                             type: string
                         required:
                         - signer
                         type: object
                       type: array
                     commitSHA:
+                      description: CommitSHA is the Git commit hash for this request
                       type: string
                     governors:
+                      description: Governors is the list of governors for this request
                       properties:
                         members:
-                          description: List of governors.
+                          description: Members is the list of governance board members
                           items:
                             properties:
                               alias:
-                                description: Alias for governor (for easier identification)
+                                description: Alias is the human-readable name for
+                                  the governor
                                 minLength: 1
                                 type: string
                               publicKey:
-                                description: PublicKey of the governor used to verify
-                                  signatures.
+                                description: PublicKey is the PGP public key of the
+                                  governor used to verify signatures
                                 minLength: 1
                                 type: string
                             required:
@@ -1358,15 +1532,17 @@ spec:
                             type: object
                           type: array
                         notificationChannels:
-                          description: General list of notification channels to inform
-                            governors about pending approvals.
+                          description: NotificationChannels is the list of channels
+                            to inform governors about pending approvals
                           items:
                             properties:
                               slack:
+                                description: Slack contains the Slack notification
+                                  channel configuration
                                 properties:
                                   channelID:
-                                    description: Slack channel ID to notify (e.g.,
-                                      S01234567)
+                                    description: ChannelID is the Slack channel ID
+                                      to notify (e.g., U0A7XASDMR28)
                                     minLength: 1
                                     type: string
                                 required:
@@ -1378,39 +1554,33 @@ spec:
                       - members
                       type: object
                     previousCommitSha:
+                      description: PreviousCommitSHA is the previous Git commit hash
                       type: string
                     require:
-                      description: |-
-                        ApprovalRule defines nested rules for approvals required.
-                        Each rule is a node. Each node can be:
-                        - intermediate node. Contains Require field with child rules:
-                        - AtLeast: number of child rules that must be satisfied
-                        - All: if true, all child rules must be satisfied
-
-                        - leaf node. Doesn't contain Require field, but contains Signer field:
-                        - Signer: the signer (governor) whose approval is required
+                      description: Require defines the approval rules for this request
                       properties:
                         all:
-                          description: If true, all child rules must be satisfied.
+                          description: All specifies whether all child rules must
+                            be satisfied
                           type: boolean
                         atLeast:
-                          description: Specifies the minimum number of child rules
-                            that must be satisfied.
+                          description: AtLeast specifies the minimum number of child
+                            rules that must be satisfied
                           minimum: 1
                           type: integer
                         require:
-                          description: List of child rules.
+                          description: Require is the list of nested approval rules
                           x-kubernetes-preserve-unknown-fields: true
                         signer:
-                          description: Signer can be either PublicKey or Alias of
-                            the governor. If alias is used, it should start with `$`
-                            to distinguish it from PublicKey.
+                          description: Signer is the governor identifier as an alias
                           minLength: 1
                           type: string
                       type: object
                     status:
+                      description: Status is the current status of the signing request
                       type: string
                     version:
+                      description: Version is the version number of this MSR
                       type: integer
                   required:
                   - changes
@@ -1422,8 +1592,11 @@ spec:
                   type: object
                 type: array
               rulesFulfillmentState:
+                description: RulesFulfillmentState tracks the progress of checking
+                  approval rules fulfillment sub-state
                 type: string
               status:
+                description: Status is the current status of the MSR
                 type: string
             type: object
         required:
@@ -2075,7 +2248,7 @@ spec:
         - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
         command:
         - /manager
-        image: ghcr.io/alwayssayno/qubmango-controller:v0.1.2
+        image: ghcr.io/alwayssayno/qubmango-controller:v1.0.0
         livenessProbe:
           httpGet:
             path: /healthz
