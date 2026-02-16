@@ -2,11 +2,11 @@
 
 Qubmango is Kubernetes-native governance application for GitOps workflows, which enables secure management of Kubernetes manifests through a quorum-based approval process.
 
-The project consists of two parts:
+The project consists of two parts: Admission Controller and CLI.
 
 ## Qubmango Admission Controller
 
-The Qubmango Admission Controller is a Kubernetes admission controller that intercepts manifest changes in a Git repository and enforces a quorum-based approval process before allowing the changes to be applied to the cluster. It makes sure that any changes to the Kubernetes manifests go through a defined approval process, establishing trust and traceability for changes made to the cluster.
+The Qubmango Admission Controller is a Kubernetes admission controller that intercepts manifest changes in a Git repository and enforces a quorum-based approval process before allowing the changes to be applied to the cluster. It makes sure that any changes to the Kubernetes manifests go through a defined approval process, establishing cryptographic trust and traceability for changes made to the cluster.
 
 It allows to block unapproved manifests coming from the Git repository, notify governors about them and manage asynchronous batch approvals for manifest changes.
 
