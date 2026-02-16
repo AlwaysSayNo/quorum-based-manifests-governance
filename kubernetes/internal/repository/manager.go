@@ -248,9 +248,9 @@ func (m *Manager) syncSSHSecrets(
 		return nil, fmt.Errorf("failed to fetch git secret '%s': %w", secretRef.Name, err)
 	}
 
-	privateKeyBytes, ok := gitSecret.Data["ssh-privatekey"]
+	privateKeyBytes, ok := gitSecret.Data["ssh-privateKey"]
 	if !ok {
-		return nil, fmt.Errorf("secret '%s' is missing 'ssh-privatekey' field", secretRef.Name)
+		return nil, fmt.Errorf("secret '%s' is missing 'ssh-privateKey' field", secretRef.Name)
 	}
 
 	passphraseBytes, ok := gitSecret.Data["passphrase"]

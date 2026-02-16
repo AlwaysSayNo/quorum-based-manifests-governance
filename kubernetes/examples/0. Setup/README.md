@@ -112,13 +112,13 @@ In the `secrets` folder there are a number of empty files. You should fill these
 The end structure of your repository should look like this:
 
 ```
-git-repository-root:
+git-repository-root/
 ├── Taskfile.yaml
-├── app-manifests:
+├── app-manifests/
 │   ├── app.yaml
 │   └── mrt.yaml
-└── secrets:
-    ├── tempaltes:
+└── secrets/
+    ├── tempaltes/
     ├── owner-pgp-public-key.asc
     ├── pgp-private-key.asc
     ├── pgp-public-key.asc
@@ -263,12 +263,14 @@ Every governor (Owner, Voter1, Voter2 and Voter3) should have the `qubmango` CLI
 
 ```bash
 qubmango config add-repo \
-    repo-name \ # The name of the repository, e.g. "governance-repo"
-    repo-ssh-url \ # The SSH URL of the repository, e.g. "git@github.com:organization/governance-repo.git"
-    own-ssh-private-key-path \ # The path to the own SSH private key, e.g. "/home/user/.ssh/id_ed25519"
-    own-pgp-private-key-path \ # The path to the own PGP private key, e.g. "/home/user/.pgp/owner-pgp-private-key.asc"
-    operator-pgp-public-key-path \ # The path to the operator PGP public key, e.g. "/home/user/.pgp/qubmango-pgp-public-key.asc"
-    in-repo-governance-folder-path # The path to the governance folder in the repository, e.g. "app-manifests/.qubmango"
+    <alias> \ # The name of the repository, e.g. "governance-repo"
+    <url> \ # The SSH URL of the repository, e.g. "git@github.com:organization/governance-repo.git"
+    <ssh-key-path> \ # The path to the own SSH private key, e.g. "/home/user/.ssh/id_ed25519"
+    <pgp-key-path> \ # The path to the own PGP private key, e.g. "/home/user/.pgp/owner-pgp-private-key.asc"
+    <governance-key-path> \ # The path to the operator PGP public key, e.g. "/home/user/.pgp/qubmango-pgp-public-key.asc"
+    <governance-folder-path> \ # The path to the governance folder in the repository, e.g. "app-manifests/.qubmango"
+    <msr-name> \ # The name of the MSR resource referenced in the MRT, e.g. "msr-sample"
+    <mca-name> # The name of the MCA resource referenced in the MRT, e.g. "mca-sample"
 ```
 
 ## Final Notes
@@ -278,8 +280,8 @@ After the setup is completed, you should have a basics for the governance proces
 The final structure of your repository should look like this:
 
 ```
-git-repository-root:
-└── app-manifests:
+git-repository-root/
+└── app-manifests/
     ├── app.yaml
     ├── configmap.yaml
     ├── mrt.yaml

@@ -1,18 +1,20 @@
 # Qubmango CLI
 
+Qubmango CLI is a command-line tool that allows governors to interact with the Qubmango governance system. It provides commands for reviewing and approving Manifest Signing Requests (MSRs), viewing the history of Manifest Change Approvals (MCAs), and managing the CLI configuration.
+
 ## Setup
 
 1. Install the CLI by running `go install github.com/AlwaysSayNo/quorum-based-manifests-governance/cli@latest`.
 
 > Note: or build from source by cloning the repository and running `go build -o qubmango ./cli` in the root directory of the project and running:
-> ```
+> ```bash
 > go mod tidy
 > go build -o qubmango
 > ```
 
 2. Configure the CLI by running:
 
-```
+```bash
 qubmango config add-repo <alias> \
     <url> \
     <ssh-key-path> \
@@ -34,15 +36,15 @@ Description of the parameters:
 - `mca-name`: The name of the Manifest Change Approval (MCA) resource referenced in the MRT.
 
 If 
-- the MRT is stored in the GitHub repository with name `'git-repository'` in organization `'org'` 
-- the MRT references MSR and MCA with names `'msr-name'` and `'mca-name'` respectively
-- the governance folder is at path `'/governance/.qubmango'`
-- pgp and ssh keys are stored locally at paths `'/keys/pgp-private.key'` and `'/keys/ssh-private.key'` respectively
-- and user downloaded and saved the MRT public PGP key at path `'/keys/mrt-pgp-public.key'`
+- the MRT is stored in the GitHub repository with name `git-repository` in organization `org` 
+- the MRT references MSR and MCA with names `msr-name` and `mca-name` respectively
+- the governance folder is at path `/governance/.qubmango`
+- pgp and ssh keys are stored locally at paths `/keys/pgp-private.key` and `/keys/ssh-private.key` respectively
+- and user downloaded and saved the MRT public PGP key at path `/keys/mrt-pgp-public.key`
 
 the CLI command will look like this:
 
-``` 
+```bash
 qubmango config add-repo git-repo \
     git@github.com:org/git-repository.git \
     /keys/pgp-private.key \
@@ -55,13 +57,13 @@ qubmango config add-repo git-repo \
 
 3. Configure the CLI user information by running:
 
-```
+```bash
 qubmango config set-user <user-name> <user-email>
 ```
 
 For example:
 
-```
+```bash
 qubmango config set-user "Nazar Grynko" "nazar.grynko@qubmango.com"
 ```
 
@@ -71,7 +73,7 @@ qubmango config set-user "Nazar Grynko" "nazar.grynko@qubmango.com"
 
 To review pending MSR, run the following command:
 
-```
+```bash
 qubmango get msr --repo <repo-alias>
 ```
 
@@ -87,7 +89,7 @@ This command will display the details of the latest MSR for the specified reposi
 
 To review the changed files in the `git-diff` format, run the following command:
 
-```
+```bash
 qubmango get file-diff --repo <repo-alias>
 ```
 
@@ -97,7 +99,7 @@ It will display the list of changed files in the latest MSR for the specified re
 
 To approve the MSR, run the following command:
 
-```
+```bash
 qubmango sign msr <msr-version> --repo <repo-alias>
 ```
 
@@ -107,7 +109,7 @@ It will sign the MSR with the PGP private key specified in the repository config
 
 To review the history of MCAs, run the following command:
 
-```
+```bash
 qubmango history mca --repo <repo-alias>
 ```
 
@@ -119,7 +121,7 @@ This command will display list of all MCAs saved in the Git repository.
 
 To view the current CLI configuration, run:
 
-```
+```bash
 qubmango config show
 ```
 
@@ -129,7 +131,7 @@ This displays all configured repositories, user information, and the currently a
 
 To modify an existing repository configuration, use:
 
-```
+```bash
 qubmango config edit-repo <alias> [flags]
 ```
 
@@ -144,7 +146,7 @@ Available flags:
 
 Example - updating only the SSH key path:
 
-```
+```bash
 qubmango config edit-repo git-repo --ssh-key-path /new/path/to/ssh-key
 ```
 
@@ -152,7 +154,7 @@ qubmango config edit-repo git-repo --ssh-key-path /new/path/to/ssh-key
 
 To remove a repository configuration, run:
 
-```
+```bash
 qubmango config remove-repo <alias>
 ```
 
@@ -162,13 +164,13 @@ This will delete the repository configuration from the CLI.
 
 To set a default repository (so you don't need to specify `--alias` in every command), run:
 
-```
+```bash
 qubmango config use-repo <alias>
 ```
 
 To unset the current repository:
 
-```
+```bash
 qubmango config use-repo ""
 ```
 
@@ -176,6 +178,6 @@ qubmango config use-repo ""
 
 By default, the CLI uses `/root/.ssh/known_hosts` as the path to the `known_hosts` file for verifying SSH host keys when connecting to Git repositories. To change this path, run:
 
-```
+```bash
 qubmango config set-known-hosts <path-to-known-hosts>
 ```

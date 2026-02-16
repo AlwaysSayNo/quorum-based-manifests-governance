@@ -324,7 +324,7 @@ var _ = Describe("Repository Manager", func() {
 						Namespace: testNamespace.Name,
 					},
 					StringData: map[string]string{
-						"ssh-privatekey": privateKey,
+						"ssh-privateKey": privateKey,
 						"passphrase":     "",
 					},
 				}
@@ -399,7 +399,7 @@ var _ = Describe("Repository Manager", func() {
 						Namespace: testNamespace.Name,
 					},
 					StringData: map[string]string{
-						"ssh-privatekey": privateKey,
+						"ssh-privateKey": privateKey,
 						"passphrase":     "",
 					},
 				}
@@ -479,7 +479,7 @@ var _ = Describe("Repository Manager", func() {
 					Namespace: testNamespace.Name,
 				},
 				StringData: map[string]string{
-					"ssh-privatekey": privateKey,
+					"ssh-privateKey": privateKey,
 					"passphrase":     "",
 				},
 			}
@@ -656,7 +656,7 @@ var _ = Describe("Repository Manager", func() {
 				privateKeyNew, _, err := generateTestSSHKey()
 				Expect(err).NotTo(HaveOccurred())
 				freshSSHSecret.StringData = map[string]string{
-					"ssh-privatekey": privateKeyNew,
+					"ssh-privateKey": privateKeyNew,
 					"passphrase":     "new-passphrase",
 				}
 				Expect(k8sClient.Update(ctx, freshSSHSecret)).Should(Succeed())

@@ -83,7 +83,7 @@ tasks:
         kubectl create secret generic ssh-secret-my \
           --namespace test-ns \
           --type Opaque \
-          --from-file=ssh-privatekey=./secrets/ssh-private-key \
+          --from-file=ssh-privateKey=./secrets/ssh-private-key \
           --from-literal=passphrase=ssh-passphrase \
           --dry-run=client -o yaml > ./secrets/template/ssh-secret.yaml
 

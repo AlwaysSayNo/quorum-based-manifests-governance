@@ -259,6 +259,7 @@ func main() {
 		}
 	}
 
+	// MSR reconciler setup
 	if err := (&controller.ManifestSigningRequestReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -269,6 +270,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// MCA reconciler setup
 	if err := (&controller.ManifestChangeApprovalReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
@@ -279,6 +281,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// GovernanceQueue reconciler setup
 	if err := (&controller.GovernanceQueueReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
