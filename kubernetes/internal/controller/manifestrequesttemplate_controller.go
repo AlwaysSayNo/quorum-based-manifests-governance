@@ -1262,7 +1262,7 @@ func ValidateVersionUpdated(
 ) field.ErrorList {
 	specEqual := reflect.DeepEqual(oldMRT.Spec, newMRT.Spec)
 
-	// Validate, that on MRT spec change, version incremented as well
+	// Validate that on MRT spec change, version incremented as well
 	if !specEqual && newMRT.Spec.Version <= oldMRT.Spec.Version {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("version"), newMRT.Spec.Version, "version must be incremented on change"))
 	}
@@ -1275,17 +1275,17 @@ func ValidateImmutableFields(
 	newMRT *governancev1alpha1.ManifestRequestTemplate,
 	allErrs field.ErrorList,
 ) field.ErrorList {
-	// Validate, that gitRepository.ssh (secret and url) is immutable
+	// Validate that gitRepository.ssh (secret and url) is immutable
 	if !reflect.DeepEqual(oldMRT.Spec.GitRepository.SSH, newMRT.Spec.GitRepository.SSH) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("gitRepository").Child("ssh"), newMRT.Spec.GitRepository.SSH, "ssh is immutable and cannot be changed after creation"))
 	}
 
-	// Validate, that pgp is immutable
+	// Validate that pgp is immutable
 	if !reflect.DeepEqual(oldMRT.Spec.PGP, newMRT.Spec.PGP) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("pgp"), newMRT.Spec.PGP, "pgp is immutable and cannot be changed after creation"))
 	}
 
-	// Validate, that notification channels are immutable
+	// Validate that notification channels are immutable
 	oldNotifications := oldMRT.Spec.Notifications
 	newNotifications := newMRT.Spec.Notifications
 
@@ -1297,22 +1297,27 @@ func ValidateImmutableFields(
 		}
 	}
 
-	// Validate, that gitRepository.argoCD is immutable
+	// Validate that gitRepository.argoCD is immutable
 	if !reflect.DeepEqual(oldMRT.Spec.ArgoCD, newMRT.Spec.ArgoCD) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD"), newMRT.Spec.ArgoCD, "argoCD is immutable and cannot be changed after creation"))
 	}
 
-	// Validate, that argoCD.application.namespace == 'argocd'
+	// Validate that argoCD.application.namespace == 'argocd'
 	if newMRT.Spec.ArgoCD.Application.Namespace != "argocd" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("argoCD").Child("application").Child("namespace"), newMRT.Spec.ArgoCD.Application.Namespace, "dynamic namespaces are not supported yet, must be 'argocd'"))
 	}
 
-	// Validate, that on update MSR, MCA values cannot be changed
+	// Validate that on update MSR, MCA values cannot be changed
 	if oldMRT.Spec.MSR != newMRT.Spec.MSR {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("msr"), "MSR reference is immutable and cannot be changed after creation"))
 	}
 	if oldMRT.Spec.MCA != newMRT.Spec.MCA {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("mca"), "MCA reference is immutable and cannot be changed after creation"))
+	}
+
+	// Validate that GovernanceFolderPath is not changed
+	if oldMRT.Spec.GovernanceFolderPath != newMRT.Spec.GovernanceFolderPath {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("governanceFolderPath"), "governanceFolderPath cannot be changed after creation, because it can cause loss of governance history"))
 	}
 
 	return allErrs
