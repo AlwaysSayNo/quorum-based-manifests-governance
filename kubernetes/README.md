@@ -11,6 +11,28 @@ Before installing Qubmango, ensure your cluster has the following:
 - **Kubernetes** `v1.28` or higher
 - **Argo CD** `v3.2` or higher
 
+### Argo CD
+
+If you don't have Argo CD installed, you can do it using:
+
+```bash
+kubectl create namespace argocd
+kubectl create -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s || true
+```
+
+You can then access the [Argo CD UI](https://argo-cd.readthedocs.io/en/stable/developer-guide/running-locally/). For local clusters, you can use port forwarding:
+
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+
+Then open `http://localhost:8080` in your browser. The default username is `admin`, and the password can be retrieved with:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+```
+
 ### Certificate Management
 
 Qubmango uses webhooks that require TLS certificates. You have two options:
