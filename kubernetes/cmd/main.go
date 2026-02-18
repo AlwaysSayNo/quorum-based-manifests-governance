@@ -44,7 +44,9 @@ import (
 	"github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier"
 	slacknotifier "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/notifier/slack"
 	repomanager "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository"
+	bitbucketprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/bitbucket"
 	githubprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/github"
+	gitlabprovider "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/repository/gitlab"
 	webhookv1alpha1 "github.com/AlwaysSayNo/quorum-based-manifests-governance/kubernetes/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
@@ -197,9 +199,13 @@ func main() {
 
 	// Create Git manager and register the providers
 	githubFactory := githubprovider.GitHubProviderFactory{}
+	gitlabFactory := gitlabprovider.GitLabProviderFactory{}
+	bitbucketFactory := bitbucketprovider.BitbucketProviderFactory{}
 
 	repoManager := repomanager.NewManager(mgr.GetClient(), repositoriesBasePath, knownHostsPath)
 	repoManager.Register(&githubFactory)
+	repoManager.Register(&gitlabFactory)
+	repoManager.Register(&bitbucketFactory)
 
 	// Create Notifier manager and register the notifiers
 	notifierManager := notifier.NewManager(mgr.GetClient())

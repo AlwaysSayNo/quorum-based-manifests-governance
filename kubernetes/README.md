@@ -202,7 +202,7 @@ spec:
     # PGP public key for signature verification (ASCII-armored)
     publicKey: |
       -----BEGIN PGP PUBLIC KEY BLOCK-----
-      ... your PGP public key ...
+      ... operator's PGP public key ...
       -----END PGP PUBLIC KEY BLOCK-----
     # Kubernetes secret reference for PGP key
     secretsRef:
@@ -548,7 +548,7 @@ make docker-build docker-push IMG=<some-registry>/qubmango-controller:tag
 > Note:
 > This image ought to be published in the personal registry you specified.
 > And it is required to have access to pull the image from the working environment.
-> Make sure you have the proper permission to the registry if the above commands don’t work.
+> Make sure you have the proper permission to the registry if the above commands don't work.
 
 2. Build the installer for the image built and published in the registry:
 

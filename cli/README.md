@@ -8,7 +8,7 @@ Qubmango CLI is a command-line tool that allows governors to interact with the Q
 
 #### Personal PGP keys
 
-CLI requires a PGP private key to sign MSRs and git commits. This keys should be generated and stored locally by the user in a file in a secure location. The path to this file will be provided during the CLI configuration.
+CLI requires a PGP private key to sign MSRs and git commits. The public part of the key must be in the MRT's `spec.governors.members` list, otherwise signature will be ignored by the Qubmango. This keys should be generated and stored locally by the user in a file in a secure location. The path to this file will be provided during the CLI configuration.
 
 #### Personal SSH keys
 
@@ -16,7 +16,7 @@ CLI requires an SSH private key to connect to the Git repository. The key must b
 
 #### MRT PGP public key
 
-CLI requires the PGP public key of the Manifest Request Template (MRT) to verify the signatures of MSRs. This key should be provided by the repository administrators and stored locally by the user in a file. The path to this file will be provided during the CLI configuration.
+CLI requires the PGP public key of the Manifest Request Template (MRT) to verify the signatures of MSRs (e.g. `spec.pgp.publicKey`). This key should be provided by the repository administrators and stored locally by the user in a file. The path to this file will be provided during the CLI configuration.
 
 ### Other prerequisites
 
@@ -224,3 +224,11 @@ By default, the CLI uses `/root/.ssh/known_hosts` as the path to the `known_host
 ```bash
 qubmango config set-known-hosts <path-to-known-hosts>
 ```
+
+## Common Issues
+
+**Issue**: Fails to connect to the Git repository with an error related to SSH authentication or host key verification.
+- **Solution**: Make sure that the SSH private key specified in the repository configuration is correct and has the necessary permissions to access the Git repository. Also, ensure that the host key of the Git server is added to the `known_hosts` file at the path specified in the CLI configuration.
+
+**Issue**: MSR signatures are not recognized as valid.
+- **Solution**: Ensure that the cloned public PGP key of the MRT is correct and matches the one specified in the MRT `spec.pgp.publicKey` (e.g. doesn't have extra spaces or newlines).
