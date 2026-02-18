@@ -305,7 +305,7 @@ tasks:
     desc: "Clean up the governance initialization from the cluster."
     cmds:
       - |
-        kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v0.1.0/install.yaml --ignore-not-found --wait=true
+        kubectl delete -f https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases/download/v1.0.1/install.yaml --ignore-not-found --wait=true
 
   # Internal helper
 
