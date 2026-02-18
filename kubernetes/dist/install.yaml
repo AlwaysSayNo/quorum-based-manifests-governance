@@ -2248,7 +2248,7 @@ spec:
         - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
         command:
         - /manager
-        image: ghcr.io/alwayssayno/qubmango-controller:v1.0.0
+        image: ghcr.io/alwayssayno/qubmango-controller:v1.0.1
         livenessProbe:
           httpGet:
             path: /healthz
