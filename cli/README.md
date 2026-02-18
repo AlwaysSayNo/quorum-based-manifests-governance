@@ -2,6 +2,29 @@
 
 Qubmango CLI is a command-line tool that allows governors to interact with the Qubmango governance system. It provides commands for reviewing and approving Manifest Signing Requests (MSRs), viewing the history of Manifest Change Approvals (MCAs), and managing the CLI configuration.
 
+## Prerequisites
+
+### Secrets
+
+#### Personal PGP keys
+
+CLI requires a PGP private key to sign MSRs and git commits. This keys should be generated and stored locally by the user in a file in a secure location. The path to this file will be provided during the CLI configuration.
+
+#### Personal SSH keys
+
+CLI requires an SSH private key to connect to the Git repository. The key must be added to deployment keys of the target Git repository and have `read` and `write` access there. This key should be generated and stored locally by the user in a file in a secure location. The path to this file will be provided during the CLI configuration.
+
+#### MRT PGP public key
+
+CLI requires the PGP public key of the Manifest Request Template (MRT) to verify the signatures of MSRs. This key should be provided by the repository administrators and stored locally by the user in a file. The path to this file will be provided during the CLI configuration.
+
+### Other prerequisites
+
+User also must know:
+- the SSH URL of the Git repository to be governed
+- the path to the governance folder in the Git repository
+- the names of the MSR and MCA resources referenced in the MRT
+
 ## Setup
 
 1. Install the CLI by running:
@@ -34,8 +57,8 @@ qubmango config add-repo <alias> \
 Description of the parameters:
 - `alias`: An alias for the repository configuration, used to reference this repository in other CLI commands.
 - `url`: The SSH URL of the Git repository to be governed.
-- `ssh-key-path`: The local file path to the PGP private key used for signing MSRs and git commits.
-- `pgp-key-path`: The local file path to the SSH private key used for connecting to the Git repository.
+- `ssh-key-path`: The local file path to the SSH private key used for connecting to the Git repository.
+- `pgp-key-path`: The local file path to the PGP private key used for signing MSRs and git commits.
 - `governance-key-path`: The local file path to the PGP public key of the Manifest Request Template (MRT).
 - `governance-folder-path`: The path to the Qubmango governance folder within the Git repository.
 - `msr-name`: The name of the Manifest Signing Request (MSR) resource referenced in the MRT.
@@ -61,9 +84,6 @@ qubmango config add-repo git-repo \
     mca-name
 ```
 
-> Note:
-> 1. The SSH key specified in the configuration must have `write` and `read` access to the Git repository, as the CLI needs to push signatures there when approving MSRs.
-
 3. Configure the CLI user information by running:
 
 ```bash
@@ -77,6 +97,20 @@ qubmango config set-user "Nazar Grynko" "nazar.grynko@qubmango.com"
 ```
 
 ## CLI commands
+
+### Help
+
+To view the list of available commands and their descriptions, run:
+
+```bash
+qubmango --help
+```
+
+Or to view the help for a specific command, run:
+
+```bash
+qubmango <command> --help
+```
 
 ### Review Manifest Signing Requests (MSR)
 

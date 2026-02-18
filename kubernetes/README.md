@@ -72,7 +72,7 @@ spec:
     # The URL of the public GitHub repository
     repoURL: https://github.com/org/git-repository.git
     # The branch Argo CD should track
-    targetRevision: main
+    targetRevision: HEAD
     # The path within the repository, Argo CD should monitor
     path: app-manifests
     # # Optional: If application would have spec.source.path empty,
@@ -106,7 +106,7 @@ spec:
 ```
 
 > Note:
-> 1. `Application` should have namespace `argocd`. Qubmango doesn't support governing Applications deployed in other namespaces so far.
+> 1. `Application` must have namespace `argocd`. Qubmango doesn't support governing `Applications` deployed in other namespaces so far.
 > 2. When `spec.source.path` is empty, it means that Argo will monitor the whole project. Since, after governance project start, Qubmango needs to create its operational folder in `governanceFolderPath/.qubmango`. In this case, you need to exclude `governanceFolderPath/.qubmango` from Argo CD synchronization to prevent it from trying to deploy Qubmango's operational manifests to the cluster. If your `Application` already has a non-empty `spec.source.path`, and your `governanceFolderPath` is outside of it, then you don't need to exclude anything, since Argo CD will only monitor the specified path and won't interfere with Qubmango's folder.
 > 3. After the governance process is established, Qubmango will manage the `targetRevision` field of the `Application`. That's why we need to ignore differences on this field, otherwise Argo CD will constantly try to revert the changes made by Qubmango and the governance process won't work.
 
@@ -193,7 +193,7 @@ spec:
   gitRepository:
     ssh:
       # Git SSH URL (must be the same as in Argo CD Application, but only SSH format)
-      url: git@github.com:organization/my-app-repo.git
+      url: git@github.com:org/git-repository.git
       # Kubernetes SSH secret reference
       secretsRef:
         name: ssh-secret-my
@@ -216,9 +216,9 @@ spec:
         name: slack-secret-my
         namespace: my-app-namespace
   argoCD:
-    # ArgoCD application reference
+    # ArgoCD application reference (must be the same as the one created in Step 2)
     application:
-      name: my-app
+      name: application-my
       namespace: argocd
   # Path in the Git repository for governance-related files. Qubmango will use it to create operational folder with path `governanceFolderPath/.qubmango`.
   # This will be used to store MSR/MCA metadata and signatures.
@@ -268,7 +268,7 @@ git commit -m "Add governance policy"
 git push origin main
 ```
 
-Then apply it directly to the cluster:
+Wait until Argo CD synchronizes the MRT manifest or apply it directly to the cluster (make sure that target namespace exists):
 
 ```bash
 kubectl apply -f app-manifests/mrt.yaml
@@ -286,7 +286,7 @@ From this point forward, all manifest changes in the repository will require app
 
 > Note:
 > 1. Qubmango only blocks manifests submitted by Argo CD. If you have other automation, it won't work.
-> 2. Qubmango doesn't block direct `kubectl apply` to the cluster, so if someone applies changes directly to the cluster, Qubmango won't be able to prevent it. However, if you have Argo CD's `selfHeal` enabled, it will revert any changes that are not approved through the governance process. This behavior will be improved later by adding the ability to block direct `kubectl apply` to the cluster and enforce all changes to go through the governance process.
+> 2. Qubmango doesn't block direct `kubectl apply` to the cluster, so if someone applies changes directly to the cluster, Qubmango won't be able to prevent it. This behavior will be improved later by adding the ability to block direct `kubectl apply` to the cluster and enforce all changes to go through the governance process.
 
 ## Governance
 
@@ -306,7 +306,7 @@ Stopping the governance process can be done by deleting the MRT resource in the 
 
 #### Governance Folder
 
-Before starting the governance process the governance folder must be empty or not exist. If there are any existing MSR/MCA files in it, Qubmango will fail to initialize to prevent conflicts with existing governance artifacts.
+Before starting the governance process the governance folder must be empty or not exist. If there are any existing files in it, Qubmango will fail to initialize to prevent conflicts with existing governance artifacts.
 
 In the end of governance process (when it's stopped), Qubmango will delete the governance folder and all its contents.
 
@@ -329,6 +329,7 @@ The following MRT fields are immutable and cannot be changed after the governanc
 - `spec.argoCD` - Argo CD Application reference
 - `spec.msr` - MSR resource reference
 - `spec.mca` - MCA resource reference
+- `spec.governanceFolderPath` - Governance folder path in the repository
 
 ## Configuration Options
 
@@ -435,7 +436,7 @@ require:
 **Nested rules (e.g., owner OR 2 out of 3 voters):**
 ```yaml
 require:
-  atLeast: 1
+  all: true
   require:
     - signer: owner
     - atLeast: 2
@@ -451,8 +452,8 @@ require:
 
 The behavior of the Qubmango operator can be customized using the following flags:
 
-- `repositories-base-path` - Base path for cloning repositories (default: `/tmp/qubmango/git/repos`)
-- `known-hosts-path` - Path to the `known_hosts` file for SSH authentication (default: `/etc/ssh/ssh_known_hosts`)
+- `repositories-base-path` - Base path for cloning repositories within the pod (default: `/tmp/qubmango/git/repos`)
+- `known-hosts-path` - Path to the `known_hosts` file for SSH authentication within the pod* (default: `/etc/ssh/ssh_known_hosts`)
 
 ## Common Issues
 

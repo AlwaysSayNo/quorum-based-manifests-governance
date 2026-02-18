@@ -95,6 +95,8 @@ func init() {
 
 	getMSRCmd.Flags().StringVarP(&outputFormat, "output", "o", "pretty", "Output format. One of: pretty, raw")
 	getMSRCmd.Flags().StringVarP(&repoAlias, "repo", "r", "", "Alias of the repository to use (instead of the value from config file)")
+	
+	diffMsrCmd.Flags().StringVarP(&repoAlias, "repo", "r", "", "Alias of the repository to use (instead of the value from config file)")
 
 	getCmd.AddCommand(getMSRCmd)
 	getCmd.AddCommand(diffMsrCmd)
