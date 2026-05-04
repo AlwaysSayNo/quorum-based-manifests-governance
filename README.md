@@ -1,5 +1,10 @@
 # Qubmango
 
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Nazar%20Grynko-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/nazar-grynko-354b90247/)
+[![Releases](https://img.shields.io/github/v/release/AlwaysSayNo/quorum-based-manifests-governance?label=Latest%20release&logo=github)](https://github.com/AlwaysSayNo/quorum-based-manifests-governance/releases)
+
+<img src="qubmango-logo.png" alt="Qubmango logo" width="128" />
+
 Qubmango is Kubernetes-native governance application for GitOps workflows, which enables secure management of Kubernetes manifests through a quorum-based approval process.
 
 The project consists of two parts: Admission Controller and CLI.
